@@ -166,6 +166,15 @@ mod tests {
         store(ctx).backend
     }
 
+    // `secret_auth_storage` is on by default on Windows alone, which makes either of Codex's
+    // keyring stores its encrypted file.
+    fn keyring_or(alone: Backend) -> Backend {
+        match crate::host::OS {
+            Os::MacOs | Os::Linux => alone,
+            Os::Windows => Backend::Secrets,
+        }
+    }
+
     fn at(dir: &Path, config: &str) -> Context {
         std::fs::create_dir_all(dir).expect("a scratch codex home");
         std::fs::write(dir.join("config.toml"), config).expect("a config");
@@ -240,24 +249,32 @@ mod tests {
     /// The shipped default is a packaged one rather than a line anybody wrote, so an absent
     /// setting means the file and not "cannot tell".
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn no_setting_means_the_file() {
         let dir = scratch("default");
         let ctx = at(&dir, "model = \"gpt-5\"\n");
         assert_eq!(backend(&ctx), Backend::File);
-        assert_eq!(auth_file(&ctx), dir.join("auth.json"));
+        assert_eq!(auth_file(&ctx), home(&ctx).join("auth.json"));
+        assert_eq!(
+            std::fs::canonicalize(home(&ctx)).ok(),
+            std::fs::canonicalize(&dir).ok()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Each store is read from the person's own `config.toml` as TOML. A value that is not a
     /// store Codex has stops Codex from starting, so it is no longer taken for the file.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn each_store_is_recognised() {
         let dir = scratch("stores");
         for (written, expected) in [
-            ("cli_auth_credentials_store = \"keyring\"", Backend::Keyring),
-            ("cli_auth_credentials_store=\"auto\"", Backend::Either),
+            (
+                "cli_auth_credentials_store = \"keyring\"",
+                keyring_or(Backend::Keyring),
+            ),
+            (
+                "cli_auth_credentials_store=\"auto\"",
+                keyring_or(Backend::Either),
+            ),
             (
                 "  cli_auth_credentials_store = 'ephemeral'",
                 Backend::Ephemeral,
@@ -278,20 +295,18 @@ mod tests {
     /// A trailing comment is not part of the value. Read as part of it, a keyring store
     /// looked like the default file, and Pitboard would read a file Codex had deleted.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_comment_after_the_value_is_not_the_value() {
         let dir = scratch("comment");
         let ctx = at(
             &dir,
             "cli_auth_credentials_store = \"keyring\"  # on this mac\n",
         );
-        assert_eq!(backend(&ctx), Backend::Keyring);
+        assert_eq!(backend(&ctx), keyring_or(Backend::Keyring));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A key of the same name inside another table is not the setting.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn only_the_top_level_key_is_the_setting() {
         let dir = scratch("tables");
         for (config, expected, why) in [
@@ -317,19 +332,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// What `/etc/codex` says is read as well as the person's own file, where Pitboard read
-    /// only the person's.
+    /// What this machine's folder of Codex's configuration says is read as well as the
+    /// person's own file, where Pitboard read only the person's.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn the_system_layers_are_read_as_well_as_the_persons_own() {
         let dir = scratch("system");
         let host = crate::host::memory::MemoryHost::new();
         let ctx = at(&dir, "model = \"gpt-5\"\n").with_memory_stores(host.clone());
+        let system = |name| layers::system_file(&ctx, name);
         host.administers(
-            "/etc/codex/config.toml",
+            system("config.toml"),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
-        assert_eq!(backend(&ctx), Backend::Keyring);
+        assert_eq!(backend(&ctx), keyring_or(Backend::Keyring));
         std::fs::write(
             dir.join("config.toml"),
             "cli_auth_credentials_store = \"file\"\n",
@@ -337,13 +352,13 @@ mod tests {
         .expect("a config");
         assert_eq!(backend(&ctx), Backend::File);
         host.administers(
-            "/etc/codex/requirements.toml",
+            system("requirements.toml"),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
-        assert_eq!(backend(&ctx), Backend::Keyring);
+        assert_eq!(backend(&ctx), keyring_or(Backend::Keyring));
         assert_eq!(
             sign_in_store(&ctx).backend,
-            Backend::Keyring,
+            keyring_or(Backend::Keyring),
             "a requirement pins a sign-in's store too"
         );
         let _ = std::fs::remove_dir_all(&dir);

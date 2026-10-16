@@ -3023,6 +3023,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     on macOS and Linux (`cfg!(windows)` in 0.160.0). A requirement may name that table
     `[feature_requirements]` too, as `ConfigRequirementsToml` does; a configuration
     layer's table of that name sets nothing.
+- Read from 0.163.0's config loader on 16 October 2026 (`codex_windows_store_layers`): on
+  Windows this machine's `config.toml` and `requirements.toml` are in `OpenAI\Codex` under
+  `FOLDERID_ProgramData`, or under `C:\ProgramData` where Windows cannot say that folder.
+  There is no `managed_config.toml` layer, no managed preference and no registry layer, and
+  `secret_auth_storage` is on by default, so `keyring` and `auto` keep the login in the
+  secret store. Cloud requirements still may not set the store on any system, and a cloud
+  configuration still may, for a session of the TUI.
 - `keyring` and `auto` keep the login in a keychain item, `Codex Auth`, that Codex makes
   through the Security framework. With either of those, the `secret_auth_storage` feature
   keeps it in `secrets/codex_auth.age` instead, under a keychain key.

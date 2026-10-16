@@ -177,8 +177,7 @@ impl Host for Windows {
         user::floor()
     }
 
-    /// Windows has no managed preferences: what an administrator sets for Codex there is in
-    /// files, which W21 reads (the register's `codex_managed_preferences`).
+    // Windows has none: what an administrator sets for Codex there is in files.
     fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
         Administered::Unset
     }
@@ -189,6 +188,10 @@ impl Host for Windows {
         } else {
             Administered::Unset
         }
+    }
+
+    fn program_data(&self) -> Option<PathBuf> {
+        user::program_data()
     }
 }
 
@@ -261,25 +264,17 @@ mod tests {
         );
     }
 
-    /// Codex's live store on Windows is one nobody can tell yet, so it is refused before any
-    /// chain is reached, saying Pitboard does not read Codex's configuration here, until W21
-    /// reads which store Codex keeps its login in on Windows.
     #[test]
-    fn codexs_store_is_refused_until_its_configuration_is_read() {
-        // A home Codex starts in, so the store is what is refused and not the home.
+    fn codexs_file_store_is_read_and_its_chain_still_refuses() {
         let home = tempfile::tempdir().expect("a scratch Codex home");
         let ctx = ctx().with_codex_home(home.path().to_string_lossy().into());
-        match crate::provider::document(ProviderId::Codex).live(&ctx) {
-            Err(crate::provider::ProviderError::Unsupported {
-                provider: ProviderId::Codex,
-                reason,
-            }) => assert!(
-                reason.contains("Pitboard does not read Codex's configuration on this system yet"),
-                "{reason}"
-            ),
-            Err(other) => panic!("refused otherwise: {other:?}"),
-            Ok(_) => panic!("a live store Pitboard cannot tell is refused"),
-        }
+        let live = crate::provider::document(ProviderId::Codex)
+            .live(&ctx)
+            .expect("the file store");
+        unreadable(
+            crate::store::read_raw(&live.chain, &live.service),
+            "Pitboard does not switch Codex on Windows yet",
+        );
     }
 
     #[test]

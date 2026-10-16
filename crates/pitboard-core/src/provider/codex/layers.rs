@@ -6,7 +6,8 @@
 //! `ConfigLayerSource::precedence` for the layers and their order, `apply_to_config` and the
 //! `cli_auth_credentials_store_mode` it feeds for how a requirement pins the store, and
 //! `loader/macos.rs` for the managed preferences. The register calls these
-//! `codex_store_layers` and `codex_managed_preferences`.
+//! `codex_store_layers` and `codex_managed_preferences`. Windows' are read from the same
+//! loader at tag `rust-v0.163.0`, `codex_windows_store_layers`.
 //!
 //! A setting in a higher layer replaces the same setting in a lower one, and a requirement
 //! pins it over every layer. Codex starts only where every layer it reads is TOML it can
@@ -98,26 +99,8 @@ impl Layer {
         matches!(self, Layer::Required | Layer::RequiredByPreference)
     }
 
-    /// Whether Pitboard reads this layer on `os`: every layer but this machine's own files,
-    /// which it reads only where it knows their folder ([`system_dir`]).
-    fn read_on(self, os: Os) -> bool {
-        match self {
-            Layer::System | Layer::Managed | Layer::Required => system_dir(os).is_some(),
-            Layer::Packaged
-            | Layer::Own
-            | Layer::CommandLine
-            | Layer::ManagedPreference
-            | Layer::RequiredByPreference => true,
-        }
-    }
-
-    /// Where this layer is, as a person finds it, on `os`, with `own` the person's
-    /// `config.toml`.
-    fn place(self, os: Os, own: &Path) -> String {
-        let file = |name: &str| match system_dir(os) {
-            Some(dir) => dir.join(name).display().to_string(),
-            None => format!("Codex's own {name} for this machine"),
-        };
+    fn place(self, system: &Path, own: &Path) -> String {
+        let file = |name: &str| system.join(name).display().to_string();
         match self {
             Layer::Packaged => "Codex's default".into(),
             Layer::System => file("config.toml"),
@@ -135,29 +118,30 @@ impl Layer {
     }
 }
 
-/// Where Codex keeps this machine's own configuration: `/etc/codex` on macOS and Linux.
-/// On Windows it is a folder under `%ProgramData%`, a folder Windows names for each machine,
-/// which W21 finds and reads (the register's pending `codex_store_layers`); until then none is
-/// named, and no layer of it is read ([`Layer::read_on`]).
-fn system_dir(os: Os) -> Option<&'static Path> {
+// Codex falls back to `C:\ProgramData` where Windows cannot say `FOLDERID_ProgramData`, and
+// never reads the variable (`codex_windows_store_layers`).
+fn system_dir(os: Os, program_data: Option<PathBuf>) -> PathBuf {
     match os {
-        Os::MacOs | Os::Linux => Some(Path::new("/etc/codex")),
-        Os::Windows => None,
+        Os::MacOs | Os::Linux => PathBuf::from("/etc/codex"),
+        Os::Windows => program_data
+            .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+            .join("OpenAI")
+            .join("Codex"),
     }
 }
 
-/// The layers Codex 0.160.0 reads its configuration from on `os`, lowest first.
-///
-/// Between the system's and the person's own, Codex has an enterprise's cloud layers, and
-/// over the person's, a profile's and a project's: none of the three is read here, as the
-/// module says.
-///
-/// On Windows, Codex 0.99.0's loader reads the same layers but `managed_config.toml`, with
-/// this machine's files in `%ProgramData%\OpenAI\Codex` (`load_config_layers_state` and
-/// `windows_codex_system_dir` in `codex-rs/core/src/config_loader/mod.rs`). 0.160.0's are
-/// the register's pending `codex_store_layers`, which W21 reads. Until then Pitboard reads
-/// none of this machine's files there, so the store is one nobody can tell, whatever the
-/// person's own `config.toml` says.
+fn system_dir_of(ctx: &Context) -> PathBuf {
+    system_dir(crate::host::OS, ctx.host().program_data())
+}
+
+// This machine's file `name` of Codex's configuration, as `ctx`'s host finds it.
+#[cfg(test)]
+pub(crate) fn system_file(ctx: &Context, name: &str) -> PathBuf {
+    system_dir_of(ctx).join(name)
+}
+
+// Lowest first. An enterprise's cloud layers, a profile's and a project's are not read, as the
+// module says. Windows reads no `managed_config.toml` and has no managed preferences.
 pub(crate) fn config_layers(os: Os) -> &'static [Layer] {
     use Layer::{CommandLine, Managed, ManagedPreference, Own, Packaged, System};
     match os {
@@ -178,8 +162,6 @@ pub(crate) fn config_layers(os: Os) -> &'static [Layer] {
 ///
 /// `/etc/codex/managed_config.toml` and its managed preference are requirements too, but only
 /// for approvals and the sandbox (`legacy_requirements_to_toml_value`), so they pin no store.
-/// On Windows the file of requirements is in this machine's folder Pitboard does not read
-/// yet, as [`config_layers`] says.
 pub(crate) fn requirement_layers(os: Os) -> &'static [Layer] {
     match os {
         Os::MacOs => &[Layer::Required, Layer::RequiredByPreference],
@@ -240,7 +222,8 @@ pub(crate) struct Store {
     secrets_by: Option<Layer>,
     /// For [`Backend::Unknown`], why nobody can tell.
     unknown: Option<Unknown>,
-    os: Os,
+    // This machine's folder of Codex's configuration.
+    system: PathBuf,
     /// The person's own `config.toml`, where a line that changes the store goes.
     own: PathBuf,
 }
@@ -250,8 +233,7 @@ pub(crate) struct Store {
 struct Unknown {
     /// The layer that cannot be read as Codex reads it.
     layer: Layer,
-    /// What is wrong with it, in words that follow the layer's place: nothing where Pitboard
-    /// does not read it.
+    /// What is wrong with it, in words that follow the layer's place.
     why: String,
     /// What Codex does over it.
     then: Then,
@@ -265,9 +247,6 @@ enum Then {
     /// The profile a `profile = "<name>"` line chooses where no table defines it, which
     /// 0.160.0 refuses as it refuses every such line, and 0.99.0 as one it cannot find.
     NoProfile(String),
-    /// Nobody here can tell: Pitboard does not read the layer on this system yet
-    /// ([`Layer::read_on`]), which says nothing of Codex itself.
-    Unread,
 }
 
 impl Store {
@@ -320,28 +299,20 @@ impl Store {
     }
 
     /// Why the store cannot be told, for [`Backend::Unknown`]: the place that cannot be read
-    /// as Codex reads it, and what is wrong there, or that Pitboard does not read Codex's
-    /// configuration on this system yet.
+    /// as Codex reads it, and what is wrong there.
     pub(crate) fn why_unknown(&self) -> Option<String> {
-        self.unknown.as_ref().map(|unknown| match unknown.then {
-            Then::Unread => {
-                "Pitboard does not read Codex's configuration on this system yet".into()
-            }
-            Then::Stops | Then::NoProfile(_) => {
-                format!("{} {}", self.place(unknown.layer), unknown.why)
-            }
-        })
+        self.unknown
+            .as_ref()
+            .map(|unknown| format!("{} {}", self.place(unknown.layer), unknown.why))
     }
 
     /// What Codex does with what [`Store::why_unknown`] names, as sentences with no last full
     /// stop, for [`Backend::Unknown`]. Codex 0.160.0 does not start over any of it, and a
     /// `profile = "<name>"` line naming a profile no table defines is one 0.99.0, which
-    /// chooses a profile with the line, refuses as not found. A place Pitboard does not read
-    /// on this system yet says nothing of Codex.
+    /// chooses a profile with the line, refuses as not found.
     pub(crate) fn while_unknown(&self) -> Option<String> {
         self.unknown.as_ref().map(|unknown| match &unknown.then {
             Then::Stops => "Codex 0.160.0 does not start until that is put right".into(),
-            Then::Unread => "This says nothing about Codex itself".into(),
             Then::NoProfile(name) => format!(
                 "Codex 0.160.0 does not start with that line, and an older Codex, such as \
                  0.99.0, which chooses a profile with it, refuses one no table defines: \
@@ -351,14 +322,15 @@ impl Store {
     }
 
     fn place(&self, layer: Layer) -> String {
-        layer.place(self.os, &self.own)
+        layer.place(&self.system, &self.own)
     }
 }
 
 /// The store this machine's Codex keeps its login in, read for the home `ctx` names.
 pub(crate) fn of(ctx: &Context, own: &Path) -> Store {
-    resolve(crate::host::OS, own, &|layer| {
-        read(ctx, layer, Some(own), None)
+    let system = system_dir_of(ctx);
+    resolve(crate::host::OS, &system, own, &|layer| {
+        read(ctx, &system, layer, Some(own), None)
     })
 }
 
@@ -366,26 +338,23 @@ pub(crate) fn of(ctx: &Context, own: &Path) -> Store {
 /// `config.toml`, with [`FILE_STORE`] on its command line. `own` is the person's own
 /// `config.toml`, for what the words name.
 pub(crate) fn of_a_sign_in(ctx: &Context, own: &Path) -> Store {
-    resolve(crate::host::OS, own, &|layer| {
-        read(ctx, layer, None, Some(FILE_STORE))
+    let system = system_dir_of(ctx);
+    resolve(crate::host::OS, &system, own, &|layer| {
+        read(ctx, &system, layer, None, Some(FILE_STORE))
     })
 }
 
-/// What `layer` holds on the machine `ctx` reaches, on this system: `own` is the
-/// `config.toml` of Codex's home, where there is one, and `command_line` what `-c` gives.
+// `own` is the `config.toml` of Codex's home, where there is one, and `command_line` what `-c`
+// gives.
 fn read(
     ctx: &Context,
+    system: &Path,
     layer: Layer,
     own: Option<&Path>,
     command_line: Option<&str>,
 ) -> Administered {
     let host = ctx.host();
-    // A layer of this machine's own files is not asked for where there is no folder named
-    // for them ([`Layer::read_on`]), and would be one nobody can read.
-    let file = |name: &str| match system_dir(crate::host::OS) {
-        Some(dir) => host.administered_file(&dir.join(name)),
-        None => Administered::Unreadable("is not read on this system yet".into()),
-    };
+    let file = |name: &str| host.administered_file(&system.join(name));
     match layer {
         Layer::Packaged => Administered::Set(PACKAGED.into()),
         Layer::System => file("config.toml"),
@@ -424,8 +393,6 @@ enum Says {
     Table(toml::Table),
     /// It is there and Codex cannot read it, which stops Codex from starting.
     Broken(String),
-    /// Pitboard does not read it on this system yet, so whatever it says nobody here can tell.
-    Unread,
 }
 
 impl Says {
@@ -450,7 +417,7 @@ impl Says {
     fn table(&self) -> Option<&toml::Table> {
         match self {
             Says::Table(table) => Some(table),
-            Says::Nothing | Says::Broken(_) | Says::Unread => None,
+            Says::Nothing | Says::Broken(_) => None,
         }
     }
 }
@@ -577,20 +544,17 @@ fn highest<'a, T>(
         })
 }
 
-/// The store Codex 0.160.0 keeps its login in on `os`, from what `read` says each layer holds,
-/// with `own` the person's `config.toml`, for the words.
-pub(crate) fn resolve(os: Os, own: &Path, read: &dyn Fn(Layer) -> Administered) -> Store {
+// `system` and `own`, the person's `config.toml`, are for the words.
+pub(crate) fn resolve(
+    os: Os,
+    system: &Path,
+    own: &Path,
+    read: &dyn Fn(Layer) -> Administered,
+) -> Store {
     let read_all = |layers: &[Layer]| -> Vec<(Layer, Says)> {
         layers
             .iter()
-            .map(|&layer| {
-                let says = if layer.read_on(os) {
-                    Says::of(read(layer))
-                } else {
-                    Says::Unread
-                };
-                (layer, says)
-            })
+            .map(|&layer| (layer, Says::of(read(layer))))
             .collect()
     };
     let (required, config) = (
@@ -603,7 +567,7 @@ pub(crate) fn resolve(os: Os, own: &Path, read: &dyn Fn(Layer) -> Administered) 
         mode,
         secrets_by,
         unknown,
-        os,
+        system: system.to_path_buf(),
         own: own.to_path_buf(),
     };
     let unknown = |layer: Layer, why: String, then: Then| {
@@ -616,20 +580,18 @@ pub(crate) fn resolve(os: Os, own: &Path, read: &dyn Fn(Layer) -> Administered) 
         )
     };
 
-    // A layer Codex cannot read stops it from starting, whatever the others say, and one
-    // Pitboard does not read leaves nobody here able to tell, whatever the others say.
-    if let Some((layer, why, then)) =
+    // A layer Codex cannot read stops it from starting, whatever the others say.
+    if let Some((layer, why)) =
         required
             .iter()
             .rev()
             .chain(config.iter().rev())
             .find_map(|(layer, says)| match says {
-                Says::Broken(why) => Some((*layer, why.clone(), Then::Stops)),
-                Says::Unread => Some((*layer, String::new(), Then::Unread)),
+                Says::Broken(why) => Some((*layer, why.clone())),
                 Says::Nothing | Says::Table(_) => None,
             })
     {
-        return unknown(layer, why, then);
+        return unknown(layer, why, Then::Stops);
     }
 
     // Codex reads the configuration whole before a requirement replaces anything in it, so a
@@ -743,9 +705,20 @@ mod tests {
 
     const OWN: &str = "/Users/someone/.codex/config.toml";
 
+    fn etc_codex() -> PathBuf {
+        system_dir(Os::Linux, None)
+    }
+
     // Joined as this host joins a path, which is how `Layer::place` names it.
     fn etc(name: &str) -> String {
-        Path::new("/etc/codex").join(name).display().to_string()
+        etc_codex().join(name).display().to_string()
+    }
+
+    fn program_data(name: &str) -> String {
+        system_dir(Os::Windows, None)
+            .join(name)
+            .display()
+            .to_string()
     }
 
     /// What each layer holds, by layer, as a test says: unset where it says nothing. A managed
@@ -762,10 +735,15 @@ mod tests {
                 (layer, holds)
             })
             .collect();
-        resolve(os, Path::new(OWN), &|layer| match layer {
-            Layer::Packaged => Administered::Set(PACKAGED.into()),
-            _ => holds.get(&layer).cloned().unwrap_or(Administered::Unset),
-        })
+        resolve(
+            os,
+            &system_dir(os, None),
+            Path::new(OWN),
+            &|layer| match layer {
+                Layer::Packaged => Administered::Set(PACKAGED.into()),
+                _ => holds.get(&layer).cloned().unwrap_or(Administered::Unset),
+            },
+        )
     }
 
     const KEYRING: &str = "cli_auth_credentials_store = \"keyring\"\n";
@@ -1106,15 +1084,23 @@ mod tests {
             assert_eq!(store.backend, Backend::Unknown, "{text}");
             assert_eq!(
                 store.why_unknown(),
-                Some(format!("{} {why}", layer.place(Os::Linux, Path::new(OWN)))),
+                Some(format!(
+                    "{} {why}",
+                    layer.place(&system_dir(Os::Linux, None), Path::new(OWN))
+                )),
                 "{text}"
             );
         }
-        let unreadable = resolve(Os::Linux, Path::new(OWN), &|layer| match layer {
-            Layer::Packaged => Administered::Set(PACKAGED.into()),
-            Layer::Required => Administered::Unreadable("cannot be read: denied".into()),
-            _ => Administered::Unset,
-        });
+        let unreadable = resolve(
+            Os::Linux,
+            &etc_codex(),
+            Path::new(OWN),
+            &|layer| match layer {
+                Layer::Packaged => Administered::Set(PACKAGED.into()),
+                Layer::Required => Administered::Unreadable("cannot be read: denied".into()),
+                _ => Administered::Unset,
+            },
+        );
         assert_eq!(unreadable.backend, Backend::Unknown);
         assert_eq!(
             unreadable.why_unknown(),
@@ -1283,7 +1269,7 @@ mod tests {
                 store.why_unknown(),
                 Some(format!(
                     "{} sets `profile = \"work\"`, a profile no `[profiles.work]` table defines",
-                    layer.place(Os::Linux, Path::new(OWN))
+                    layer.place(&system_dir(Os::Linux, None), Path::new(OWN))
                 )),
                 "{layer:?}"
             );
@@ -1353,23 +1339,26 @@ mod tests {
     /// A sign-in Pitboard runs has no config.toml of its own and the file store on its
     /// command line, so only what an administrator set over that keeps it from the file.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_sign_in_takes_the_file_store_unless_an_administrator_set_another() {
         let host = crate::host::memory::MemoryHost::new();
         let ctx = Context::for_unit_test().with_memory_stores(host.clone());
-        let own = Path::new(OWN);
+        let (own, at) = (Path::new(OWN), |name| system_file(&ctx, name));
         assert_eq!(of_a_sign_in(&ctx, own).backend, Backend::File);
-        host.administers("/etc/codex/config.toml", KEYRING);
+        host.administers(at("config.toml"), KEYRING);
         let store = of_a_sign_in(&ctx, own);
         assert_eq!(
             (store.backend, store.chosen_by),
             (Backend::File, Layer::CommandLine),
             "the -c is over the system's config"
         );
-        host.administers("/etc/codex/managed_config.toml", KEYRING);
-        assert_eq!(of_a_sign_in(&ctx, own).backend, Backend::Keyring);
-        host.administers("/etc/codex/managed_config.toml", FILE);
-        host.administers("/etc/codex/requirements.toml", EPHEMERAL);
+        host.administers(at("managed_config.toml"), KEYRING);
+        let managed = match crate::host::OS {
+            Os::MacOs | Os::Linux => Backend::Keyring,
+            Os::Windows => Backend::File,
+        };
+        assert_eq!(of_a_sign_in(&ctx, own).backend, managed);
+        host.administers(at("managed_config.toml"), FILE);
+        host.administers(at("requirements.toml"), EPHEMERAL);
         let store = of_a_sign_in(&ctx, own);
         assert_eq!(
             (store.backend, store.chosen_by),
@@ -1380,15 +1369,14 @@ mod tests {
     /// What the host says an administrator set is what is read, at Codex's paths, and a
     /// managed preference is read as the base64 Codex reads it as.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: the layers Codex reads on Windows")]
     fn what_an_administrator_set_is_read_through_the_host() {
         let host = crate::host::memory::MemoryHost::new();
         let ctx = Context::for_unit_test().with_memory_stores(host.clone());
         let own = Path::new(OWN);
         assert_eq!(of(&ctx, own).chosen_by, Layer::Packaged);
-        host.administers("/etc/codex/requirements.toml", KEYRING);
+        host.administers(system_file(&ctx, "requirements.toml"), KEYRING);
         assert_eq!(of(&ctx, own).chosen_by, Layer::Required);
-        host.administers_unreadably("/etc/codex/config.toml", "cannot be read: denied");
+        host.administers_unreadably(system_file(&ctx, "config.toml"), "cannot be read: denied");
         assert_eq!(of(&ctx, own).backend, Backend::Unknown);
 
         let host = crate::host::memory::MemoryHost::new();
@@ -1404,46 +1392,135 @@ mod tests {
                 (store.backend, store.chosen_by),
                 (Backend::Ephemeral, Layer::ManagedPreference)
             ),
-            Os::Linux => assert_eq!(store.backend, Backend::File),
-            // Windows has no managed preferences, and none of this machine's files is read
-            // there until W21.
-            Os::Windows => assert_eq!(store.backend, Backend::Unknown),
+            Os::Linux | Os::Windows => assert_eq!(store.backend, Backend::File),
         }
     }
 
-    /// On Windows Pitboard does not read this machine's own files of Codex's configuration
-    /// yet, so the store is one nobody can tell, whatever the person's own `config.toml` or a
-    /// `-c` says, and never Codex's default: the file is then no answer, and doctor fails it
-    /// as a store nobody can tell rather than passing it as the file. It says nothing of
-    /// Codex itself, which is not stopped by it as by a layer it cannot read.
+    // Codex 0.163.0 on Windows: OpenAI\Codex's config.toml and requirements.toml around the
+    // person's own, no managed_config.toml, and the secret store on by default.
     #[test]
-    fn on_windows_the_store_is_one_nobody_can_tell_whatever_the_layers_say() {
-        for holds in [
-            &[][..],
-            &[(Layer::Own, FILE)],
-            &[(Layer::Own, KEYRING)],
-            &[(Layer::Own, FILE), (Layer::CommandLine, FILE_STORE)],
-            &[(Layer::System, KEYRING), (Layer::Required, FILE)],
-        ] {
-            let store = machine(Os::Windows, holds);
-            assert_eq!(store.backend, Backend::Unknown, "{holds:?}");
+    fn on_windows_codex_reads_its_machine_folder_and_keeps_a_keyring_login_in_secrets() {
+        let store = machine(Os::Windows, &[]);
+        assert_eq!(
+            (store.backend, store.chosen_by),
+            (Backend::File, Layer::Packaged)
+        );
+        let store = machine(Os::Windows, &[(Layer::System, KEYRING)]);
+        assert_eq!(
+            (store.backend, store.chosen_by),
+            (Backend::Secrets, Layer::System)
+        );
+        assert_eq!(
+            store.setting(),
+            format!(
+                "`cli_auth_credentials_store = \"keyring\"` in {}, with `secret_auth_storage` on \
+                 by default",
+                program_data("config.toml")
+            )
+        );
+        assert_eq!(
+            store.to_use_the_file(),
+            format!(
+                "To use the file store, set `cli_auth_credentials_store = \"file\"` in {OWN}, \
+                 then sign in again with `codex login`"
+            )
+        );
+        let auto = "cli_auth_credentials_store = \"auto\"\n";
+        assert_eq!(
+            machine(Os::Windows, &[(Layer::Own, auto)]).backend,
+            Backend::Secrets
+        );
+        let off = "[features]\nsecret_auth_storage = false\n";
+        assert_eq!(
+            machine(Os::Windows, &[(Layer::Own, KEYRING), (Layer::System, off)]).backend,
+            Backend::Keyring
+        );
+        assert_eq!(
+            machine(Os::Windows, &[(Layer::Own, auto), (Layer::System, off)]).backend,
+            Backend::Either
+        );
+        assert_eq!(
+            machine(
+                Os::Windows,
+                &[(Layer::Own, FILE), (Layer::Managed, KEYRING)]
+            )
+            .backend,
+            Backend::File,
+            "no managed_config.toml"
+        );
+        let store = machine(
+            Os::Windows,
+            &[
+                (Layer::Own, KEYRING),
+                (Layer::System, KEYRING),
+                (Layer::CommandLine, FILE_STORE),
+            ],
+        );
+        assert_eq!(
+            (store.backend, store.chosen_by),
+            (Backend::File, Layer::CommandLine),
+            "a sign-in's -c"
+        );
+
+        let store = machine(
+            Os::Windows,
+            &[(Layer::Own, FILE), (Layer::Required, EPHEMERAL)],
+        );
+        assert_eq!(
+            (store.backend, store.chosen_by),
+            (Backend::Ephemeral, Layer::Required)
+        );
+        let required = program_data("requirements.toml");
+        assert_eq!(
+            store.setting(),
+            format!("pinned to `ephemeral` by {required}")
+        );
+        assert_eq!(
+            store.to_use_the_file(),
+            format!(
+                "No line in your own config.toml can change it: {required} pins it, and only an \
+                 administrator can change that"
+            )
+        );
+        let store = machine(
+            Os::Windows,
+            &[(Layer::Own, KEYRING), (Layer::Required, FILE)],
+        );
+        assert_eq!(
+            (store.backend, store.chosen_by),
+            (Backend::File, Layer::Required)
+        );
+        let store = machine(Os::Windows, &[(Layer::Own, FILE), (Layer::System, "]")]);
+        assert_eq!(store.backend, Backend::Unknown);
+        assert_eq!(
+            store.why_unknown(),
+            Some(format!(
+                "{} is not TOML Codex can read, at line 1",
+                program_data("config.toml")
+            ))
+        );
+    }
+
+    #[test]
+    fn codexs_machine_folder_on_windows_is_in_the_known_program_data_folder() {
+        let data = PathBuf::from(r"D:\Data");
+        assert_eq!(
+            system_dir(Os::Windows, Some(data.clone())),
+            data.join("OpenAI").join("Codex")
+        );
+        assert_eq!(
+            system_dir(Os::Windows, None),
+            PathBuf::from(r"C:\ProgramData")
+                .join("OpenAI")
+                .join("Codex"),
+            "Codex's own fallback"
+        );
+        for os in [Os::MacOs, Os::Linux] {
             assert_eq!(
-                store.why_unknown().as_deref(),
-                Some("Pitboard does not read Codex's configuration on this system yet"),
-                "{holds:?}"
-            );
-            assert_eq!(
-                store.while_unknown().as_deref(),
-                Some("This says nothing about Codex itself"),
-                "{holds:?}"
+                system_dir(os, Some(data.clone())),
+                PathBuf::from("/etc/codex")
             );
         }
-        let host = crate::host::memory::MemoryHost::new();
-        let ctx = Context::for_unit_test().with_memory_stores(host);
-        let signing_in = resolve(Os::Windows, Path::new(OWN), &|layer| {
-            read(&ctx, layer, None, Some(FILE_STORE))
-        });
-        assert_eq!(signing_in.backend, Backend::Unknown, "a sign-in's too");
     }
 
     /// Canonical standard base64 only, as the base64 crate's `BASE64_STANDARD` decodes it.

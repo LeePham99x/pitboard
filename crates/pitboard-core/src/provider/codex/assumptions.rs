@@ -157,14 +157,22 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
          session step 9",
     ),
     everywhere("codex_login_prints_its_address", "0.160.0"),
-    later_on_windows(
-        "codex_store_layers",
-        "0.160.0",
-        &["W21"],
-        "codex_windows_store_layers: the layers Codex reads on Windows, from \
-         %ProgramData%\\OpenAI\\Codex and with no managed_config.toml, and \
-         `secret_auth_storage`, which is on by default there",
-    ),
+    PerSystem {
+        name: "codex_store_layers",
+        macos: Read("0.160.0"),
+        linux: Read("0.160.0"),
+        windows: NotRead(
+            "Windows keeps this machine's layers in another folder, reads no \
+             managed_config.toml and keeps a keyring store's login in the secret store by \
+             default, which codex_windows_store_layers reads",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_store_layers",
+        macos: NotRead("macOS's layers are codex_store_layers'"),
+        linux: NotRead("Linux's layers are codex_store_layers'"),
+        windows: Read("0.163.0"),
+    },
     PerSystem {
         name: "codex_managed_preferences",
         macos: Read("0.160.0"),
@@ -174,8 +182,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         ),
         windows: NotRead(
             "Windows has no managed preferences, and neither Windows build of Codex holds \
-             their keys; what an administrator sets there is codex_store_layers' Windows \
-             reading",
+             their keys; what an administrator sets there is codex_windows_store_layers'",
         ),
     },
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
@@ -613,6 +620,45 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_windows_store_layers",
+        fact: "on Windows the store is `cli_auth_credentials_store` as the highest layer that \
+               sets it says, lowest first: the packaged default `file`, `config.toml` in \
+               `OpenAI\\Codex` under `FOLDERID_ProgramData`, or under `C:\\ProgramData` \
+               where Windows cannot say that folder, never the `ProgramData` variable, an \
+               enterprise's cloud config, `%CODEX_HOME%\\config.toml`, a profile's file, a \
+               trusted project's `.codex\\config.toml`, and `-c`. `requirements.toml` in the \
+               same folder pins it over every layer, and cloud requirements may not set it. \
+               There are no managed preferences and no registry layer, and Codex skips a \
+               `managed_config.toml` in its home with a warning at startup. \
+               `secret_auth_storage` is read from the same layers and is on by default, so \
+               `keyring` and `auto` keep the login in the secret store unless a layer turns it \
+               off. A layer that is there and is not TOML Codex can read, or that names a store \
+               Codex does not have, stops Codex from starting",
+        read_from: "load_config_layers_state, windows_codex_system_dir and \
+                    windows_program_data_dir_from_known_folder in \
+                    codex-rs/config/src/loader/mod.rs, load_requirements_from_sources in \
+                    loader/managed_requirements.rs, load_config_layers_internal and \
+                    managed_config_default_path in loader/layer_io.rs, \
+                    LOCAL_ONLY_AUTH_REQUIREMENTS and strip_cloud_auth_requirements in \
+                    codex-rs/config/src/requirements_layers/layer.rs, and the \
+                    SecretAuthStorage feature's `cfg!(windows)` default in \
+                    codex-rs/features/src/lib.rs, at tag rust-v0.163.0, read on 2026-10-16. \
+                    probe_windows_system_config_namespace only counts who owns the folder for \
+                    telemetry. The win32-x64 and win32-arm64 builds hold the folder, the \
+                    warning and the fallback's message, and neither holds `/etc/codex`",
+        verified_against: "0.163.0",
+        depends: "provider::codex::layers on Windows, and so every read and write of the \
+                  live Codex login there and every refusal of a store",
+        probe: &[
+            "OpenAI\\Codex",
+            "managed_config.toml is no longer supported on Windows",
+            "Failed to resolve ProgramData known folder",
+            "cli_auth_credentials_store",
+            "secret_auth_storage",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_managed_preferences",
         fact: "on macOS, Codex also reads what a configuration profile forces for \
                `com.openai.codex`, and only what it forces: `config_toml_base64`, base64 TOML \
@@ -693,6 +739,7 @@ mod tests {
                 "codex_windows_install_places",
                 "codex_windows_version",
                 "codex_login_prints_its_address",
+                "codex_windows_store_layers",
                 "codex_login_takes_a_store_override",
             ]
         );
@@ -707,6 +754,7 @@ mod tests {
             "codex_windows_home",
             "codex_windows_install_places",
             "codex_windows_version",
+            "codex_windows_store_layers",
         ];
         for line in PER_SYSTEM.iter().filter(|l| !windows.contains(&l.name)) {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);

@@ -733,6 +733,11 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn policy(&self, _hive: Hive, _key: &str, _value: &str) -> Administered {
         Administered::Unset
     }
+
+    // Windows' `FOLDERID_ProgramData`, where it can say; none elsewhere.
+    fn program_data(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,
