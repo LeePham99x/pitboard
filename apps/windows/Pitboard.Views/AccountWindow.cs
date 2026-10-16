@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -55,11 +56,11 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         };
         _stop.Visibility = Visibility.Collapsed;
         _showDownloads.Visibility = Visibility.Collapsed;
-        _back.Click += (_, _) => _view?.CoreWebView2?.GoBack();
-        _forward.Click += (_, _) => _view?.CoreWebView2?.GoForward();
-        _reload.Click += (_, _) => _session?.Reload();
-        _stop.Click += (_, _) => _view?.CoreWebView2?.Stop();
-        _showDownloads.Click += (_, _) => _view?.CoreWebView2?.OpenDefaultDownloadDialog();
+        _back.Click += (_, _) => Page?.GoBack();
+        _forward.Click += (_, _) => Page?.GoForward();
+        _reload.Click += (_, _) => TryAgain();
+        _stop.Click += (_, _) => Page?.Stop();
+        _showDownloads.Click += (_, _) => Page?.OpenDefaultDownloadDialog();
         _removeData.Click += (_, _) => RemoveWebsiteData();
         AutomationProperties.SetAutomationId(_note, "window.note");
         _note.CloseButtonClick += (_, _) => _session?.Dismiss();
@@ -100,6 +101,9 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     // Its account's store, which is also its identity: one window per account.
     public string Store { get; }
+
+    // The window's page, until WebView2 closes it with its browser process.
+    private CoreWebView2? Page => _session is { PageClosed: true } ? null : _view?.CoreWebView2;
 
     // What the model says of the windows: this one's page once it can show it, what it shows until then, and whether it
     // has downloads to list.
@@ -205,7 +209,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     {
         if (WebEnvironment.Refusal() is { } refusal)
         {
-            StandIn(Glyphs.Warning, "Couldn’t Open This Window", refusal, choice: null, enabled: false, chosen: null);
+            Unopened(refusal);
             return;
         }
 
@@ -297,9 +301,10 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _note.IsOpen = session.Note is not null;
         _removeData.IsEnabled = true;
         _reload.IsEnabled = true;
+        ShowHistory();
         if (session.Failure is { } failure)
         {
-            StandIn(Glyphs.Warning, "Couldn’t Load the Page", failure, "Try Again", enabled: true, session.Reload);
+            StandIn(Glyphs.Warning, "Couldn’t Load the Page", failure, "Try Again", enabled: true, TryAgain);
             return;
         }
 
@@ -308,14 +313,45 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         {
             _view.Visibility = Visibility.Visible;
         }
-
-        ShowHistory();
     }
+
+    // A page WebView2 closed with its browser process comes back only in a web view of its own.
+    private async void TryAgain()
+    {
+        if (_session is not { } session)
+        {
+            return;
+        }
+
+        if (!session.PageClosed)
+        {
+            session.Reload();
+            return;
+        }
+
+        try
+        {
+            var page = await NewPage();
+            session.Recover(page);
+            Watch(page);
+            ShowSession();
+        }
+        catch (Exception failed) when (failed is COMException or InvalidOperationException)
+        {
+            if (!_closed)
+            {
+                Unopened(failed.Message);
+            }
+        }
+    }
+
+    private void Unopened(string why) =>
+        StandIn(Glyphs.Warning, "Couldn’t Open This Window", why, choice: null, enabled: false, chosen: null);
 
     private void ShowHistory()
     {
-        _back.IsEnabled = _view?.CoreWebView2?.CanGoBack == true;
-        _forward.IsEnabled = _view?.CoreWebView2?.CanGoForward == true;
+        _back.IsEnabled = Page?.CanGoBack == true;
+        _forward.IsEnabled = Page?.CanGoForward == true;
     }
 
     private void ShowLoading(bool loading)

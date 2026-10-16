@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Microsoft.Web.WebView2.Core;
@@ -84,6 +85,71 @@ public sealed class WebSessionTests
         await window.SignIn.ExecuteScriptAsync("document.getElementById('done').click()");
         await Views.Until(() => window.Closed == 1, "the sign-in page's Done did not close its window", Webs.Patience);
         Assert.AreEqual(1, window.Closed);
+    }
+
+    // A render process that ends reloads its page, unless it ended within the minute before on the session's clock.
+    [UITestMethod]
+    public async Task APageWhoseRenderProcessEndsReloadsUnlessItEndedAMinuteBefore()
+    {
+        await using var webs = await Webs.Make();
+        var clock = new Clock(DateTimeOffset.UnixEpoch);
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs, Main), clock);
+        var page = await webs.Page(Main.Store);
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
+
+        Assert.IsTrue(await Webs.Loads(page, () => EndRenderers(page)), "the page did not reload after its render process ended");
+        clock.Now += TimeSpan.FromMinutes(2);
+        Assert.IsTrue(await Webs.Loads(page, () => EndRenderers(page)), "the page did not reload two minutes later");
+        clock.Now += TimeSpan.FromSeconds(30);
+        await EndRenderers(page);
+
+        await Views.Until(() => session.Failure is not null, "the window did not stop after two ends within a minute", Webs.Patience);
+        Assert.AreEqual("The page stopped working.", session.Failure);
+        Assert.IsFalse(session.PageClosed);
+    }
+
+    // WebView2 closes every page with its browser process, and a page of its own brings the window back where it was.
+    [UITestMethod]
+    public async Task APageWhoseBrowserProcessEndsComesBackInANewOne()
+    {
+        await using var webs = await Webs.Make();
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs, Main));
+        var page = await webs.Page(Main.Store);
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
+        var chat = $"{WebEnvironment.FixtureScheme}://chatgpt.com/chat/fixture";
+        Assert.IsTrue(await Webs.Loads(page, chat), "the chat did not load");
+
+        using (var browser = Process.GetProcessById((int)page.BrowserProcessId))
+        {
+            browser.Kill();
+        }
+
+        await Views.Until(() => session.PageClosed, "the session did not see its page closed", Webs.Patience);
+        Assert.AreEqual("The page stopped working.", session.Failure);
+        Assert.IsTrue(await Task.WhenAny(webs.Exited, Task.Delay(Webs.Patience)) == webs.Exited, "the browser process did not exit");
+        var again = await webs.Page(Main.Store);
+        Assert.IsTrue(
+            await Webs.Loads(again, () =>
+            {
+                session.Recover(again);
+                return Task.CompletedTask;
+            }),
+            "the new page did not load");
+        Assert.AreEqual(chat, again.Source);
+        Assert.IsNull(session.Failure);
+        Assert.IsFalse(session.PageClosed);
+    }
+
+    // As a crash ends them: every render process of the test's browser process, this page's among them.
+    private static Task EndRenderers(CoreWebView2 page)
+    {
+        foreach (var renderer in page.Environment.GetProcessInfos().Where(info => info.Kind == CoreWebView2ProcessKind.Renderer))
+        {
+            using var process = Process.GetProcessById(renderer.ProcessId);
+            process.Kill();
+        }
+
+        return Task.CompletedTask;
     }
 
     // Each profile's data comes from the stand-in, which only a page outside any session can load.

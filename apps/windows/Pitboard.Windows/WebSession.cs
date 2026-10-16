@@ -26,6 +26,7 @@ public interface ISessionWindow
 // the policy of the account's site in its role.
 public sealed class WebSession
 {
+    private readonly NavigationPolicy _policy;
     private readonly WebEnvironment _web;
     private readonly Downloads _downloads;
     private readonly ISessionWindow _window;
@@ -34,11 +35,12 @@ public sealed class WebSession
     private CoreWebView2? _page;
     private ulong _loaded;
     private string _first;
+    private string? _shown;
 
     public WebSession(OpenWindow open, WebEnvironment web, Downloads downloads, ISessionWindow window, TimeProvider? time = null)
     {
         Account = open.Account;
-        Policy = web.Policy(open.Account.Site);
+        _policy = web.Policy(open.Account.Site);
         Note = open.Note;
         _web = web;
         _downloads = downloads;
@@ -50,12 +52,13 @@ public sealed class WebSession
 
     public WindowAccount Account { get; private set; }
 
-    public NavigationPolicy Policy { get; }
-
     public WindowNoteKind? Note { get; private set; }
 
-    // Why the page is not shown, after its content stopped twice within a minute.
+    // Why the page is not shown, after its content stopped twice within a minute or its browser process ended.
     public string? Failure { get; private set; }
+
+    // WebView2 closed the page with its browser process, and only a new page shows the window again.
+    public bool PageClosed { get; private set; }
 
     // The window's page, which loads the page the session starts at.
     public void Attach(CoreWebView2 page)
@@ -63,8 +66,22 @@ public sealed class WebSession
         _page = page;
         Prepare(page, PageRole.Window);
         _web.Serve(page);
-        page.SourceChanged += (sender, _) => _window.Shown(sender.Source);
+        page.SourceChanged += (sender, _) =>
+        {
+            _shown = sender.Source;
+            _window.Shown(sender.Source);
+        };
         page.Navigate(_first);
+    }
+
+    // A page of its own in place of one its browser process took, at the page the window was on.
+    public void Recover(CoreWebView2 page)
+    {
+        Failure = null;
+        PageClosed = false;
+        _first = _shown ?? _first;
+        _window.Changed();
+        Attach(page);
     }
 
     // A rename retitles the window and keeps everything else.
@@ -125,7 +142,8 @@ public sealed class WebSession
     {
         Note = PitboardFfiMethods.OpeningNote(storeMadeBefore: false);
         Failure = null;
-        _first = PitboardFfiMethods.WindowHome(Policy);
+        PageClosed = false;
+        _first = PitboardFfiMethods.WindowHome(_policy);
         _window.Changed();
         Attach(page);
     }
@@ -162,8 +180,8 @@ public sealed class WebSession
 
     private void Navigating(PageRole role, CoreWebView2 page, CoreWebView2NavigationStartingEventArgs args, bool frame)
     {
-        var request = PageRequests.Navigation(Policy, role, args.Uri, frame, args.IsUserInitiated, frame ? null : page.Source);
-        switch (PitboardFfiMethods.DecideNavigation(Policy, role, request))
+        var request = PageRequests.Navigation(_policy, role, args.Uri, frame, args.IsUserInitiated, frame ? null : page.Source);
+        switch (PitboardFfiMethods.DecideNavigation(_policy, role, request))
         {
             case NavigationDecision.Load or NavigationDecision.LoadInPage or NavigationDecision.Popup:
                 return;
@@ -187,10 +205,10 @@ public sealed class WebSession
     {
         var source = args.OriginalSourceFrameInfo;
         var request = PageRequests.NewWindow(
-            Policy, role, args.Uri, args.IsUserInitiated, source?.Source,
+            _policy, role, args.Uri, args.IsUserInitiated, source?.Source,
             mainFrame: source?.FrameKind == CoreWebView2FrameKind.MainFrame);
         args.Handled = true;
-        switch (PitboardFfiMethods.DecideNavigation(Policy, role, request))
+        switch (PitboardFfiMethods.DecideNavigation(_policy, role, request))
         {
             case NavigationDecision.Popup:
                 var deferral = args.GetDeferral();
@@ -230,7 +248,7 @@ public sealed class WebSession
     {
         var operation = args.DownloadOperation;
         var facts = PageRequests.Download(operation.Uri, operation.ContentDisposition, navigations.MainFrame(operation.Uri));
-        if (PitboardFfiMethods.DecideResponse(Policy, role, facts) is ResponseDecision.Download saving)
+        if (PitboardFfiMethods.DecideResponse(_policy, role, facts) is ResponseDecision.Download saving)
         {
             await _downloads.Start(Account.Store, args, saving.Ask, _window.AllowDownload);
         }
@@ -256,25 +274,39 @@ public sealed class WebSession
         }
     }
 
+    // An unresponsive render process is reported every few seconds until it answers, and is left to answer.
     private void ProcessFailed(PageRole role, CoreWebView2 page, CoreWebView2ProcessFailedEventArgs args)
     {
-        if (args.ProcessFailedKind is not (CoreWebView2ProcessFailedKind.RenderProcessExited
-            or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive))
-        {
-            return;
-        }
-
         var now = _time.GetUtcNow();
-        double? last = _lastEnded.TryGetValue(role, out var ended) ? Seconds(ended) : null;
-        _lastEnded[role] = now;
-        switch (PitboardFfiMethods.AfterContentProcessEnded(last, Seconds(now)))
+        switch (args.ProcessFailedKind)
         {
-            case ProcessEnded.Reload:
-                page.Reload();
+            case CoreWebView2ProcessFailedKind.RenderProcessExited:
+                double? last = _lastEnded.TryGetValue(role, out var ended) ? Seconds(ended) : null;
+                _lastEnded[role] = now;
+                switch (PitboardFfiMethods.AfterContentProcessEnded(last, Seconds(now)))
+                {
+                    case ProcessEnded.Reload:
+                        page.Reload();
+                        break;
+                    case ProcessEnded.Stopped stopped when role == PageRole.Window:
+                        Failure = stopped.Reason;
+                        _window.Changed();
+                        break;
+                }
+
                 break;
-            case ProcessEnded.Stopped stopped when role == PageRole.Window:
-                Failure = stopped.Reason;
+            case CoreWebView2ProcessFailedKind.BrowserProcessExited when role == PageRole.Window:
+                // Said as a second end within the minute: no reload brings back a page WebView2 has closed.
+                if (PitboardFfiMethods.AfterContentProcessEnded(Seconds(now), Seconds(now)) is ProcessEnded.Stopped closed)
+                {
+                    Failure = closed.Reason;
+                }
+
+                PageClosed = true;
                 _window.Changed();
+                break;
+            case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+                _window.CloseSignIn();
                 break;
         }
     }
