@@ -618,10 +618,10 @@ fn tree(dir: &std::path::Path) -> std::collections::BTreeMap<std::path::PathBuf,
 /// The schedule's job runs `pitboard renew --scheduled` on Linux, where Pitboard does not
 /// rely on what systemd passes a job, and such a run renews the default home,
 /// `~/.pitboard`, whatever `PITBOARD_HOME` says: a folder elsewhere, empty, or relative,
-/// which every other command refuses. The job is given a `HOME` of the test's own, so its
-/// default home is a folder of the test's, and is run from the test's own folder, so a
-/// relative one followed would show. The same run without the marker renews the home
-/// `PITBOARD_HOME` names, as it did.
+/// which every other command refuses. The job is given a home of the test's own, `HOME` or
+/// on Windows `USERPROFILE`, so its default home is a folder of the test's, and is run from
+/// the test's own folder, so a relative one followed would show. The same run without the
+/// marker renews the home `PITBOARD_HOME` names, as it did.
 #[test]
 fn a_scheduled_renewal_renews_the_default_home_whatever_pitboard_home_says() {
     let mut env = two_accounts("renew-scheduled");
@@ -638,14 +638,18 @@ fn a_scheduled_renewal_renews_the_default_home_whatever_pitboard_home_says() {
     let home = env.root.join("home");
     std::fs::create_dir_all(&home).expect("a home of the test's own");
     let state = env.state();
+    let default_home = match pitboard_core::host::OS {
+        pitboard_core::host::Os::Windows => home.join("AppData").join("Local").join("Pitboard"),
+        _ => home.join(".pitboard"),
+    };
 
     let elsewhere = env.root.join("pitboard");
     for pitboard_home in [elsewhere.as_os_str(), "".as_ref(), "relative".as_ref()] {
         let at = format!("PITBOARD_HOME={pitboard_home:?}");
-        let _ = std::fs::remove_dir_all(home.join(".pitboard"));
+        let _ = std::fs::remove_dir_all(&default_home);
         let out = env
             .command(&["renew", "--scheduled", "--json"])
-            .env("HOME", &home)
+            .env(pitboard_core::host::OS.home_variable(), &home)
             .env("PITBOARD_HOME", pitboard_home)
             .current_dir(&env.root)
             .output()
@@ -655,7 +659,7 @@ fn a_scheduled_renewal_renews_the_default_home_whatever_pitboard_home_says() {
         assert_eq!(ran["command"], "renew", "{at}");
         assert_eq!(ran["data"]["renewed"], 0, "{at}: {ran}");
         assert!(
-            home.join(".pitboard").is_dir(),
+            default_home.is_dir(),
             "{at}: the run was the default home's"
         );
     }
@@ -749,11 +753,12 @@ fn enrolling_by_sign_in_under_sudo_announces_no_sign_in() {
     assert!(tree(&env.root) == before, "nothing is written");
 }
 
-/// With `HOME` empty or relative, every command but the two that print a generated file is
-/// refused in its own envelope with `home_not_absolute`, before it reads or writes anything,
-/// and `doctor` fails its `homes` check and checks nothing else. Pitboard took the home to
-/// be under the folder it ran in, and `status` read each tool's default folder there. Run
-/// from the test's own folder, so anything written that way would show.
+/// With `HOME`, or on Windows `USERPROFILE`, empty or relative, every command but the two
+/// that print a generated file is refused in its own envelope with `home_not_absolute`,
+/// before it reads or writes anything, and `doctor` fails its `homes` check and checks
+/// nothing else. Pitboard took the home to be under the folder it ran in, and `status` read
+/// each tool's default folder there. Run from the test's own folder, so anything written that
+/// way would show.
 ///
 /// `schedule install` is not run here. It is the one command that would ask the system's
 /// service manager, the person's own launchd or systemd, were it let through: launchd finds
@@ -784,16 +789,21 @@ fn every_command_refuses_a_home_that_is_not_a_full_path() {
         (&["statusline"], "statusline"),
         (&["uninstall", "--yes"], "uninstall"),
     ];
+    let variable = pitboard_core::host::OS.home_variable();
     let run = |args: &[&str], home: &str| {
         env.command(&[args, &["--json"]].concat())
-            .env("HOME", home)
+            .env(variable, home)
             .current_dir(&env.root)
             .output()
             .expect("run Pitboard")
     };
     for home in ["", "relative"] {
         let out = run(&["doctor"], home);
-        assert_eq!(out.status.code(), Some(3), "HOME={home:?} pitboard doctor");
+        assert_eq!(
+            out.status.code(),
+            Some(3),
+            "{variable}={home:?} pitboard doctor"
+        );
         let diagnosed = envelope(&String::from_utf8_lossy(&out.stdout));
         assert_eq!(diagnosed["error"]["code"], "checks_failed");
         let checks = diagnosed["data"]["checks"].as_array().expect("its checks");
@@ -803,7 +813,7 @@ fn every_command_refuses_a_home_that_is_not_a_full_path() {
     }
     for home in ["", "relative"] {
         for (args, command) in commands {
-            let at = format!("HOME={home:?} pitboard {}", args.join(" "));
+            let at = format!("{variable}={home:?} pitboard {}", args.join(" "));
             let out = run(args, home);
             assert_eq!(out.status.code(), Some(1), "{at}");
             let refused = envelope(&String::from_utf8_lossy(&out.stdout));
@@ -812,7 +822,7 @@ fn every_command_refuses_a_home_that_is_not_a_full_path() {
             assert!(
                 refused["error"]["message"]
                     .as_str()
-                    .is_some_and(|said| said.starts_with("HOME is ")),
+                    .is_some_and(|said| said.starts_with(&format!("{variable} is "))),
                 "{at}: {refused}"
             );
         }
@@ -822,7 +832,7 @@ fn every_command_refuses_a_home_that_is_not_a_full_path() {
 
     let out = env
         .command(&["completions", "bash"])
-        .env("HOME", "")
+        .env(variable, "")
         .current_dir(&env.root)
         .output()
         .expect("run Pitboard");

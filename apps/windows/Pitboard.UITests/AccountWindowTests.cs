@@ -72,8 +72,10 @@ public sealed class AccountWindowTests
 
         window.Close();
 
-        Assert.IsFalse(Retry.WhileTrue(() => Windows(launched, "main") > 0, TimeSpan.FromSeconds(10)).Result, "the account's window stayed");
-        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), "the sign-in window stayed");
+        Assert.IsFalse(
+            Retry.WhileTrue(() => Windows(launched, "main") > 0, TimeSpan.FromSeconds(10), ignoreException: true).Result,
+            $"the account's window stayed: {launched.Shown()}");
+        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), $"the sign-in window stayed: {launched.Shown()}");
     }
 
     [TestMethod]
@@ -104,7 +106,8 @@ public sealed class AccountWindowTests
             () => Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)),
             TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(listed, "WebView2's download list does not name notes.txt");
-        Assert.IsNotNull(Launched.Pressable(window, "Show in folder"), "WebView2's download list offers no Show in folder");
+        Assert.IsNotNull(
+            Launched.Pressable(window, "Show in folder"), $"WebView2's download list offers no Show in folder: {Launched.Pressables(window)}");
     }
 
     [TestMethod]

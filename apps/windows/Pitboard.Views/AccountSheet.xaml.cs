@@ -30,6 +30,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     private string[]? _lines;
     private ulong? _failureShown;
     private string? _announced;
+    private bool _told;
 
     public AccountSheet(AppModel model, string key, Action<Uri> open)
     {
@@ -49,8 +50,18 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     // The model has let it go, or put up another: it goes however it is asked to.
     public void Withdraw() => _withdrawn.Cancel();
 
-    // What closing it tells the model, once it has gone.
-    public IReadOnlyList<Intent> Dismissed() => _page?.Closed() ?? [new Intent.CloseSheet()];
+    // What closing it tells the model, once: as it starts to go, so a sheet asked for meanwhile reaches a model that has
+    // heard, rather than one still running the sign-in it held.
+    public IReadOnlyList<Intent> Dismissed()
+    {
+        if (_told)
+        {
+            return [];
+        }
+
+        _told = true;
+        return _page?.Closed() ?? [new Intent.CloseSheet()];
+    }
 
     public void Dispose()
     {
@@ -383,9 +394,20 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
 
     private void OnClosing(ContentDialog sender, ContentDialogClosingEventArgs args)
     {
-        if (!_withdrawn.IsCancellationRequested && _page is { Closable: false })
+        if (_withdrawn.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (_page is { Closable: false })
         {
             args.Cancel = true;
+            return;
+        }
+
+        foreach (var intent in Dismissed())
+        {
+            _model.Send(intent);
         }
     }
 

@@ -18,12 +18,17 @@ internal sealed class StandInModel(Snapshot first) : IPitboardModel
         }
     }
 
+    // Called with each intent as it is sent, on the sender's thread.
+    public Action<Intent>? Told { get; set; }
+
     public void Send(Intent intent)
     {
         lock (_sent)
         {
             _sent.Add(intent);
         }
+
+        Told?.Invoke(intent);
     }
 
     public void Shutdown()

@@ -40,7 +40,12 @@ impl RawStore for PlainFile {
 
     fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
         let path = &self.path;
-        atomic::write(permit, path, contents.as_bytes(), atomic::Perms::Secret)
+        // Windows keeps the access list the tool's file has (`fs::copy_access`).
+        let perms = match crate::host::OS {
+            crate::host::Os::MacOs | crate::host::Os::Linux => atomic::Perms::Secret,
+            crate::host::Os::Windows => atomic::Perms::MatchExisting,
+        };
+        atomic::write(permit, path, contents.as_bytes(), perms)
             .map_err(|e| Error::Write(format!("cannot write {}: {e}", path.display())))?;
         match self.read(service)? {
             Some(back) if back == contents => Ok(()),

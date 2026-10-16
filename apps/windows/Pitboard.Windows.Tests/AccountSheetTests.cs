@@ -198,6 +198,28 @@ public sealed class AccountSheetTests
         CollectionAssert.AreEqual(new Intent[] { new Intent.CancelSignIn(), new Intent.CloseSheet() }, up.Model.Sent.ToArray());
     }
 
+    // As it starts to go: a sheet asked for while it goes would otherwise be refused for the sign-in the model still runs.
+    [UITestMethod]
+    public async Task ClosingASignInTellsTheModelAsTheSheetStartsToGo()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("codex"),
+            SigningInText = Items.SigningIn("Codex"),
+        });
+        var upWhenTold = new List<bool>();
+        up.Model.Told = _ => upWhenTold.Add(up.Dialogs.Open is not null);
+
+        Views.Press(up.Part("CloseButton"));
+
+        await Views.Until(() => up.Model.Sent.Count == 2, "the model was not told");
+        CollectionAssert.AreEqual(new Intent[] { new Intent.CancelSignIn(), new Intent.CloseSheet() }, up.Model.Sent.ToArray());
+        CollectionAssert.AreEqual(new[] { true, true }, upWhenTold, "the model heard once the sheet had gone");
+        await Views.Until(() => up.Dialogs.Open is null, "the sheet stayed up");
+    }
+
     // A name being saved cannot be withdrawn, so nothing in the sheet can be pressed and it stays up.
     [UITestMethod]
     public async Task ASheetSavingANameCannotBeClosed()
