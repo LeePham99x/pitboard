@@ -55,7 +55,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
       which store Codex keeps its login in from every layer of configuration Codex reads
       outside a project, in Codex's order, for a switch and for a sign-in.
       `provider/printed.rs` reads what a tool printed as a terminal does: the text it shows,
-      and where each hyperlink goes.
+      and where each hyperlink goes. Behind npm's `.cmd` shim, `provider::command` starts
+      the program the shim would: the `claude.exe` it names, or the `codex.exe` its
+      `codex.js` starts, with what that sets, and the `.cmd` itself only where neither is
+      there.
     - Claude Desktop keeps items of Claude's data folder and keys of its settings file, and
       `desktop` implements the `Folder` trait in `provider/folder.rs`. Its files say where
       the data folder is (`paths.rs`), which first-level entries are an account's
@@ -64,46 +67,63 @@ window loads its site, and whatever the site's pages load, as a browser would.
       reads no keychain item, decrypts nothing and sends no request. A person signs in
       inside Claude, and no usage of a Claude Desktop account is read.
   - `holder.rs`: what keeps a tool's login in memory while it runs, told apart by where
-    its program runs from. A switch's warning, `doctor` and the app's offer to quit an app
-    all read it, so they cannot disagree.
+    its program runs from, or on Windows by the package it runs in. A switch's warning,
+    `doctor` and the app's offer to quit an app all read it, so they cannot disagree.
   - `host/`: the machine, behind one seam. The `Host` trait is what a test replaces: the
-    system's store of secrets, files, the vault, this user's processes, each with its parent
-    (`listing`), a Chromium cookie jar's rows, read only (`cookies`), an app bundle's
-    version and identifier (`app_version`, `app_id`), the scheduler, whether this process
-    runs as the person (`elevation`), whether the system is one Pitboard changes things on
-    by its version (`floor`, `host::Floor`), and what an administrator set for a program
-    outside every home (`administered_file`, and `managed_preference`, which
-    `macos/preferences.rs` reads), reached through `Context` and faked by `host/memory.rs`,
-    which plays every answer. In a build for tests the real hosts read nothing an
-    administrator set (`host/administered.rs`) and no app installed on the machine. `fs`,
-    `proc` and `user` are plain functions for what the system does whoever asks: private
-    files and directories, every other change to the disk, whether a process is alive, a
-    program run with a ceiling (`proc::run_within`), the login name, whether this process
-    runs as root, and the `PATH` the person's login shell builds, which `unix/shell.rs` asks
-    for. `fs` creates each private file itself and hands it back open (`create_private`,
-    `open_private_append` and `open_private_lock`), so how a file is made private is the
-    face's alone. A login kept as files moves through four more: `fs::private_dir` says
-    whether a folder is this user's own and closed to others, `fs::lock_dir` takes a
-    folder's advisory lock without waiting, `fs::same_volume` says whether two paths can be
-    renamed between, and `fs::move_new` is the kernel's rename that never replaces what is
-    there, the one way an item of a Claude Desktop login moves. `fs::testing`, in a build
-    for tests, is how a test or a fixture sets a file's access or makes a link; other crates
-    reach it as `pitboard_core::testing::fs`. `program.rs` finds a program the way the
-    system's launcher does. `mod.rs` chooses the system, once: `macos/` (the keychain
-    through `security`, `ps`, a cookie jar through the system's SQLite in `sqlite.rs`, a
-    bundle's `Info.plist` in `bundle.rs`, launchd) or `linux/` (`/proc`, systemd), each with
-    what `unix/` holds for both, or `windows/`. Linux and Windows refuse Claude Desktop's
-    data folder before anything else is asked, so neither face lists processes with their
-    parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
-    is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, none of the four calls that move
-    Claude Desktop's data folder, and no program found. What it does read is this process's
-    token, through windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of
-    and whose `TokenUser` is the person's SID, the account's own folders
-    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
-    type), which a build for tests answers nothing from, and the build `RtlGetVersion`
-    gives, which `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and
-    Windows Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    system's store of secrets, files, the vault, this user's processes in any session, each
+    with its parent (`listing`), a Chromium cookie jar's rows, read only (`cookies`), an app
+    bundle's version and identifier (`app_version`, `app_id`), the scheduler, whether this
+    process runs as the person (`elevation`), whether the system is one Pitboard changes
+    things on by its version (`floor`, `host::Floor`), and what an administrator set for a
+    program outside every home (`administered_file`, `administered_folder`,
+    `managed_preference`, which `macos/preferences.rs` reads, and `policy`, a value under
+    the Windows registry's `HKLM` or `HKCU`), reached through `Context` and faked by
+    `host/memory.rs`, which plays every answer. In a build for tests the real hosts read
+    nothing an administrator set (`host/administered.rs`) and no app installed on the
+    machine. `fs`, `proc` and `user` are plain functions for what the system does whoever
+    asks: private files and directories, every other change to the disk, whether a process
+    is alive, a program run with a ceiling (`proc::run_within`), the login name, whether
+    this process runs as root, and the `PATH` the person's login shell builds, which
+    `unix/shell.rs` asks for. `fs` creates each private file itself and hands it back open
+    (`create_private`, `open_private_append` and `open_private_lock`), so how a file is made
+    private is the face's alone. A login kept as files moves through four more:
+    `fs::private_dir` says whether a folder is this user's own and closed to others,
+    `fs::lock_dir` takes a folder's advisory lock without waiting, `fs::same_volume` says
+    whether two paths can be renamed between, and `fs::move_new` is the kernel's rename that
+    never replaces what is there, the one way an item of a Claude Desktop login moves.
+    `fs::testing`, in a build for tests, is how a test or a fixture sets a file's access or
+    makes a link; other crates reach it as `pitboard_core::testing::fs`. `program.rs` finds
+    a program the way the system's launcher does: on Windows each folder is tried with the
+    extensions of `PATHEXT` in its order, kept to `.exe`, `.bat` and `.cmd`, and a bare name
+    is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
+    chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
+    through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
+    launchd) or `linux/` (`/proc`, systemd), each with what `unix/` holds for both, or
+    `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
+    is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
+    `windows/` is the face that refuses whatever of Windows is not built yet: no store of
+    secrets, no scheduler, and none of the four calls that move Claude Desktop's data
+    folder. It seals each park with DPAPI under the person's own key (`windows/seal.rs`).
+    It lists processes from a Toolhelp snapshot, for their parents, and keeps this
+    account's in any session: whose each is, WTS says without opening it, a process in
+    another user's session is passed over unopened, and the rest's tokens are read
+    (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
+    since it may be any kind of holder. It finds programs as a Windows shell does, an app
+    execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
+    program started now is given from the registry, the machine's and then the person's,
+    which a build for tests reads in its own test alone. It starts a sign-in's tool
+    suspended, puts it in a job of its own that lets a program break away, as Codex starts
+    its daemons, then resumes it, so nothing it starts is outside the job
+    (`windows/job.rs`). A cancel, and a sign-in let go of unfinished, end the job's
+    `cmd.exe`, `conhost.exe`, `node.exe`, `claude.exe` and `codex.exe` and nothing else, so
+    a browser the sign-in opened keeps running. Started by a Pitboard with no console, a
+    tool gets no console window either. It also reads this process's token, through
+    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose
+    `TokenUser` is the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
+    tests answers nothing from, and the build `RtlGetVersion` gives, which
+    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
+    Server 2025. `windows/fs.rs` makes each private file and folder with a security
     descriptor from SDDL: owned by the person's SID, with a protected access list granting
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
@@ -143,11 +163,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `store/`: reading and writing logins, whichever store holds them: the chain rules, a
     file, the vault of files, the folders under `parks` and the stores in memory the tests
     use. On macOS, a parked Claude Code or Codex login is a keychain item. On Linux, it is a
-    file in the vault. A parked Claude Desktop login is Claude's own files, in a folder of
-    its own under `<pitboard home>/parks` with its manifest, its keys and its items, beside
-    the folders Pitboard set aside. `store/folder.rs` is the only code that touches
-    `parks`. It deletes a folder that holds an item only by name, for `park::FolderParks`,
-    once the folder's account is forgotten.
+    file in the vault. On Windows, it is a file in the vault sealed to the person's account,
+    `store::Backend::SealedFile`: a versioned header, then a `CryptProtectData` blob, and
+    `host/memory.rs` plays that vault on every system (`MemoryHost::sealed`). A parked
+    Claude Desktop login is Claude's own files, in a folder of its own under
+    `<pitboard home>/parks` with its manifest, its keys and its items, beside the folders
+    Pitboard set aside. `store/folder.rs` is the only code that touches `parks`. It deletes
+    a folder that holds an item only by name, for `park::FolderParks`, once the folder's
+    account is forgotten.
   - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
     `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
     uninstalling, and putting away a login Claude Code left in a file behind the keychain in
@@ -310,12 +333,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     find the program daily renewal runs. On Windows a name is one in any case, and the
     first of two spellings wins, as Windows hands a program its variables.
   - `app.rs`: what an app finds for itself that a command typed at a prompt is given: where
-    to look for each tool's program, on the login shell's `PATH` and then where the tool's
-    installers put it, which the core looks in each time it is asked, and the `pitboard` a
-    terminal would run, there and then where each way of installing Pitboard puts it, under
-    the app's home and where the system's package managers put programs. And the files an
-    app keeps of its own in Pitboard's directory, `told.json` and `app.json`, written as the
-    core writes its own and read by nothing of the core.
+    to look for each tool's program, on the login shell's `PATH`, or on Windows the
+    registry's, and then where the tool's installers put it, which the core looks in each
+    time it is asked, and the `pitboard` a terminal would run, there and then where each way
+    of installing Pitboard puts it, under the app's home or on Windows beside the app, and
+    where the system's package managers put programs, which Windows names by variables:
+    npm's `%APPDATA%\npm`, winget's `Links` and Scoop's `shims`. And the files an app keeps of
+    its own in Pitboard's directory, `told.json` and `app.json`, written as the core writes
+    its own and read by nothing of the core.
   - `api.rs`: what every request shares, the agent each context's requests go out on,
     `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
     OpenAI in `provider/codex/api.rs`.
@@ -753,7 +778,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   for every front end. The command line passes its own through `Context::from_env`. An app
   passes the one it was started with through `AppContext::discover`, which also asks the
   person's login shell for `PATH`, because an app the system started has none of a
-  shell's.
+  shell's. On Windows it reads the registry's `Path` instead, which a program already
+  running was not given after a change.
 - Three variables are also read straight from the process. `PATH` is read when a context
   made with `Context::new` was given no search path (`context.rs`), and on Linux to find
   the program daily renewal runs (`host/linux`). `NO_COLOR` is read by the status line
@@ -1203,11 +1229,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   run, as reads are. Opening at login and linking the command line onto the `PATH` with an
   administrator's password are each app's own, and once an app has linked it, it sends
   `Intent::LookForCommandLine` for the model to look for the command line again.
-- `AppControl` names an app by one string, the id the core's holder detection gives it,
-  which on macOS is its bundle id: the ChatGPT app's in `provider/codex/holders.rs`, and
-  Claude's in `provider/desktop/mod.rs` (`HOLDER`). What names an app on Windows, and so
-  what the core's holder detection gives there, is a question still open for the owner;
-  the trait takes one string so that a Windows id fits it unchanged.
+- `AppControl` names an app by one string, the id the core's holder detection gives it:
+  on macOS its bundle id, on Windows its Application User Model ID. The ChatGPT app's are
+  in `provider/codex/holders.rs`, and Claude's in `provider/desktop/mod.rs` (`HOLDER`).
 - One thread tells a `ModelListener`, so snapshots arrive in revision order, and a snapshot
   is told only where it differs from the last, and of several waiting only the newest. So a
   test waits for what a snapshot says once something is over, never to be told one in
@@ -1298,6 +1322,25 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
+- On Windows a parked login is sealed with DPAPI to the person's Windows account, never
+  kept in Credential Manager, the keyring crate or PasswordVault, and never read in the
+  clear. It is sealed in CurrentUser scope, never with `CRYPTPROTECT_LOCAL_MACHINE`, with no
+  UI, and with entropy binding a Pitboard constant to the park's name, so a file renamed onto
+  another park's does not open. A file that does not open, after an administrator resets the
+  person's password, on a profile restored on another PC, damaged, or planted as plain JSON,
+  is unreadable and never absent, and a write opens what it wrote and compares the login.
+  Sealing takes about 0.2 ms and opening 0.15 ms, so a `pitboard status` that renews a login
+  and seals its copy costs nothing a person sees. The seal keeps other Windows accounts out
+  and protects the file at rest. It does not protect against a program running as the
+  person, such as Codex's unelevated sandbox: Codex 0.162.1 builds its token with
+  `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`
+  (`codex-rs/windows-sandbox-rs/src/token.rs`), and a program started with such a token
+  unseals a park and opens its file to read or delete it, though not to write it
+  ([Windows](#windows) in Measured facts). A park copied to another PC opens
+  there only for the same person with a roaming profile, which carries the key, and
+  Pitboard's home is never in a roaming profile's roaming part. `doctor` says parks are
+  sealed, leaves them out of the logins others can read, and makes two or more that all fail
+  to open, as after a reset, one finding.
 - Pitboard takes Claude Code's write lock, the same way Claude Code takes it, before writing
   Claude Code's login. It writes the login where it already lives. A switch takes Claude
   Code's refresh lock before that, as a renewal does (the register's `refresh_lock`), and
@@ -2215,6 +2258,15 @@ DPAPI:
 - After an administrator resets the password, nothing sealed before unseals: 0x8009000B.
 - A task with the job user's interactive token, in its session, unseals what the job user
   sealed.
+- A token made from the standard user's as Codex 0.162.1 makes its unelevated sandbox's,
+  with `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`, a capability SID, the logon
+  SID and Everyone as restricting SIDs, Codex's default DACL and a desktop of its own
+  granted to the logon SID, is not elevated, at medium integrity. A program started with it
+  unseals what the user sealed, its first unseal taking 1.5 ms on windows-11-arm and 1 ms on
+  windows-2025. It opens a file whose protected DACL grants only the user, SYSTEM and
+  Administrators for read and for delete, and fails 5 opening it for write (run
+  38821312770). Without the capability SID, the default DACL and the desktop, its programs
+  started but neither exited within 30 s nor wrote a report (run 38797729796).
 
 Tasks:
 
@@ -2228,8 +2280,11 @@ Tasks:
 
 Processes and jobs:
 
-- As a standard user, WTS (any session) and Toolhelp name another user's `codex.exe` in the
-  same session, with its image path.
+- As a standard user, WTS at level 1 for any session lists every process Toolhelp does,
+  session 0's among them. It gives the SID of the user's own `codex.exe` and `Codex.EXE` and
+  of the elevated job user's `codex.exe` in the same session, and each of them opens for
+  limited queries, with its token's user and its image path, on both images (run
+  38741362483).
 - `GetProcessInformation(ProcessMachineTypeInfo)` reports an x64 program emulated on
   windows-11-arm as x64. `IsWow64Process2` gives the native machine.
 - A process a standard user starts is in a job already, and a job of its own still takes its
@@ -2246,6 +2301,17 @@ Processes and jobs:
   a process in a job, runs all its 8 to 10 processes inside that job. `TerminateJobObject`
   ends them all. Ending only the probe's processes, or letting the opener exit, leaves Edge
   running.
+
+Handing a descriptor:
+
+- An anonymous pipe's read end, handed to Bun as C runtime descriptor 3 through
+  `STARTUPINFOW.lpReserved2`, reaches it as descriptor 3. Bun's `fstat` calls it a FIFO,
+  and a direct `readSync` reads all 46 bytes handed (run 38797729796).
+- A loopback socket handed the same way is a FIFO to Bun's `fstat` too, never a socket,
+  and opening `/proc/self/fd/3` fails ENOENT. So a reader that reads the descriptor
+  directly only when `fstat` calls it a socket, and otherwise opens `/proc/self/fd/3` and
+  falls back to the direct read only on EACCES or EPERM, as Claude Code 2.1.300's does,
+  gets nothing from a pipe or a socket (run 38821312770).
 
 Credential Manager:
 
@@ -2337,17 +2403,19 @@ on 15 October 2026. W27 reviews the list.
 | An explicit ACE for the user decides what a UAC-filtered token can do with a file | [How DACLs control access](https://learn.microsoft.com/en-us/windows/win32/secauthz/how-dacls-control-access-to-an-object) | The limited token opened only a file it made. |
 | `VerQueryValueW` reads a program's version resource | [VerQueryValueW](https://learn.microsoft.com/en-us/windows/win32/api/winver/nf-winver-verqueryvaluew) | No row reads one. |
 | A running program sees a variable changed in the registry only after `WM_SETTINGCHANGE` | [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | Only a task started after `setx` was measured. |
-| WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session: the network logon saw only the same user's, from session 0. |
-| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | No row reads it. |
+| WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
+| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | Only the tests read it, of their own process. |
 | A generic credential's blob holds at most 2560 bytes | [CREDENTIALW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw) | The largest blob written was a 2400-byte piece. |
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
-| `lpReserved2` is reserved for the C runtime | [STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow) | A later runner-facts row measures the hand-over through it. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
+| `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
+| A `CryptProtectData` blob opens only for the same user's credentials on the same computer | [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) | The runners have one account per logon and one machine each. |
+| A `CryptProtectData` blob opens on another PC only with a roaming profile, whose key roams | [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) | The runners have local profiles only. |
 | winget's validation installs a package as a standard user, runs its program with no argument and wants it to succeed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md), [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No runner submits a winget manifest. |
 | winget's validation scans an installer with several antivirus engines, and Defender scans what it installed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md) | No runner submits a winget manifest. |
 | Attack surface reduction's prevalence rule (`01443614`) and ransomware rule (`c1db55ab`) can block a new, unsigned program with no reputation yet, and need cloud-delivered protection | [ASR rules reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference) | Cloud-delivered protection is off on both images, so the audit run of `pitboard.exe` saw neither rule judge it. |
@@ -2552,6 +2620,11 @@ treated, and only the macOS build shows it. The run reads both builds since.
   empty and signs in with the file, or is signed out.
 - The supervisor daemon records itself in `<config dir>/daemon.lock`, with its pid and the
   Claude Code version that started it. It leaves the file behind when it stops.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_daemon_identity`): on Windows the lock also holds `procStartFt`, the daemon's
+  creation time from `GetProcessTimes` as a decimal FILETIME, and Claude Code takes the pid
+  for the daemon only while that time is the same text. Pitboard compares it the same way,
+  so a pid Windows has reused reads as gone. The lock holds no `pidDomain`.
 - Claude Code's storage backends are `keychain`, `plaintext` and `windows-credman`, the
   last behind the `tengu_windows_credman` flag. Its code has no `libsecret`,
   `org.freedesktop.secrets`, `gnome-keyring` or `SecretService`. The Linux binary does
@@ -2614,6 +2687,38 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Homebrew cask's by a path through a Homebrew `Caskroom`. So an app with no shell's `PATH`
   looks in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, after the login
   shell's.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300, the npm
+  package of that version and winget's manifest of 2.1.292
+  (`windows_install_layout`): on Windows the native installer keeps its launcher as a
+  copy, `claude.exe` in the `.local\bin` of `HOME`, else of `os.homedir()`, put in place
+  by a rename once its checksum matches. npm's `claude.cmd` starts the package's
+  `bin\claude.exe` as it is, which postinstall links or copies from the platform's
+  package. winget's is the bare portable `claude.exe`, linked in its `Links`. So an app on
+  Windows looks in that `.local\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`
+  and `%USERPROFILE%\scoop\shims`, after the registry's `Path`, each only where its
+  variable is set.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_browser_open`, `sign_in_output`, `sign_in_takes_another_code`): on Windows
+  `claude auth login` prints its prompts whatever its output is, reads a pasted code with
+  readline and trims it, so a line ended by `\r\n` reads as one ended by `\n`, and opens
+  its page with `rundll32 url,OpenURL <address>`, a child of its own, unless its settings
+  or `BROWSER` name a program. Its store is Credential Manager where
+  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where the `.config.json` or `.claude.json`
+  of its config folder caches `tengu_windows_credman` as true, and its file otherwise. So
+  a private sign-in withholds that variable, and its fresh folder caches nothing, so the
+  login lands in that folder's `.credentials.json`.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_managed_settings`): on Windows managed settings are in `C:\Program
+  Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
+  `HKLM\SOFTWARE\Policies\ClaudeCode`, which Claude Code reads with `reg.exe query` and takes
+  over the folder unless `managedSourcesBehavior` merges them. The same value under `HKCU`
+  counts only where neither holds a policy. Pitboard reads all three through the host, and
+  the folder and `HKLM` both, so it may name an override a session would not take, never
+  miss one.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_version_resource`): `claude.exe` carries a version resource whose product
+  version is `2.1.300.0`. So doctor reads the release there on Windows, once npm's
+  `claude.cmd` is followed to the program it starts, and never runs `claude --version`.
 - Read on 6 October 2026 from the macOS, Linux and Windows builds of 2.1.289, whose code
   here is the same: the config dir is `CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")`,
   normalised to NFC, and the config file's base is `CLAUDE_CONFIG_DIR || homedir()`. So an
@@ -2809,6 +2914,20 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     the kinds apart by the directories in that path, and a bare name is a `codex` session.
   - No editor with the Codex extension was running there. Its place, a folder named
     `openai.chatgpt-<version>`, is the extension's packaged layout, not measured.
+- Read on 16 October 2026 from Codex's source at tag `rust-v0.162.1` and its win32 builds:
+  - (`codex_windows_app_server`) the background app server runs
+    `<CODEX_HOME>\packages\app-server-daemon\current\bin\codex.exe`, `current` a
+    junction Codex points at one of its releases. It is started with `DETACHED_PROCESS |
+    CREATE_BREAKAWAY_FROM_JOB`, never from an elevated terminal.
+  - (`codex_windows_app_identity`) the desktop app for Windows, ChatGPT- or Codex-branded,
+    is the package of family `OpenAI.Codex_2p2nqsd0c76g0`, its app
+    `OpenAI.Codex_2p2nqsd0c76g0!App`, and Codex tells its process by that family. So
+    Pitboard does too, wherever the package is installed. That the app runs its own
+    `codex.exe` inside the package, and what closing its windows does, waits on the
+    session's step 10.
+  - The Windows package holds `codex-command-runner.exe`, `codex-code-mode-host.exe`,
+    `codex-windows-sandbox-setup.exe`, `codex-voice-host.exe` and `rg.exe` beside
+    `codex.exe`. Only a program named `codex.exe`, in any case, is a running Codex.
 - The ID token names the account: `email`, and under `https://api.openai.com/auth`,
   `chatgpt_account_id` and `chatgpt_user_id`. A Team or Business workspace shares one
   `chatgpt_account_id`, and `chatgpt_user_id` is the person.
@@ -2848,6 +2967,29 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   Mac had left that link, read on 5 October 2026. Its macOS and Linux binaries name
   `npm install -g @openai/codex` and `brew upgrade --cask codex` as the other ways it is
   kept up to date. 0.154.0 names those too, but not the standalone package layout.
+- Read on 15 October 2026 from install.ps1 at tag `rust-v0.162.1`, the npm packages of
+  0.162.1 and winget's manifest of 0.161.0 (`codex_windows_install_places`): on Windows
+  install.ps1 makes `CODEX_INSTALL_DIR`, or `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` where
+  that is unset or white space, a junction to its `current\bin`. npm's `codex.cmd` starts
+  `bin\codex.js`, which runs the platform package's `vendor\<target>\bin\codex.exe`.
+  winget's is a nested portable `codex-<target>.exe`, linked in its `Links` as `codex`.
+- Read on 16 October 2026 from `bin/codex.js` of `@openai/codex@0.162.1`: it finds the
+  platform's package as Node finds one from its own `bin`, else uses its own `vendor`, and
+  starts `codex.exe` with its arguments and its variables, `CODEX_MANAGED_PACKAGE_ROOT`
+  set to its package's folder and `CODEX_MANAGED_BY_NPM` to `1`. So a sign-in starts that
+  `codex.exe` with the same, and no `cmd.exe` or `node.exe` runs.
+- Read on 16 October 2026 from `codex-rs/login/src/server.rs` at tag `rust-v0.162.1` and
+  webbrowser 1.2.4: `codex login` listens on 127.0.0.1:1455. Where something holds it, it
+  sends that `GET /cancel`, which ends a login server Codex left there, and falls back to
+  1457. It opens the browser with the command Windows has for `http`
+  (`AssocQueryStringW`), as a child of its own with no standard streams. So a browser that
+  was not running starts in Pitboard's job, and a `codex login` a killed Pitboard left
+  running is ended by the next one. Before a Codex sign-in on Windows, Pitboard says what
+  Codex already runs, since a sign-in open there ends too.
+- Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
+  `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
+  standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor
+  reads.
 
 ### Claude Desktop
 

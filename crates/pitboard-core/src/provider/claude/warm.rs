@@ -27,7 +27,12 @@ pub(crate) fn headless(
         provider: ProviderId::Claude,
         detail: "it has no claudeAiOauth.accessToken".into(),
     })?;
-    let mut command = run::command(ctx, permit, ProviderId::Claude, home);
+    let mut command = run::command(ctx, permit, ProviderId::Claude, home).map_err(|_| {
+        ProviderError::Unsupported {
+            provider: ProviderId::Claude,
+            reason: "Claude Code is not installed where Pitboard looks".into(),
+        }
+    })?;
     command
         .args([
             "-p",

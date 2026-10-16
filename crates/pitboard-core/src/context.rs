@@ -47,6 +47,7 @@ const READ: &[&str] = &[
     "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     "CLAUDE_CODE_HOVER_REST",
     "CODEX_HOME",
+    "CODEX_INSTALL_DIR",
     "NO_COLOR",
     "XPC_SERVICE_NAME",
     "SUDO_UID",
@@ -160,6 +161,13 @@ impl Environment {
     /// Whether `name` holds anything: empty reads as unset.
     pub(crate) fn set(&self, name: &str) -> bool {
         self.text(name).is_some_and(|v| !v.is_empty())
+    }
+
+    // The folder `name` names, whatever bytes it holds; none where it is unset or empty.
+    pub(crate) fn named_folder(&self, name: &str) -> Option<PathBuf> {
+        self.path(name)
+            .filter(|folder| !folder.is_empty())
+            .map(PathBuf::from)
     }
 
     // Set, even empty, it is the person's: `check_absolute` refuses an empty or relative one.
@@ -363,9 +371,11 @@ pub struct Context {
     /// process's own `PATH`: an app opened from Finder has almost nothing on it, so it
     /// passes the one the person's login shell would have.
     pub(crate) search_path: Option<OsString>,
-    // An app also looks where each tool's installers put its program, which a command line
-    // leaves to the shell's `PATH`.
-    pub(crate) installer_places: bool,
+    // Where each tool's installers put its program, which an app also looks in and a command
+    // line leaves to the shell's `PATH`.
+    pub(crate) installer_places: std::collections::BTreeMap<ProviderId, Vec<PathBuf>>,
+    // `PATHEXT`, which orders the names a Windows shell tries for a program.
+    pub(crate) path_ext: Option<OsString>,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -483,7 +493,8 @@ impl Context {
             one_drive: Vec::new(),
             schedule_program: None,
             search_path: None,
-            installer_places: false,
+            installer_places: std::collections::BTreeMap::new(),
+            path_ext: None,
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: false,
@@ -632,6 +643,11 @@ impl Context {
     pub fn with_search_path(mut self, path: String) -> Context {
         self.search_path = Some(path.into());
         self
+    }
+
+    // How a shell on this context's system spells a program it looks for.
+    pub(crate) fn lookup(&self) -> crate::host::program::Lookup {
+        crate::host::program::Lookup::new(self.os, self.path_ext.as_deref())
     }
 
     /// Where a tool's program is looked for: the path given, or this process's `PATH`.
@@ -836,7 +852,8 @@ impl Context {
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
-            installer_places: false,
+            installer_places: std::collections::BTreeMap::new(),
+            path_ext: env.path("PATHEXT").map(OsStr::to_os_string),
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: env.set("SUDO_UID"),

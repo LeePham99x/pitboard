@@ -14,7 +14,8 @@
 
 use crate::context::{Context, Environment};
 use crate::error::{Error, Result};
-use crate::host::{self, LoginPath, OS};
+use crate::host::{self, LoginPath, OS, Os};
+use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::{atomic, home};
 use std::ffi::OsStr;
@@ -32,9 +33,7 @@ pub struct AppContext {
     /// The login shell had not answered in time, so tools are looked for on this app's own
     /// `PATH` until it is asked again.
     pub late: bool,
-    /// Where each way of installing Pitboard puts `pitboard`, as `command_line_places` gives
-    /// them for this app's home: under it, and where the system's package managers put
-    /// programs. Looked in after the login shell's `PATH` for the one a terminal would run.
+    // Looked in after the login shell's `PATH` for the `pitboard` a terminal would run.
     pub command_line_places: Vec<PathBuf>,
 }
 
@@ -63,7 +62,7 @@ impl AppContext {
             .as_deref()
             .map(|path| {
                 std::env::split_paths(path)
-                    .filter(|dir| dir.is_absolute() && !guarded(dir, &context.home))
+                    .filter(|dir| dir.is_absolute() && !guarded(env.os(), dir, &context.home))
                     .collect()
             })
             .unwrap_or_default();
@@ -75,9 +74,12 @@ impl AppContext {
         if let Some(path) = &search_path {
             context.search_path = Some(path.into());
         }
-        context.installer_places = true;
-        context.schedule_program = app.and_then(|app| OS.app_command_line(app));
-        let command_line_places = command_line_places(&context.home);
+        context.installer_places = ProviderId::ALL
+            .iter()
+            .filter_map(|&tool| Some((tool, (tool.cli()?.install_places)(env))))
+            .collect();
+        context.schedule_program = app.and_then(|app| env.os().app_command_line(app));
+        let command_line_places = command_line_places(env, app);
         AppContext {
             context,
             search_path,
@@ -87,10 +89,8 @@ impl AppContext {
     }
 }
 
-/// Whether `dir` is inside a folder of `home` that the system asks the person about before
-/// an app may read it.
-fn guarded(dir: &Path, home: &Path) -> bool {
-    OS.guarded_folders()
+fn guarded(os: Os, dir: &Path, home: &Path) -> bool {
+    os.guarded_folders()
         .iter()
         .any(|folder| dir.starts_with(home.join(folder)))
 }
@@ -101,10 +101,7 @@ pub fn app_command_line(app: &Path) -> Option<PathBuf> {
     OS.app_command_line(app)
 }
 
-/// Whether `path` is a program this user may run, as the core judges every program it finds
-/// and the system judges one it starts: a regular file, once every link is followed, that
-/// this user may execute. An app asks this of anything it would run or link to, so it has
-/// no rule of its own.
+// So an app has no rule of its own for what it would run or link to.
 pub fn can_run(path: &Path) -> bool {
     host::proc::can_run(path)
 }
@@ -120,20 +117,31 @@ pub enum CommandLine {
     Nowhere,
 }
 
-/// Where each way of installing Pitboard puts `pitboard`, looked in after the login shell's
-/// `PATH`: `cargo install` and a copy from a release under `home`, then where the system's
-/// package managers put programs, which on a Mac is where Homebrew links the app's own and
-/// where the app links it itself, `/usr/local/bin`.
-pub fn command_line_places(home: &Path) -> Vec<PathBuf> {
-    [home.join(".cargo/bin"), home.join(".local/bin")]
-        .into_iter()
-        .chain(OS.package_bins().iter().map(PathBuf::from))
-        .collect()
+// On a Mac `/usr/local/bin` is also where Homebrew and the app itself link the app's own.
+pub fn command_line_places(env: &Environment, app: Option<&Path>) -> Vec<PathBuf> {
+    let os = env.os();
+    let own: Vec<PathBuf> = match os {
+        Os::MacOs | Os::Linux => {
+            let home = env.home();
+            vec![
+                home.join(".cargo").join("bin"),
+                home.join(".local").join("bin"),
+            ]
+        }
+        Os::Windows => env
+            .named_folder("USERPROFILE")
+            .map(|home| home.join(".cargo").join("bin"))
+            .into_iter()
+            .chain(
+                app.and_then(|app| os.app_command_line(app))
+                    .and_then(|helper| helper.parent().map(Path::to_path_buf)),
+            )
+            .collect(),
+    };
+    own.into_iter().chain(os.package_bins(env)).collect()
 }
 
-/// The first `pitboard` a terminal would run, as a terminal finds it: the first file of
-/// that name that can be run on `search_path`, in `PATH`'s form, and then in `places`. It is
-/// the app's own when, every link on the way followed, it is the command line at `helper`.
+// The app's own where, every link followed, it is the command line at `helper`.
 pub fn find_command_line(
     search_path: Option<&OsStr>,
     places: &[PathBuf],
@@ -144,7 +152,10 @@ pub fn find_command_line(
         .unwrap_or_default()
         .into_iter()
         .chain(places.iter().cloned());
-    let Some(found) = host::program::find_among(Path::new("pitboard"), dirs, host::proc::can_run)
+    // Pitboard installs only as `pitboard.exe` on Windows, so `PATHEXT` cannot change which.
+    let lookup = host::program::Lookup::here();
+    let Some(found) =
+        host::program::find_among(Path::new("pitboard"), dirs, &lookup, host::proc::can_run)
     else {
         return CommandLine::Nowhere;
     };
@@ -256,38 +267,83 @@ mod tests {
         LoginPath::Said(path.into())
     }
 
-    /// A program is found where the variable naming it outright says, then on the login
-    /// shell's `PATH`, where a version manager or an npm prefix puts it, then where its
-    /// installer does.
-    #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
-    )]
-    fn a_program_is_found_by_its_variable_then_the_login_shell_then_its_installer() {
-        let home = env(&[("HOME", "/Users/x")]);
-        let here: Vec<PathBuf> = [
-            "/Users/x/.nvm/versions/node/v22.1.0/bin/codex",
-            "/Users/x/.volta/bin/claude",
-            "/Users/x/.local/bin/codex",
-            "/Users/x/.local/bin/claude",
-            "/elsewhere/codex",
-        ]
-        .into_iter()
-        .map(PathBuf::from)
-        .collect();
-        let runnable = |path: &Path| here.iter().any(|there| there == path);
-        let program = |read: &AppContext, tool| program_among(&read.context, tool, runnable);
-        let login = "/usr/bin:bin:/Users/x/.volta/bin:/Users/x/.nvm/versions/node/v22.1.0/bin";
+    fn full(path: &str) -> PathBuf {
+        match OS {
+            Os::MacOs | Os::Linux => PathBuf::from(path),
+            Os::Windows => PathBuf::from(format!("C:{}", path.replace('/', "\\"))),
+        }
+    }
 
-        let shell = AppContext::read(&home, None, said(login));
+    fn file_of(program: &str) -> String {
+        format!("{program}{}", std::env::consts::EXE_SUFFIX)
+    }
+
+    fn program(dir: &str, name: &str) -> PathBuf {
+        full(dir).join(file_of(name))
+    }
+
+    fn search(entries: &[&str]) -> String {
+        let entries = entries.iter().map(|entry| {
+            if entry.starts_with('/') {
+                full(entry)
+            } else {
+                PathBuf::from(entry)
+            }
+        });
+        let joined = std::env::join_paths(entries).expect("a search path");
+        joined.to_string_lossy().into_owned()
+    }
+
+    // Home is `/Users/x`, with its local app data on Windows.
+    fn at_home(more: &[(&str, &str)]) -> Environment {
+        let home = full("/Users/x").to_string_lossy().into_owned();
+        let local = full("/Users/x/AppData/Local")
+            .to_string_lossy()
+            .into_owned();
+        let mut pairs = vec![("HOME", home.as_str())];
+        if OS == Os::Windows {
+            pairs.extend([
+                ("USERPROFILE", home.as_str()),
+                ("LOCALAPPDATA", local.as_str()),
+            ]);
+        }
+        pairs.extend(more.iter().copied());
+        env(&pairs)
+    }
+
+    fn installed(env: &Environment, tool: ProviderId) -> PathBuf {
+        let cli = tool.cli().expect("a command line");
+        (cli.install_places)(env)[0].join(file_of(tool.program()))
+    }
+
+    #[test]
+    fn a_program_is_found_by_its_variable_then_the_login_shell_then_its_installer() {
+        let home = at_home(&[]);
+        let elsewhere = program("/elsewhere", "codex");
+        let here: Vec<PathBuf> = vec![
+            program("/Users/x/.nvm/versions/node/v22.1.0/bin", "codex"),
+            program("/Users/x/.volta/bin", "claude"),
+            installed(&home, ProviderId::Codex),
+            installed(&home, ProviderId::Claude),
+            elsewhere.clone(),
+        ];
+        let runnable = |path: &Path| here.iter().any(|there| there == path);
+        let found = |read: &AppContext, tool| program_among(&read.context, tool, runnable);
+        let login = search(&[
+            "/usr/bin",
+            "bin",
+            "/Users/x/.volta/bin",
+            "/Users/x/.nvm/versions/node/v22.1.0/bin",
+        ]);
+
+        let shell = AppContext::read(&home, None, said(&login));
         assert_eq!(
-            program(&shell, ProviderId::Codex).as_deref(),
-            Some(Path::new("/Users/x/.nvm/versions/node/v22.1.0/bin/codex"))
+            found(&shell, ProviderId::Codex),
+            Some(program("/Users/x/.nvm/versions/node/v22.1.0/bin", "codex"))
         );
         assert_eq!(
-            program(&shell, ProviderId::Claude).as_deref(),
-            Some(Path::new("/Users/x/.volta/bin/claude"))
+            found(&shell, ProviderId::Claude),
+            Some(program("/Users/x/.volta/bin", "claude"))
         );
         assert_eq!(
             installed_among(&shell.context, runnable),
@@ -295,60 +351,60 @@ mod tests {
         );
         assert_eq!(
             shell.command_line_places,
-            command_line_places(Path::new("/Users/x")),
+            command_line_places(&home, None),
             "a terminal's installs are looked for under the app's own home"
         );
-        let looked = "/usr/bin:/Users/x/.volta/bin:/Users/x/.nvm/versions/node/v22.1.0/bin";
+        let looked = search(&[
+            "/usr/bin",
+            "/Users/x/.volta/bin",
+            "/Users/x/.nvm/versions/node/v22.1.0/bin",
+        ]);
         assert_eq!(
             shell.search_path.as_deref(),
-            Some(looked),
+            Some(looked.as_str()),
             "the core looks where the app looks"
         );
         assert_eq!(
             shell.context.search_path(),
-            looked,
+            looked.as_str(),
             "and a sign-in is given it"
         );
 
-        let named = |codex: &str| {
-            AppContext::read(
-                &env(&[("HOME", "/Users/x"), ("PITBOARD_CODEX", codex)]),
-                None,
-                said(login),
-            )
+        let named = |codex: &Path| {
+            let codex = codex.to_string_lossy();
+            AppContext::read(&at_home(&[("PITBOARD_CODEX", &codex)]), None, said(&login))
         };
         assert_eq!(
-            program(&named("/elsewhere/codex"), ProviderId::Codex).as_deref(),
-            Some(Path::new("/elsewhere/codex"))
+            found(&named(&elsewhere), ProviderId::Codex),
+            Some(elsewhere.clone())
         );
         assert_eq!(
-            program(&named("/gone/codex"), ProviderId::Codex),
+            found(&named(&program("/gone", "codex")), ProviderId::Codex),
             None,
             "a program named outright is found only where it is"
         );
 
         let empty = AppContext::read(
-            &env(&[("HOME", "/Users/x"), ("PITBOARD_CODEX", "")]),
+            &at_home(&[("PITBOARD_CODEX", "")]),
             None,
-            said("/opt/tools/bin"),
+            said(&search(&["/opt/tools/bin"])),
         );
         assert_eq!(
             program_among(&empty.context, ProviderId::Codex, |path| {
-                path == Path::new("/opt/tools/bin/codex")
-            })
-            .as_deref(),
-            Some(Path::new("/opt/tools/bin/codex")),
+                path == program("/opt/tools/bin", "codex")
+            }),
+            Some(program("/opt/tools/bin", "codex")),
             "an empty name names nothing, and the app looks as it does without one"
         );
 
         let unknown = AppContext::read(&home, None, LoginPath::Unknown);
         assert_eq!(
-            program(&unknown, ProviderId::Codex).as_deref(),
-            Some(Path::new("/Users/x/.local/bin/codex"))
+            found(&unknown, ProviderId::Codex),
+            Some(installed(&home, ProviderId::Codex))
         );
         assert_eq!(
-            program(&unknown, ProviderId::Claude).as_deref(),
-            Some(Path::new("/Users/x/.local/bin/claude"))
+            found(&unknown, ProviderId::Claude),
+            Some(installed(&home, ProviderId::Claude))
         );
         assert_eq!(
             unknown.search_path, None,
@@ -365,22 +421,22 @@ mod tests {
 
     // A program installed after the app started is found the next time it is looked for.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
-    )]
     fn a_program_installed_since_the_app_started_is_found() {
         let scratch =
             std::env::temp_dir().join(format!("pitboard-app-installed-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
-        let bin = scratch.join(".local/bin");
-        std::fs::create_dir_all(&bin).unwrap();
         let home = scratch.to_string_lossy().into_owned();
-        let read = AppContext::read(&env(&[("HOME", &home)]), None, said("/nowhere"));
+        let given = env(&[
+            ("HOME", &home),
+            ("USERPROFILE", &home),
+            ("LOCALAPPDATA", &home),
+        ]);
+        let read = AppContext::read(&given, None, said(&search(&["/nowhere"])));
         let pitboard = crate::service::Pitboard::new(read.context);
         assert!(!pitboard.installed().contains(&ProviderId::Codex));
 
-        let codex = bin.join("codex");
+        let codex = installed(&given, ProviderId::Codex);
+        std::fs::create_dir_all(codex.parent().expect("its folder")).unwrap();
         std::fs::write(&codex, "#!/bin/sh\n").unwrap();
         testing::make_runnable(&codex).expect("runnable");
         assert!(pitboard.installed().contains(&ProviderId::Codex));
@@ -389,28 +445,23 @@ mod tests {
 
     // On a volume that ignores case `Claude` would find Claude Code's `claude`.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
-    )]
     fn a_tool_with_no_command_line_is_never_looked_for_on_the_search_path() {
         let looked = RefCell::new(Vec::new());
+        let stem = |path: &Path| path.file_stem().and_then(OsStr::to_str).map(str::to_owned);
         let read = AppContext::read(
-            &env(&[("HOME", "/Users/x")]),
+            &at_home(&[]),
             None,
-            said("/usr/bin:/Users/x/bin"),
+            said(&search(&["/usr/bin", "/Users/x/bin"])),
         );
         let found = installed_among(&read.context, |path| {
             looked.borrow_mut().push(path.to_path_buf());
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .is_some_and(|name| name.eq_ignore_ascii_case("claude"))
+            stem(path).is_some_and(|name| name.eq_ignore_ascii_case("claude"))
         });
         assert!(
             looked
                 .borrow()
                 .iter()
-                .all(|path| path.file_name() != Some(OsStr::new("Claude"))),
+                .all(|path| stem(path).as_deref() != Some("Claude")),
             "{looked:?}"
         );
         assert_eq!(found, [ProviderId::Claude]);
@@ -443,31 +494,88 @@ mod tests {
         std::fs::remove_dir_all(&scratch).unwrap();
     }
 
-    /// The installers' places come after the login shell's `PATH`, in the order each tool
-    /// says, and every tool's own installer goes first.
     #[test]
     fn each_tool_is_looked_for_where_its_installers_put_it() {
-        let home = Path::new("/Users/x");
-        for (tool, cli) in ProviderId::ALL
-            .iter()
-            .filter_map(|&tool| tool.cli().map(|cli| (tool, cli)))
-        {
-            let places = (cli.install_places)(home);
-            assert_eq!(places.first(), Some(&home.join(".local/bin")), "{tool}");
-            let after: Vec<&Path> = places[1..].iter().map(PathBuf::as_path).collect();
-            let expected: Vec<&Path> = OS.package_bins().iter().map(Path::new).collect();
-            assert_eq!(after, expected, "{tool}");
+        let places = |os: Os, pairs: &[(&str, &str)], tool: ProviderId| {
+            let cli = tool.cli().expect("a command line");
+            (cli.install_places)(&Environment::on(os, pairs.iter().copied()))
+        };
+        let under = |root: &str, parts: &[&str]| {
+            let mut place = PathBuf::from(root);
+            place.extend(parts);
+            place
+        };
+        let mac = [("HOME", "/Users/x")];
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            assert_eq!(
+                places(Os::MacOs, &mac, tool),
+                [
+                    under("/Users/x", &[".local", "bin"]),
+                    "/opt/homebrew/bin".into(),
+                    "/usr/local/bin".into()
+                ],
+                "Homebrew on Apple silicon and on Intel: {tool}"
+            );
+            assert_eq!(
+                places(Os::Linux, &[("HOME", "/home/x")], tool),
+                [under("/home/x", &[".local", "bin"])],
+                "{tool}"
+            );
         }
-        match OS {
-            Os::MacOs => assert_eq!(
-                OS.package_bins(),
-                ["/opt/homebrew/bin", "/usr/local/bin"],
-                "Homebrew on Apple silicon and on Intel"
+
+        let windows = [
+            ("USERPROFILE", "C:/Users/x"),
+            ("APPDATA", "C:/Users/x/AppData/Roaming"),
+            ("LOCALAPPDATA", "C:/Users/x/AppData/Local"),
+        ];
+        let managers = [
+            under("C:/Users/x/AppData/Roaming", &["npm"]),
+            under(
+                "C:/Users/x/AppData/Local",
+                &["Microsoft", "WinGet", "Links"],
             ),
-            Os::Linux => assert!(OS.package_bins().is_empty()),
-            // Until W17 reads where winget, Scoop and npm put programs.
-            Os::Windows => assert!(OS.package_bins().is_empty()),
+            under("C:/Users/x", &["scoop", "shims"]),
+        ];
+        let claude_launcher = under("C:/Users/x", &[".local", "bin"]);
+        let mut expected = vec![claude_launcher];
+        expected.extend(managers.clone());
+        assert_eq!(places(Os::Windows, &windows, ProviderId::Claude), expected);
+        let git_bash = [&windows[..], &[("HOME", "C:/Users/x/home")]].concat();
+        assert_eq!(
+            places(Os::Windows, &git_bash, ProviderId::Claude)[0],
+            under("C:/Users/x/home", &[".local", "bin"]),
+            "Claude Code's launcher is in `HOME ?? USERPROFILE`"
+        );
+        let mut expected = vec![under(
+            "C:/Users/x/AppData/Local",
+            &["Programs", "OpenAI", "Codex", "bin"],
+        )];
+        expected.extend(managers.clone());
+        assert_eq!(places(Os::Windows, &windows, ProviderId::Codex), expected);
+        let moved = [&windows[..], &[("CODEX_INSTALL_DIR", "D:/tools/codex")]].concat();
+        assert_eq!(
+            places(Os::Windows, &moved, ProviderId::Codex)[0],
+            PathBuf::from("D:/tools/codex")
+        );
+        let blank = [&windows[..], &[("CODEX_INSTALL_DIR", "  ")]].concat();
+        assert_eq!(places(Os::Windows, &blank, ProviderId::Codex), expected);
+
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            assert_eq!(
+                places(Os::Windows, &[], tool),
+                Vec::<PathBuf>::new(),
+                "a place whose variable is unset is no place: {tool}"
+            );
         }
+        assert_eq!(
+            places(
+                Os::Windows,
+                &[("APPDATA", ""), ("LOCALAPPDATA", "C:/L")],
+                ProviderId::Claude
+            ),
+            [under("C:/L", &["Microsoft", "WinGet", "Links"])],
+            "nor is one whose variable is empty"
+        );
     }
 
     /// An app reads every variable the command line reads, the same way, so a custom OAuth
@@ -527,19 +635,14 @@ mod tests {
         assert!(allowed(Some("0")));
     }
 
-    /// A relative entry on the login shell's `PATH` names a directory relative to wherever
-    /// the shell was, which is not where this app is, so it is not looked in.
+    // It names a folder relative to wherever the shell was, which is not where this app is.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
-    )]
     fn a_relative_entry_is_not_looked_in() {
         let looked = RefCell::new(Vec::new());
         let read = AppContext::read(
-            &env(&[("HOME", "/Users/x")]),
+            &at_home(&[]),
             None,
-            said("bin:./node_modules/.bin:/usr/bin"),
+            said(&search(&["bin", "./node_modules/.bin", "/usr/bin"])),
         );
         installed_among(&read.context, |path| {
             looked.borrow_mut().push(path.to_path_buf());
@@ -547,18 +650,11 @@ mod tests {
         });
         let looked = looked.into_inner();
         assert!(looked.iter().all(|path| path.is_absolute()), "{looked:?}");
-        assert_eq!(looked.first(), Some(&PathBuf::from("/usr/bin/claude")));
+        assert_eq!(looked.first(), Some(&program("/usr/bin", "claude")));
     }
 
-    /// A folder macOS guards, such as Documents or iCloud Drive, is not looked in, and is not
-    /// where the core looks or what a sign-in is given: looking there asks the person whether
-    /// Pitboard may, and a program started from there would have it asked on its behalf.
-    /// Linux guards none.
+    // Looking in one asks the person whether Pitboard may, as a program started there would.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
-    )]
     fn a_guarded_folder_on_the_path_is_not_looked_in() {
         let entries = [
             "/Users/x/Documents/bin",
@@ -569,12 +665,9 @@ mod tests {
             "/Users/x/Documentsbin",
             "/usr/bin",
         ];
+        let home = at_home(&[]);
         let looked = RefCell::new(Vec::new());
-        let read = AppContext::read(
-            &env(&[("HOME", "/Users/x")]),
-            None,
-            said(&entries.join(":")),
-        );
+        let read = AppContext::read(&home, None, said(&search(&entries)));
         installed_among(&read.context, |path| {
             looked.borrow_mut().push(path.to_path_buf());
             false
@@ -582,66 +675,78 @@ mod tests {
         let looked = looked.into_inner();
         let kept: &[&str] = match OS {
             Os::MacOs => &["/Users/x/Documentsbin", "/usr/bin"],
-            // Neither passes over a folder: Linux asks nothing, and which folders Windows
-            // asks about, if any, W17 reads.
             Os::Linux | Os::Windows => &entries,
         };
-        let places = (ProviderId::Claude
-            .cli()
-            .expect("Claude Code has a command line")
-            .install_places)(Path::new("/Users/x"));
-        let claude: Vec<PathBuf> = kept
-            .iter()
-            .map(PathBuf::from)
-            .chain(places)
-            .map(|dir| dir.join("claude"))
-            .collect();
+        let lookup = read.context.lookup();
+        let each = |tool: ProviderId| -> Vec<PathBuf> {
+            let cli = tool.cli().expect("a command line");
+            kept.iter()
+                .map(|entry| full(entry))
+                .chain((cli.install_places)(&home))
+                .flat_map(|dir| lookup.spellings(&dir.join(tool.program())))
+                .collect()
+        };
+        let (claude, codex) = (each(ProviderId::Claude), each(ProviderId::Codex));
         assert_eq!(looked[..claude.len()], claude[..], "{looked:?}");
-        assert_eq!(
-            looked.len(),
-            2 * claude.len(),
-            "the same places for each tool: {looked:?}"
-        );
-        assert_eq!(read.search_path.as_deref(), Some(kept.join(":").as_str()));
+        assert_eq!(looked[claude.len()..], codex[..], "{looked:?}");
+        assert_eq!(read.search_path.as_deref(), Some(search(kept).as_str()));
     }
 
-    /// The renewal schedule runs the command line inside the app, since the app has no
-    /// renewal of its own. Anything not running from an app bundle names none, which means it
-    /// cannot schedule renewal: the only other thing to schedule is the app itself.
+    // The app has no renewal of its own, so anything else names none and cannot schedule it.
     #[test]
     fn the_schedule_runs_the_command_line_inside_the_app() {
-        let scheduled = |app: Option<&str>| {
-            AppContext::read(
-                &env(&[("HOME", "/Users/x")]),
-                app.map(Path::new),
-                LoginPath::Unknown,
-            )
-            .context
-            .schedule_program()
-            .map(Path::to_path_buf)
+        let scheduled = |app: Option<&Path>| {
+            AppContext::read(&at_home(&[]), app, LoginPath::Unknown)
+                .context
+                .schedule_program()
+                .map(Path::to_path_buf)
         };
-        let inside = |app: &str| match OS {
-            Os::MacOs => Some(PathBuf::from(format!("{app}/Contents/Helpers/pitboard"))),
-            // No app runs on Linux, and the Windows app does not say where its own is yet.
-            Os::Linux | Os::Windows => None,
-        };
-        for app in [
-            "/Applications/Pitboard.app",
-            "/Users/x/My Apps/Pitboard.app",
+        let mac = |app: &str| Some(Path::new(app).join("Contents/Helpers/pitboard"));
+        let windows = |install: &str| Some(full(install).join("bin").join("pitboard.exe"));
+        for (app, on_a_mac, on_windows) in [
+            (
+                full("/Applications/Pitboard.app"),
+                mac("/Applications/Pitboard.app"),
+                None,
+            ),
+            (
+                full("/Users/x/My Apps/Pitboard.app"),
+                mac("/Users/x/My Apps/Pitboard.app"),
+                None,
+            ),
+            (
+                full("/Program Files/Pitboard/Pitboard.exe"),
+                None,
+                windows("/Program Files/Pitboard"),
+            ),
+            (
+                full("/Users/x/Programs/My Pitboard/PITBOARD.EXE"),
+                None,
+                windows("/Users/x/Programs/My Pitboard"),
+            ),
+            (
+                full("/Users/x/Programs/Pitboard/pitboard.exe.lnk"),
+                None,
+                None,
+            ),
+            (
+                full("/Users/x/pitboard/apps/macos/.build/debug"),
+                None,
+                None,
+            ),
         ] {
-            assert_eq!(scheduled(Some(app)), inside(app), "{app}");
-            assert_eq!(app_command_line(Path::new(app)), inside(app), "{app}");
+            let inside = match OS {
+                Os::MacOs => on_a_mac,
+                Os::Linux => None,
+                Os::Windows => on_windows,
+            };
+            assert_eq!(scheduled(Some(&app)), inside, "{}", app.display());
+            assert_eq!(app_command_line(&app), inside, "{}", app.display());
         }
-        assert_eq!(
-            scheduled(Some("/Users/x/pitboard/apps/macos/.build/debug")),
-            None
-        );
         assert_eq!(scheduled(None), None);
     }
 
-    /// A scratch directory with an app bundle carrying a command line, and whatever a test
-    /// puts beside it. Its name has a space and a quote in it, as a folder somebody made
-    /// might. Nothing in it is ever run.
+    // Its name has a space and a quote in it, as a folder somebody made might.
     struct Scratch(tempfile::TempDir);
 
     impl Scratch {
@@ -660,8 +765,19 @@ mod tests {
             self.0.path()
         }
 
+        // The command line inside the app `name`, relative to the root.
+        fn inside(name: &str) -> PathBuf {
+            match OS {
+                Os::MacOs | Os::Linux => Path::new(&format!("{name}.app"))
+                    .join("Contents")
+                    .join("Helpers")
+                    .join("pitboard"),
+                Os::Windows => Path::new(name).join("bin").join("pitboard.exe"),
+            }
+        }
+
         fn helper(&self) -> PathBuf {
-            self.path().join("Fake.app/Contents/Helpers/pitboard")
+            self.path().join(Scratch::inside("Fake"))
         }
 
         /// A directory under the root, made if it is not there.
@@ -676,38 +792,38 @@ mod tests {
             std::fs::write(at, "#!/bin/sh\n").expect("a program");
             if runnable {
                 testing::make_runnable(at).expect("runnable");
+            } else {
+                testing::deny_running(at).expect("nobody may run it");
             }
         }
     }
 
-    /// The first `pitboard` on the path is the one a terminal runs, and a link to the app's
-    /// own, the way Homebrew makes one, is the app's own however many links it takes to get
-    /// there. A directory, a file nobody can run and a link to nothing are not a `pitboard`.
+    // A link to the app's own, as Homebrew makes one, is the app's own through every link.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn the_first_pitboard_found_says_whose_it_is() {
+        let pitboard = file_of("pitboard");
         let scratch = Scratch::new();
         let empty = scratch.dir("empty");
         let folder = scratch.dir("folder");
-        scratch.dir("folder/pitboard");
+        scratch.dir(&format!("folder/{pitboard}"));
         let plain = scratch.dir("plain");
-        scratch.program(&plain.join("pitboard"), false);
+        scratch.program(&plain.join(&pitboard), false);
         let dangling = scratch.dir("dangling");
         testing::link(
-            &scratch.path().join("gone/pitboard"),
-            &dangling.join("pitboard"),
+            &scratch.path().join("gone").join(&pitboard),
+            &dangling.join(&pitboard),
         )
         .expect("a link to nothing");
         let brew = scratch.dir("brew/bin");
         testing::link(
-            Path::new("../../Fake.app/Contents/Helpers/pitboard"),
-            &brew.join("pitboard"),
+            &Path::new("..").join("..").join(Scratch::inside("Fake")),
+            &brew.join(&pitboard),
         )
         .expect("a link as Homebrew makes one");
         let cargo = scratch.dir("cargo/bin");
-        scratch.program(&cargo.join("pitboard"), true);
+        scratch.program(&cargo.join(&pitboard), true);
         let helpers = scratch.path().join("helpers");
-        testing::link_dir(scratch.helper().parent().expect("Helpers"), &helpers)
+        testing::link_dir(scratch.helper().parent().expect("its folder"), &helpers)
             .expect("a link to a directory");
 
         let own = scratch.helper();
@@ -720,15 +836,15 @@ mod tests {
                 &[&empty, &folder, &plain, &dangling, &brew, &cargo],
                 Some(&own)
             ),
-            CommandLine::Bundled(brew.join("pitboard"))
+            CommandLine::Bundled(brew.join(&pitboard))
         );
         assert_eq!(
             find(&[&helpers], Some(&own)),
-            CommandLine::Bundled(helpers.join("pitboard"))
+            CommandLine::Bundled(helpers.join(&pitboard))
         );
         assert_eq!(
             find(&[&cargo, &brew], Some(&own)),
-            CommandLine::Another(cargo.join("pitboard"))
+            CommandLine::Another(cargo.join(&pitboard))
         );
         assert_eq!(
             find(&[&empty, &folder, &plain, &dangling], Some(&own)),
@@ -736,40 +852,88 @@ mod tests {
         );
         assert_eq!(find(&[], Some(&own)), CommandLine::Nowhere);
 
-        let other = scratch.path().join("Other.app/Contents/Helpers/pitboard");
+        let other = scratch.path().join(Scratch::inside("Other"));
         assert_eq!(
             find(&[&brew], Some(&other)),
-            CommandLine::Another(brew.join("pitboard")),
+            CommandLine::Another(brew.join(&pitboard)),
             "another copy's"
         );
         assert_eq!(
             find(&[&brew], None),
-            CommandLine::Another(brew.join("pitboard")),
+            CommandLine::Another(brew.join(&pitboard)),
             "not run from an app"
         );
 
-        let path = std::env::join_paths([Path::new("/nowhere/bin"), Path::new("bin"), &brew])
+        let path = std::env::join_paths([full("/nowhere/bin"), PathBuf::from("bin"), brew.clone()])
             .expect("a search path");
         assert_eq!(
             find_command_line(Some(&path), std::slice::from_ref(&cargo), Some(&own)),
-            CommandLine::Bundled(brew.join("pitboard")),
+            CommandLine::Bundled(brew.join(&pitboard)),
             "the login shell's PATH first, ahead of the places installs go"
         );
     }
 
-    /// Pitboard's own installs go where cargo and a copy from a release put it under the
-    /// home, then where the system's package managers put programs.
     #[test]
     fn the_command_line_is_looked_for_where_each_way_of_installing_it_puts_it() {
-        let home = Path::new("/Users/x");
-        let places = command_line_places(home);
+        let under = |root: &str, parts: &[&str]| {
+            let mut place = PathBuf::from(root);
+            place.extend(parts);
+            place
+        };
+        let places = |os: Os, pairs: &[(&str, &str)], app: Option<&str>| {
+            command_line_places(
+                &Environment::on(os, pairs.iter().copied()),
+                app.map(Path::new),
+            )
+        };
         assert_eq!(
-            places[..2],
-            [home.join(".cargo/bin"), home.join(".local/bin")]
+            places(
+                Os::MacOs,
+                &[("HOME", "/Users/x")],
+                Some("/Applications/Pitboard.app")
+            ),
+            [
+                under("/Users/x", &[".cargo", "bin"]),
+                under("/Users/x", &[".local", "bin"]),
+                "/opt/homebrew/bin".into(),
+                "/usr/local/bin".into()
+            ]
         );
-        let after: Vec<&Path> = places[2..].iter().map(PathBuf::as_path).collect();
-        let expected: Vec<&Path> = OS.package_bins().iter().map(Path::new).collect();
-        assert_eq!(after, expected);
+        assert_eq!(
+            places(Os::Linux, &[("HOME", "/home/x")], None),
+            [
+                under("/home/x", &[".cargo", "bin"]),
+                under("/home/x", &[".local", "bin"])
+            ]
+        );
+        let windows = [
+            ("USERPROFILE", "C:/Users/x"),
+            ("APPDATA", "C:/Users/x/AppData/Roaming"),
+            ("LOCALAPPDATA", "C:/Users/x/AppData/Local"),
+        ];
+        let app = "C:/Users/x/AppData/Local/Programs/Pitboard/Pitboard.exe";
+        assert_eq!(
+            places(Os::Windows, &windows, Some(app)),
+            [
+                under("C:/Users/x", &[".cargo", "bin"]),
+                under("C:/Users/x/AppData/Local/Programs/Pitboard", &["bin"]),
+                under("C:/Users/x/AppData/Roaming", &["npm"]),
+                under(
+                    "C:/Users/x/AppData/Local",
+                    &["Microsoft", "WinGet", "Links"]
+                ),
+                under("C:/Users/x", &["scoop", "shims"]),
+            ]
+        );
+        assert_eq!(
+            places(Os::Windows, &[], Some(app)),
+            [under(
+                "C:/Users/x/AppData/Local/Programs/Pitboard",
+                &["bin"]
+            )],
+            "a place whose variable is unset is no place"
+        );
+        assert_eq!(places(Os::Windows, &[], None), Vec::<PathBuf>::new());
     }
 
     /// An app's file is kept in Pitboard's directory, which is made private where it is not

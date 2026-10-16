@@ -118,8 +118,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never weaken or get around the release gate in a build anybody installs. No release,
   script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
   `fixture`.
-- Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
-  run elevated on a machine that holds logins.
+- Tests never touch Task Scheduler, never write the registry or the user `PATH`, and never run
+  elevated on a machine that holds logins. They may read the registry.
+- A test seals and unseals only with `CryptProtectData` and `CryptUnprotectData` under the
+  running user's own key, never with `CRYPTPROTECT_LOCAL_MACHINE`, and never backs up, exports
+  or deletes a master key. Every Windows test that parks a login seals it.
 - Never weaken a machine that holds real logins to make a test pass: no Defender exclusion,
   no UAC change, no access change to a real profile, and no Developer Mode or symbolic-link
   right for the tests' links. Those are for CI's runners and a machine kept for testing.
@@ -130,18 +133,18 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - `test-as-standard-user.ps1`, also when `check-windows-build.ps1` runs it, makes one test user
   and may grant it the symbolic-link right. With `-ExFat`, which only `ci.yml`'s `windows` job
   passes, it also mounts one exFAT VHD under `RUNNER_TEMP` and detaches it in its `finally`.
-  Beside that, only `runner-facts.ps1`, only through
-  `windows-facts.yml` on a GitHub-hosted runner, may make Windows accounts, put one in
-  Administrators or OpenSSH Users, change their passwords, turn on Developer Mode, grant the
-  symbolic-link right, register tasks, write the job user's `HKCU\Environment`, mount volumes,
-  share a folder, start OpenSSH Server, install Bun and Scoop, turn on winget's local
-  manifests, serve files on loopback, put a build it made behind a Scoop shim, in WinGet's
-  Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's attack surface reduction
-  rules to audit. It undoes each in a `finally`. `release.yml`'s `scoop-install` job, on a
-  GitHub-hosted runner after `publish`, may install Scoop into the job's temporary folder,
-  which writes the job user's `PATH` and `HKCU\Environment`, then install the published
-  `pitboard` from the bucket and run its `--version`. Never copy one of those changes, or
-  `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
+  Beside that, only `runner-facts.ps1`, only through `windows-facts.yml` on a GitHub-hosted
+  runner, may make Windows accounts, put one in Administrators or OpenSSH Users, change their
+  passwords, turn on Developer Mode, grant the symbolic-link right, register tasks, write the
+  job user's `HKCU\Environment`, mount volumes, share a folder, install Win32-OpenSSH from
+  Microsoft's release where the image ships none and start OpenSSH Server, install Bun and
+  Scoop, turn on winget's local manifests, serve files on loopback, put a build it made behind
+  a Scoop shim, in WinGet's Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's
+  attack surface reduction rules to audit. It undoes each in a `finally`. `release.yml`'s
+  `scoop-install` job, on a GitHub-hosted runner after `publish`, may install Scoop into the
+  job's temporary folder, which writes the job user's `PATH` and `HKCU\Environment`, then
+  install the published `pitboard` from the bucket and run its `--version`. Never copy one of
+  those changes, or `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
   probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
   public, so anyone signed in to GitHub can download an artifact.

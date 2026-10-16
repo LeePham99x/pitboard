@@ -241,7 +241,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W18: seeing which processes run on Windows")]
     fn temporaries_left_by_runs_that_are_gone_are_removed() {
         let dir = scratch("orphans");
         let exited = {
@@ -258,7 +257,9 @@ mod tests {
         let orphan = dir.join(format!(".state.json.{exited}.3.pitboard"));
         let old_orphan = dir.join(format!(".state.json.{exited}.pitboard"));
         let own = dir.join(format!(".usage.json.{}.9.pitboard", std::process::id()));
-        let running = dir.join(".state.json.1.0.pitboard");
+        // The system's own, always running: System's is 4 on Windows.
+        let system = if cfg!(windows) { 4 } else { 1 };
+        let running = dir.join(format!(".state.json.{system}.0.pitboard"));
         let unrelated = dir.join(".state.json.bak");
         for leftover in [&orphan, &old_orphan, &own, &running, &unrelated] {
             std::fs::write(leftover, b"token").unwrap();

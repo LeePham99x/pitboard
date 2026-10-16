@@ -280,7 +280,7 @@ pub(crate) fn halted(ctx: &Context) -> Option<Halt> {
 /// config directory. Not this process's environment, which the run is never given.
 pub(crate) fn overridden(ctx: &Context) -> Vec<String> {
     let config = run::home(ctx, ProviderId::Claude).join("config");
-    crate::settings::overrides_of_a_run_in(&config)
+    crate::settings::overrides_of_a_run_in(ctx, &config)
         .iter()
         .map(ToString::to_string)
         .collect()

@@ -144,13 +144,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         windows: Read("2.1.300"),
     },
     everywhere("oauth_client", VERIFIED_AGAINST),
-    later_on_windows(
-        "supervisor_daemon",
-        VERIFIED_AGAINST,
-        &["W18"],
-        "windows_daemon_identity: how the supervisor daemon is told apart from other \
-         processes on Windows",
-    ),
+    PerSystem {
+        name: "supervisor_daemon",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "which process the lock names on Windows is windows_daemon_identity's, read from \
+             the Windows builds",
+        ),
+    },
     PerSystem {
         name: "no_keyring_off_macos",
         macos: NotRead(
@@ -162,15 +164,29 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              fact rules out, so read from the Windows build it reports a keyring arrived",
         ),
     },
-    everywhere("sign_in_output", "2.1.289"),
-    everywhere("sign_in_takes_another_code", "2.1.289"),
-    later_on_windows(
-        "install_places",
-        "2.1.289",
-        &["W17"],
-        "windows_install_layout: where the native installer and npm put `claude.exe` on \
-         Windows",
-    ),
+    // Read again in both Windows builds of 2.1.300, where a line is read with readline and
+    // trimmed, so one typed back with `\r\n` is one with `\n`.
+    PerSystem {
+        name: "sign_in_output",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "sign_in_takes_another_code",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "install_places",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: NotRead(
+            "the native installer, npm and winget put `claude.exe` elsewhere on Windows, which \
+             windows_install_layout reads",
+        ),
+    },
     later_on_windows(
         "plaintext_credential_mode",
         VERIFIED_AGAINST,
@@ -267,6 +283,40 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_open_sharing",
         macos: NotRead("a rename lands over a file open on macOS whatever opened it"),
         linux: NotRead("a rename lands over a file open on Linux whatever opened it"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_install_layout",
+        macos: NotRead("where macOS's installers put `claude` is install_places'"),
+        linux: NotRead("where Linux's installers put `claude` is install_places'"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_version_resource",
+        macos: NotRead("a macOS program carries no version resource"),
+        linux: NotRead("a Linux program carries no version resource"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_managed_settings",
+        macos: NotRead("macOS has no registry, and its managed folder is settings.rs's"),
+        linux: NotRead("Linux has no registry, and its managed folder is settings.rs's"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_daemon_identity",
+        macos: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
+        linux: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_browser_open",
+        macos: NotRead(
+            "off Windows a cancel stops the tool alone, so how it opens a browser decides nothing",
+        ),
+        linux: NotRead(
+            "off Windows a cancel stops the tool alone, so how it opens a browser decides nothing",
+        ),
         windows: Read("2.1.300"),
     },
     warm_up("headless_token_descriptor"),
@@ -953,6 +1003,105 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_install_layout",
+        fact: "on Windows the native installer keeps its launcher as a copy, `claude.exe` in \
+               `(HOME ?? homedir())\\.local\\bin`, put in place by a rename once its checksum \
+               matches, and each version in `claude\\versions` of `XDG_DATA_HOME`, else of \
+               `<home>\\.local\\share`. A global npm install's program is `bin/claude.exe`, which npm's \
+               cmd-shim starts as it is from `claude.cmd` in its prefix, `%APPDATA%\\npm` by \
+               default, and which postinstall links or copies from \
+               `@anthropic-ai/claude-code-win32-<arch>/claude.exe`; without that it is a stub \
+               that prints how to install. winget's `Anthropic.ClaudeCode` is the bare \
+               portable `claude.exe`, linked in winget's `Links`",
+        read_from: "the native installer's paths, its launcher's update and its `claude.exe` on \
+                    win32, in the win32-x64 and win32-arm64 builds; `install.cjs` and \
+                    `package.json` of `@anthropic-ai/claude-code@2.1.300`; the installer \
+                    manifest of `Anthropic.ClaudeCode` 2.1.292, the newest in \
+                    microsoft/winget-pkgs; read on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "claude::paths::install_places and host::Os::package_bins, where an app looks \
+                  for `claude.exe` after the registry's `Path`",
+        probe: &["Refusing to install a launcher copy of "],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_version_resource",
+        fact: "on Windows `claude.exe` carries a version resource whose product version, fixed \
+               and as text, is the release with a fourth part of 0, `2.1.300.0` for 2.1.300, \
+               with the product name `Claude Code`",
+        read_from: "the version resource of the win32-x64 and win32-arm64 builds of 2.1.300, \
+                    read as bytes on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "claude::paths::installed_version, which reads the release there on Windows",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_managed_settings",
+        fact: "on Windows Claude Code takes managed settings from `C:\\Program Files\\ClaudeCode`, \
+               its `managed-settings.json` and the `.json` files of `managed-settings.d`, and \
+               from the value `Settings` of `HKLM\\SOFTWARE\\Policies\\ClaudeCode`, a `REG_SZ` or \
+               a `REG_EXPAND_SZ` as `reg.exe query` prints it, its end trimmed, which it takes \
+               over the folder unless `managedSourcesBehavior` merges them. The same value \
+               under `HKCU` it reads only where neither holds a policy, and there it ignores \
+               what only an administrator may set. A source that holds nothing but \
+               `managedSourcesBehavior` or `wslInheritsWindowsSettings` is not a policy and \
+               keeps `HKCU` out of nothing (its `pt`). A failed `HKLM` `reg.exe query` it treats \
+               as absent (its `vYn` nulls the machine output on a non-zero exit) and still reads \
+               `HKCU`, while an unreadable managed file keeps `HKCU` out",
+        read_from: "the managed folder, the policy keys, their reading through \
+                    `%SystemRoot%\\System32\\reg.exe query <key> /v Settings` and the managed \
+                    sources' order in the win32-x64 and win32-arm64 builds of 2.1.300, read as \
+                    bytes on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "settings::overrides, custom_oauth and overrides_of_a_run_in, through \
+                  host::Host::policy and administered_folder, where holds_policy and managed \
+                  keep HKCU out",
+        probe: &[
+            "C:\\Program Files\\ClaudeCode",
+            "SOFTWARE\\Policies\\ClaudeCode",
+            "managedSourcesBehavior",
+            "wslInheritsWindowsSettings",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_daemon_identity",
+        fact: "on Windows the supervisor daemon records in `daemon.lock`, beside its pid, \
+               `procStartFt`: its own creation time from `GetProcessTimes`, called through \
+               `bun:ffi` with `PROCESS_QUERY_LIMITED_INFORMATION`, the FILETIME as a decimal \
+               string. It takes a daemon for running only while its pid's creation time, read \
+               the same way, is the same text, so a pid Windows has given another process \
+               reads as gone. Where `bun:ffi` does not load it writes `procStart`, \
+               PowerShell's `CreationDate.Ticks`, which it never compares with a FILETIME. \
+               `daemon.lock` holds no `pidDomain`, which only the session records carry, as \
+               `win32:<host name>`. Its pipes are `\\\\.\\pipe\\cc-daemon-<the 16 hex of \
+               daemon\\pipe.key>-<name>`",
+        read_from: "the daemon lock's writer and its liveness check, the process start module \
+                    and the daemon's pipe names, in the win32-x64 and win32-arm64 builds of \
+                    2.1.300, read as bytes on 2026-10-16; 2.1.301's win32-x64 build is the same",
+        verified_against: "2.1.300",
+        depends: "claude::daemon's running, through host::proc::started",
+        probe: &["procStartFt", "\\\\.\\pipe\\cc-daemon-"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_browser_open",
+        fact: "on Windows `claude auth login` opens its sign-in page once it has printed its \
+               prompt by starting `rundll32 url,OpenURL <address>`, a child of its own, which \
+               hands the address to the shell; where its settings or `BROWSER` name a program, \
+               it starts that with the address instead. A browser that was not running starts \
+               from inside whatever job Claude Code runs in",
+        read_from: "the opener `startOAuthFlow` calls after its prompt, which checks the address \
+                    is `http` or `https` and starts `rundll32` on win32, in the win32-x64 and \
+                    win32-arm64 builds of 2.1.300, read as bytes on 2026-10-16",
+        verified_against: "2.1.300",
+        depends: "host::windows::job, which ends only the tool's own programs on a cancel, so a \
+                  browser its sign-in opened keeps running (RF-F2)",
+        probe: &["[\"url,OpenURL\","],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1060,8 +1209,8 @@ mod tests {
     use super::*;
     use crate::assumptions::Platform;
 
-    /// The facts the Windows builds were read for, and those they were not, by name. Read on Windows, the keychain facts would report the keychain gone, and
-    /// `no_keyring_off_macos` a keyring arrived.
+    // Read there, the keychain facts would report the keychain gone, and no_keyring_off_macos a
+    // keyring arrived.
     #[test]
     fn windows_reads_the_facts_its_build_was_read_for() {
         let read: Vec<&str> = PER_SYSTEM
@@ -1089,6 +1238,11 @@ mod tests {
                 "login_carries_its_plan",
                 "windows_home_folder",
                 "windows_open_sharing",
+                "windows_install_layout",
+                "windows_version_resource",
+                "windows_managed_settings",
+                "windows_daemon_identity",
+                "windows_browser_open",
             ]
         );
         for name in [

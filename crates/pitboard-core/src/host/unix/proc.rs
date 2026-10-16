@@ -97,6 +97,28 @@ pub(crate) fn run_within(
     })
 }
 
+// A sign-in's tool, which a cancel kills and reaps.
+pub(crate) struct Tool(Child);
+
+pub(crate) fn start(mut command: Command) -> io::Result<Tool> {
+    command.spawn().map(Tool)
+}
+
+impl Tool {
+    pub(crate) fn child(&mut self) -> &mut Child {
+        &mut self.0
+    }
+
+    pub(crate) fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        self.0.wait()
+    }
+
+    pub(crate) fn stop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// How `child` ended, where it did within `grace`.
 fn ended_within(child: &mut Child, grace: Duration) -> Option<std::process::ExitStatus> {
     let began = Instant::now();
@@ -145,6 +167,20 @@ pub(crate) fn can_run(path: &Path) -> bool {
     // reads it.
     let executable = unsafe { libc::access(name.as_ptr(), libc::X_OK) } == 0;
     executable && std::fs::metadata(path).is_ok_and(|found| found.is_file())
+}
+
+// Claude Code records a process's creation time as `procStartFt` on Windows alone.
+pub(crate) fn started(_pid: u32) -> Option<u64> {
+    None
+}
+
+// Only a Windows program carries a version resource.
+pub(crate) fn product_version(_path: &Path) -> Option<[u16; 4]> {
+    None
+}
+
+pub(crate) fn product_name(_path: &Path) -> Option<String> {
+    None
 }
 
 #[cfg(test)]

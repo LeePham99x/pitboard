@@ -56,6 +56,7 @@ pub(crate) struct Facts {
     pub(crate) default_slot: bool,
     pub(crate) storage_dir: String,
     pub(crate) backend: Result<store::Backend, store::Error>,
+    pub(crate) vault: store::Backend,
     pub(crate) credential_file: PathBuf,
     pub(crate) credential: Result<Option<Value>, store::Error>,
     /// What the live login costs against the store's ceiling, where there is one.
@@ -79,9 +80,6 @@ pub(crate) struct Facts {
     /// Every reason a session here would authenticate as something other than the stored
     /// login, read from settings files as well as from this process's environment.
     pub(crate) auth_overrides: Vec<crate::settings::Override>,
-    /// What of those settings Pitboard does not read here, where it does not read them all:
-    /// Claude Code's managed settings on Windows, until W17.
-    pub(crate) auth_unread: Option<&'static str>,
     /// Accounts Pitboard is not asking Anthropic about yet, and for how long: (uuid, seconds).
     pub(crate) asking_held: Vec<(String, i64)>,
     pub(crate) state: Result<State, Error>,
@@ -265,6 +263,10 @@ pub(crate) struct ParkFact {
 pub(crate) enum Unreadable {
     /// It is behind a keychain that is locked here, which says nothing about the login.
     Locked,
+    /// A park sealed to this account that will not open in this logon, with
+    /// `CryptUnprotectData`'s code where there was one: a lost key, not a missing or damaged
+    /// file.
+    Sealed(Option<i32>),
     /// Missing, damaged, or refused by the store, in words.
     Broken(String),
 }
@@ -319,6 +321,7 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
                 };
                 park::load(ctx, tool, &a.key(), p).err().map(|e| match e {
                     Error::Store(store::Error::Locked) => Unreadable::Locked,
+                    Error::Store(store::Error::Sealed { code, .. }) => Unreadable::Sealed(code),
                     Error::ParkedCredentialMissing { .. } => {
                         Unreadable::Broken("missing from the vault".into())
                     }
@@ -445,6 +448,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         default_slot: claude::is_default_slot(ctx),
         storage_dir: claude::storage_dir(ctx),
         backend: store::resolve(&claude_live::chain(ctx), &service),
+        vault: store::vault_kind(ctx),
         credential_file: claude_live::credential_file(ctx),
         credential_cost: store::read_raw(&claude_live::chain(ctx), &service)
             .ok()
@@ -473,7 +477,6 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
         claude_version: claude::installed_version(ctx),
         auth_overrides: crate::settings::overrides(ctx),
-        auth_unread: crate::settings::unread(),
         asking_held: crate::usage::budget::holds(ctx),
         in_use: state
             .as_ref()
@@ -593,9 +596,9 @@ fn parts_of(document: &Value) -> Vec<(String, usize)> {
     parts
 }
 
-// Every file holding a usable login that others may read: who a file lets in is what a
-// restore, a copy or a careless umask changes, and on Windows Claude Code's file takes its
-// folder's access list (Claude Code 2.1.300, RF-C1b).
+// Every file holding a login that others may read, or, where it is sealed, change: who a file
+// lets in is what a restore, a copy or a careless umask changes, and on Windows Claude Code's
+// file takes its folder's access list (Claude Code 2.1.300, RF-C1b).
 fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
     let mut loose = Vec::new();
     let mut look = |path: PathBuf| {
@@ -611,6 +614,9 @@ fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
         }
     };
     look(claude_live::credential_file(ctx));
+    // A sealed park opens for this Windows account alone, but sealing stops reading, not
+    // writing: another account with write access can corrupt or plant a park, so the vault and
+    // its parks are still checked.
     let vault = store::vault_dir(ctx);
     look(vault.clone());
     if let Ok(entries) = std::fs::read_dir(&vault) {
@@ -716,16 +722,10 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     }))
 }
 
-/// Which Codex `program` is, read off the path it resolves to and never by running it.
-///
-/// Running `codex --version` would start the program this is trying to describe. Each way
-/// Codex is installed puts the version within two directories of the program it resolves
-/// to, and only there is looked at: the standalone installer's
-/// `releases/0.154.0-<target>/bin/codex`, Homebrew's `Caskroom/codex/0.154.0/`, and npm's
-/// `@openai/codex/package.json` beside the `bin` it runs from. Directory names are read
-/// before any file is opened, so a standalone install inside `~/.codex` is named without
-/// reading anything in it, and nothing further up the path is ever read.
+// Never by running it, and no further than two folders up: names before any file is opened.
 fn codex_version(program: &std::path::Path) -> Option<String> {
+    let program =
+        crate::host::program::npm_shim_target(program).unwrap_or_else(|| program.to_path_buf());
     let resolved = std::fs::canonicalize(program).ok()?;
     let near: Vec<&std::path::Path> = resolved.ancestors().skip(1).take(2).collect();
     near.iter()
@@ -737,8 +737,10 @@ fn codex_version(program: &std::path::Path) -> Option<String> {
                 .map(str::to_owned)
         })
         .or_else(|| {
-            near.iter()
-                .find_map(|dir| codex_package_version(&dir.join("package.json")))
+            near.iter().find_map(|dir| {
+                version_where(&dir.join("package.json"), "name", "@openai/codex")
+                    .or_else(|| version_where(&dir.join("codex-package.json"), "variant", "codex"))
+            })
         })
 }
 
@@ -750,9 +752,11 @@ fn looks_like_a_version(name: &str) -> bool {
             .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn codex_package_version(path: &std::path::Path) -> Option<String> {
+// The `version` of a JSON file whose `key` reads `expected`: `package.json`'s name
+// `@openai/codex`, or `codex-package.json`'s variant `codex`.
+fn version_where(path: &std::path::Path, key: &str, expected: &str) -> Option<String> {
     let json: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    if json.get("name")?.as_str()? != "@openai/codex" {
+    if json.get(key)?.as_str()? != expected {
         return None;
     }
     Some(json.get("version")?.as_str()?.to_string())
@@ -1055,7 +1059,8 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                 ),
             }
         }
-        Ok(store::Backend::Unknown) => fail(
+        // No tool keeps its login in Pitboard's sealed files.
+        Ok(store::Backend::Unknown | store::Backend::SealedFile) => fail(
             "credential_store",
             "credential store",
             "a store Pitboard does not read yet",
@@ -1162,14 +1167,18 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                          Code stores them where there is no keychain. Anyone else on this \
                          machine can read them",
                     Os::Windows =>
-                        "These hold usable OAuth tokens in plain text, and Claude Code's file \
-                         takes the access list of the folder it is in. Anyone else on this \
-                         PC can read them",
+                        "These hold a login: Claude Code's file in plain text, a sealed park \
+                         only this account opens. Claude Code's file takes the access list of \
+                         the folder it is in, and a seal stops reading, not writing. Anyone \
+                         else on this PC can read or change them",
                 },
                 running(&commands),
             ),
         )
     });
+
+    let lost = lost_parks(facts);
+    checks.extend(judge_vault(facts, &lost));
 
     checks.push(match &facts.state {
         Ok(state) => ok(
@@ -1198,15 +1207,18 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     });
     // Claude Code's accounts here; every other tool's go in its own section, so a program
     // reading codes can tell them apart and Claude Code's column is Claude Code's alone.
+    let judged = |p: &&ParkFact| !lost.iter().any(|gone| std::ptr::eq(*gone, *p));
     let claude_parks: Vec<&ParkFact> = facts
         .parks
         .iter()
         .filter(|p| p.provider == ProviderId::Claude)
+        .filter(judged)
         .collect();
     let codex_parks: Vec<&ParkFact> = facts
         .parks
         .iter()
         .filter(|p| p.provider == ProviderId::Codex)
+        .filter(judged)
         .collect();
     checks.extend(claude_parks.iter().map(|p| judge_park(p, facts.now)));
     if let Some(refusal) = &facts.stuck {
@@ -1652,6 +1664,82 @@ pub fn renewal_due(refresh_expires_at: i64, now: i64) -> bool {
     (1..RENEW_WITHIN).contains(&(refresh_expires_at - now))
 }
 
+// The code `CryptUnprotectData` returns after an administrator's password reset, as RF-D1d
+// measured (run 38797729796), where the account's master key no longer opens the blob.
+const DPAPI_KEY_RESET: i32 = 0x8009_000B_u32 as i32;
+
+// Every sealed park lost at once, as after an administrator resets the password, is one
+// finding. A seal that reads 0x8009000B for all of them points at a reset or a restored
+// profile; any other code (a logon without the key, as over SSH) gets neutral wording.
+fn judge_vault(facts: &Facts, lost: &[&ParkFact]) -> Option<Check> {
+    if facts.vault != store::Backend::SealedFile {
+        return None;
+    }
+    if lost.is_empty() {
+        return Some(ok(
+            "vault",
+            "parked logins",
+            "sealed to this Windows account, not plain text",
+        ));
+    }
+    let again: Vec<String> = lost
+        .iter()
+        .map(|p| format!("pitboard enroll {} --sign-in", p.typed()))
+        .collect();
+    let a_reset = lost.iter().all(|p| {
+        matches!(
+            p.unreadable,
+            Some(Unreadable::Sealed(Some(DPAPI_KEY_RESET)))
+        )
+    });
+    let way_out = if a_reset {
+        format!(
+            "An administrator's reset of your Windows password, or a profile restored on \
+             another PC, leaves them sealed with a key this account no longer has. Sign in to \
+             each again{}",
+            running(&again)
+        )
+    } else {
+        format!(
+            "They do not open in this logon. Run `pitboard doctor` from a desktop session \
+             before signing in again{}",
+            running(&again)
+        )
+    };
+    Some(fail(
+        "vault",
+        "parked logins",
+        format!(
+            "none of the {} parked logins opens for this Windows account",
+            lost.len()
+        ),
+        way_out,
+    ))
+}
+
+// Two sealed parks or more in a sealed vault, each failing to open: a lost key, not a missing
+// or damaged file, so a reset or a restored profile is told from a stray unreadable park.
+fn lost_parks(facts: &Facts) -> Vec<&ParkFact> {
+    let parked: Vec<&ParkFact> = facts
+        .parks
+        .iter()
+        .filter(|p| {
+            p.park
+                .as_ref()
+                .is_some_and(|park| park.kind == crate::state::ParkKind::Vault)
+        })
+        .collect();
+    let all = parked.len() >= 2
+        && parked
+            .iter()
+            .all(|p| matches!(p.unreadable, Some(Unreadable::Sealed(_))));
+    if facts.vault == store::Backend::SealedFile && all {
+        parked
+    } else {
+        Vec::new()
+    }
+}
+
 fn judge_park(fact: &ParkFact, now: i64) -> Check {
     let code = account_code(
         fact.provider,
@@ -1675,6 +1763,14 @@ fn judge_park(fact: &ParkFact, now: i64) -> Check {
                 name,
                 "not read: the keychain is locked",
                 "Unlock it, then run `pitboard doctor` again.",
+            );
+        }
+        Some(Unreadable::Sealed(_)) => {
+            return fail(
+                code,
+                name,
+                "its parked login does not open in this logon",
+                renew,
             );
         }
         Some(Unreadable::Broken(why)) => {
@@ -1930,18 +2026,7 @@ fn exempting(proxy: &ProxyFact) -> Option<String> {
     })
 }
 
-/// Whether moving the stored login would change anything a session sees.
-///
-/// Claude Code resolves this from layered settings, so a managed policy or a line in a
-/// person's own `settings.json` can make every switch Pitboard performs a no-op. Read from
-/// files rather than from this process's environment, because an app launched from Finder
-/// has no environment to read and is the surface most likely to be used on a machine that
-/// needs the answer.
-///
-/// Where Pitboard does not read every layer, it says which it did not read beside that
-/// answer, since a layer it did not read could still set something else. Where a file sits
-/// behind the keychain, a session already running takes the stored login only when it next
-/// reads it, at its login's renewal, which the `fallback_login` check says.
+// From files as well, since an app launched from Finder has no environment to read.
 fn judge_auth(facts: &Facts) -> Check {
     if facts.auth_overrides.is_empty() {
         let read = if facts.fallback_login.is_some() {
@@ -1949,14 +2034,7 @@ fn judge_auth(facts: &Facts) -> Check {
         } else {
             "the stored login, which is what Pitboard moves"
         };
-        return ok(
-            "auth_source",
-            "what a session authenticates with",
-            match facts.auth_unread {
-                None => read.to_string(),
-                Some(unread) => format!("{read}, as far as it reads: {unread}"),
-            },
-        );
+        return ok("auth_source", "what a session authenticates with", read);
     }
     let named: Vec<String> = facts
         .auth_overrides
@@ -2924,9 +3002,14 @@ fn desktop_environment(ctx: &Context, facts: &Facts) -> Value {
     })
 }
 
+// Claude Desktop is macOS's alone.
 fn desktop_build(ctx: &Context) -> Option<String> {
-    ctx.host()
-        .app_version(std::path::Path::new("/Applications/Claude.app"))
+    match ctx.os {
+        Os::MacOs => ctx
+            .host()
+            .app_version(std::path::Path::new("/Applications/Claude.app")),
+        Os::Linux | Os::Windows => None,
+    }
 }
 
 /// What doctor says where a home the environment names is empty or relative
@@ -3461,7 +3544,8 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn doctor_says_the_build_of_the_claude_installed() {
-        let m = switch::harness::desktop_machine("doctor-build");
+        let mut m = switch::harness::desktop_machine("doctor-build");
+        m.ctx.os = Os::MacOs;
         m.mem.app_at(
             std::path::Path::new("/Applications/Claude.app"),
             "2.31226.1",
@@ -3817,6 +3901,7 @@ mod tests {
             default_slot: true,
             storage_dir: "/home/x/.claude".into(),
             backend: Ok(store::Backend::Keychain),
+            vault: store::Backend::Keychain,
             credential_file: PathBuf::from("/home/x/.claude/.credentials.json"),
             credential: Ok(Some(json!({"claudeAiOauth": {
                 "refreshToken": "r",
@@ -3832,7 +3917,6 @@ mod tests {
             pending_parks: Vec::new(),
             claude_version: Some(crate::provider::claude::assumptions::VERIFIED_AGAINST.into()),
             auth_overrides: Vec::new(),
-            auth_unread: None,
             asking_held: Vec::new(),
             state: Ok(State::default()),
             in_use: Some(in_use_as_named()),
@@ -3890,26 +3974,6 @@ mod tests {
             version: None,
             running: Some(Vec::new()),
         }
-    }
-
-    /// Where Pitboard does not read every layer of Claude Code's settings, as it does not
-    /// read the managed ones on Windows yet, the check says which beside its answer, and
-    /// still passes: nothing it read says anything else.
-    #[test]
-    fn the_auth_check_says_what_it_did_not_read() {
-        let mut facts = facts();
-        assert_eq!(
-            judge_auth(&facts).detail,
-            "the stored login, which is what Pitboard moves"
-        );
-        facts.auth_unread = Some("Claude Code's managed settings are not read on Windows yet");
-        let check = judge_auth(&facts);
-        assert_eq!(check.level, Level::Ok);
-        assert_eq!(
-            check.detail,
-            "the stored login, which is what Pitboard moves, as far as it reads: Claude Code's \
-             managed settings are not read on Windows yet"
-        );
     }
 
     const SID: &str = "S-1-5-21-1004336348-1177238915-682003330-1001";
@@ -3997,17 +4061,18 @@ mod tests {
         assert_eq!(
             found.advice,
             format!(
-                "These hold usable OAuth tokens in plain text, and Claude Code's file takes the \
-                 access list of the folder it is in. Anyone else on this PC can read them: \
-                 `{claude}`, `{claude_grant}`, `{vault}`, `{vault_grant}`, `{park}` and \
-                 `{park_grant}`."
+                "These hold a login: Claude Code's file in plain text, a sealed park only this \
+                 account opens. Claude Code's file takes the access list of the folder it is \
+                 in, and a seal stops reading, not writing. Anyone else on this PC can read or \
+                 change them: `{claude}`, `{claude_grant}`, `{vault}`, `{vault_grant}`, \
+                 `{park}` and `{park_grant}`."
             )
         );
         f.sid = None;
         assert!(
             check(&evaluate(&f), "private_on_disk")
                 .advice
-                .ends_with("can read them."),
+                .ends_with("can read or change them."),
             "no command without the SID"
         );
     }
@@ -4102,11 +4167,7 @@ mod tests {
         assert!(healthy(&checks));
     }
 
-    /// What the check above is given, read off a real disk.
-    ///
-    /// Everything else here hands `evaluate` its facts, so nothing until now had ever
-    /// looked at a file's mode. A gatherer that returns an empty list whatever the disk
-    /// says would pass every one of those tests.
+    // Read off a real disk: a gatherer that found nothing would pass every facts test.
     #[test]
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
@@ -4114,7 +4175,9 @@ mod tests {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
 
-        let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
+        let ctx = Context::new(root.clone())
+            .with_pitboard_home(root.join(".pitboard"))
+            .with_memory_stores(crate::host::memory::MemoryHost::new());
         let vault = store::vault_dir(&ctx);
         crate::host::fs::create_private_dir(Permit::for_a_test(), &vault).expect("a vault");
         assert!(
@@ -4141,6 +4204,40 @@ mod tests {
             .find(|(path, ..)| *path == vault.display().to_string())
             .expect("the vault");
         assert_eq!(folder.1, Kind::Directory, "{found:?}");
+    }
+
+    // A seal stops others reading a park, not writing it: a vault or park another account can
+    // change is still a finding.
+    #[test]
+    fn a_sealed_park_others_can_change_is_reported() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
+        let ctx = Context::new(root.clone())
+            .with_pitboard_home(root.join(".pitboard"))
+            .with_memory_stores(crate::host::memory::MemoryHost::sealed());
+        let vault = store::vault_dir(&ctx);
+        crate::host::fs::create_private_dir(Permit::for_a_test(), &vault).expect("a vault");
+        let park = vault.join("pitboard-park-x.json");
+        std::fs::write(&park, "sealed").expect("a park");
+        crate::host::fs::testing::open_to_others(&park).expect("opened to others");
+        let found = loose_logins(&ctx);
+        assert!(
+            found
+                .iter()
+                .any(|(path, ..)| *path == park.display().to_string()),
+            "a sealed park others can change: {found:?}"
+        );
+
+        crate::host::fs::testing::make_private(&park).expect("made private");
+        crate::host::fs::testing::open_to_others(&vault).expect("opened to others");
+        let found = loose_logins(&ctx);
+        assert!(
+            found
+                .iter()
+                .any(|(path, kind, _)| *path == vault.display().to_string()
+                    && *kind == Kind::Directory),
+            "the opened vault: {found:?}"
+        );
     }
 
     /// On a machine with no keychain every parked login is a plaintext OAuth token in a
@@ -5437,6 +5534,114 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parks_sealed_to_the_account_are_said_so_and_all_lost_at_once_is_one_finding() {
+        let mut f = facts();
+        f.parks = vec![
+            parked("work", None),
+            codex_parked("home", None),
+            ParkFact {
+                park: None,
+                ..parked("empty", None)
+            },
+        ];
+        assert!(evaluate(&f).iter().all(|c| c.code != "vault"), "a keychain");
+
+        f.vault = store::Backend::SealedFile;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(
+            (vault.level, vault.name.as_str(), vault.detail.as_str()),
+            (
+                Level::Ok,
+                "parked logins",
+                "sealed to this Windows account, not plain text"
+            )
+        );
+
+        let lost = Some(Unreadable::Sealed(Some(DPAPI_KEY_RESET)));
+        f.parks[0].unreadable = lost.clone();
+        let checks = evaluate(&f);
+        assert_eq!(check(&checks, "vault").level, Level::Ok, "one of two");
+        assert_eq!(named(&checks, "account work").level, Level::Fail);
+        assert!(
+            named(&checks, "account work")
+                .advice
+                .contains("pitboard enroll work --sign-in")
+        );
+
+        f.parks[1].unreadable = lost;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(vault.level, Level::Fail);
+        assert_eq!(
+            vault.detail,
+            "none of the 2 parked logins opens for this Windows account"
+        );
+        assert!(
+            vault.advice.ends_with(
+                "Sign in to each again: `pitboard enroll work --sign-in` and \
+                 `pitboard enroll codex/home --sign-in`."
+            ),
+            "{}",
+            vault.advice
+        );
+        for code in ["parked_login", "codex_parked_login"] {
+            assert!(
+                checks
+                    .iter()
+                    .all(|c| c.code != code || c.level != Level::Fail),
+                "{code} is in the one finding"
+            );
+        }
+        assert_eq!(
+            named(&checks, "account empty").level,
+            Level::Warn,
+            "nothing parked"
+        );
+    }
+
+    // Parks missing from the vault are not a lost key, so doctor does not tell the person to
+    // sign every account in again; each keeps its own per-park finding.
+    #[test]
+    fn missing_sealed_parks_are_not_a_reset_finding() {
+        let mut f = facts();
+        f.vault = store::Backend::SealedFile;
+        f.parks = vec![parked("work", None), codex_parked("home", None)];
+        let missing = Some(Unreadable::Broken("missing from the vault".into()));
+        f.parks[0].unreadable = missing.clone();
+        f.parks[1].unreadable = missing;
+        let checks = evaluate(&f);
+        assert_eq!(
+            check(&checks, "vault").level,
+            Level::Ok,
+            "missing is not a lost key"
+        );
+        assert_eq!(named(&checks, "account work").level, Level::Fail);
+        assert_eq!(named(&checks, "account codex/home").level, Level::Fail);
+    }
+
+    // A sealed park that will not open in this logon (a network logon over SSH, not the reset
+    // code) gets neutral wording, not "an administrator reset your password".
+    #[test]
+    fn sealed_parks_lost_to_this_logon_get_neutral_wording() {
+        let mut f = facts();
+        f.vault = store::Backend::SealedFile;
+        f.parks = vec![parked("work", None), codex_parked("home", None)];
+        let sealed = Some(Unreadable::Sealed(Some(5)));
+        f.parks[0].unreadable = sealed.clone();
+        f.parks[1].unreadable = sealed;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(vault.level, Level::Fail);
+        assert!(
+            vault.advice.contains("from a desktop session"),
+            "{}",
+            vault.advice
+        );
+        assert!(!vault.advice.contains("administrator"), "{}", vault.advice);
+    }
+
     /// A parked login is due to be renewed from three days before its refresh token expires
     /// until it does. Past that it cannot be renewed, so it is not due: its account needs a
     /// sign-in instead.
@@ -6149,6 +6354,64 @@ mod tests {
         assert_eq!(codex_version(&shim), None);
     }
 
+    // `codex.exe` has no version resource in 0.162.1.
+    #[test]
+    fn a_version_is_read_where_codex_is_installed_on_windows() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
+        let place = |at: &str| {
+            let path = root.join(at);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "").unwrap();
+            path
+        };
+        let layout = |version: &str, variant: &str| {
+            format!(
+                r#"{{"layoutVersion": 1, "version": "{version}", "target": "x86_64-pc-windows-msvc", "variant": "{variant}", "entrypoint": "bin/codex.exe"}}"#
+            )
+        };
+
+        let vendored = place("codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe");
+        let package = root.join("codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-package.json");
+        std::fs::write(&package, layout("0.162.1", "codex")).unwrap();
+        assert_eq!(codex_version(&vendored).as_deref(), Some("0.162.1"));
+        std::fs::write(&package, layout("0.162.1", "something-else")).unwrap();
+        assert_eq!(codex_version(&vendored), None, "only Codex's own package");
+
+        place("npm/node_modules/@openai/codex/bin/codex.js");
+        std::fs::write(
+            root.join("npm/node_modules/@openai/codex/package.json"),
+            r#"{"name": "@openai/codex", "version": "0.161.0"}"#,
+        )
+        .unwrap();
+        let shim = root.join("npm/codex.cmd");
+        std::fs::write(
+            &shim,
+            "@ECHO off\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n)\r\n\
+             \"%_prog%\"  \"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js\" %*\r\n",
+        )
+        .unwrap();
+        assert_eq!(codex_version(&shim).as_deref(), Some("0.161.0"));
+    }
+
+    #[test]
+    fn only_macos_is_asked_for_claude_desktops_build() {
+        let memory = crate::host::memory::MemoryHost::new();
+        memory.app_at(std::path::Path::new("/Applications/Claude.app"), "2.7032.0");
+        for (os, build) in [
+            (Os::MacOs, Some("2.7032.0")),
+            (Os::Linux, None),
+            (Os::Windows, None),
+        ] {
+            let env = crate::context::Environment::on(
+                os,
+                [("HOME", "/nowhere"), ("USERPROFILE", "/nowhere")],
+            );
+            let ctx = Context::for_command_line(&env).with_memory_stores(memory.clone());
+            assert_eq!(desktop_build(&ctx).as_deref(), build, "{os:?}");
+        }
+    }
+
     #[test]
     fn a_codex_login_anybody_can_read_or_nobody_can_parse_is_said() {
         let mut codex = with_codex();
@@ -6189,9 +6452,7 @@ mod tests {
         assert!(login.detail.contains("not readable"), "{}", login.detail);
     }
 
-    /// A running codex holds the account it started with for as long as it runs, which is
-    /// the one thing a switch cannot reach. Said, never warned about: running it is the
-    /// point of having it. What makes each kind take a switch is said beside it.
+    // Said, never warned about: running it is the point of having it.
     #[test]
     fn running_codex_processes_are_reported_as_a_fact() {
         use crate::holder::classify;
@@ -6199,6 +6460,7 @@ mod tests {
         let at = |pid: u32, path: &str| Process {
             pid,
             path: PathBuf::from(path),
+            package: None,
         };
         let holders = crate::provider::codex::holders::HOLDERS;
         let mut codex = with_codex();

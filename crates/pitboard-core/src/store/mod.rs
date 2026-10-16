@@ -8,8 +8,8 @@ mod file;
 pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
-// Only Linux parks in files: macOS parks in the login keychain, and Windows nowhere yet.
-#[cfg(any(target_os = "linux", test))]
+// macOS parks in the login keychain; Linux in files, and Windows in files sealed to the account.
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) mod vault;
 
 pub(crate) use file::PlainFile;
@@ -20,17 +20,17 @@ use crate::service::Permit;
 use serde_json::Value;
 use std::path::PathBuf;
 
-/// Where a credential lives. `Keychain` occurs only where the machine has one: its host
-/// offers no other, so callers need no checks of their own.
+// `Keychain` occurs only where the machine has one, so callers need no checks of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Backend {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Keychain,
     File,
+    // Files only this Windows account can open: Pitboard's parks there.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    SealedFile,
     Absent,
-    /// A store nobody can say anything of yet, since the part of Pitboard that would read it
-    /// is not written: on Windows, until each of its stores is. Kept, with its code, once
-    /// they are.
+    // A store whose reader is not written yet: on Windows, until each of its stores is.
     Unknown,
 }
 
@@ -39,6 +39,7 @@ impl Backend {
         match self {
             Backend::Keychain => "keychain",
             Backend::File => "file",
+            Backend::SealedFile => "sealed_file",
             Backend::Absent => "absent",
             Backend::Unknown => "unknown",
         }
@@ -105,6 +106,11 @@ pub enum Error {
     /// SSH. Never "no credential" either, and nothing is wrong with what it holds.
     #[error("the credential store could not be read: {LOCKED}")]
     Locked,
+    /// A park sealed to this account is there but does not open in this logon: an
+    /// administrator's password reset, a profile restored on another PC, or a logon without
+    /// the user's key, as over SSH. `code` is `CryptUnprotectData`'s, where there was one.
+    #[error("the sealed credential does not open in this logon: {detail}")]
+    Sealed { code: Option<i32>, detail: String },
     #[error("the stored credential is not valid JSON: {0}")]
     Malformed(String),
     #[error("writing the credential failed: {0}")]
@@ -118,6 +124,7 @@ impl Error {
         match self {
             Error::Unreadable(_) => "credential_store_unreadable",
             Error::Locked => "credential_store_locked",
+            Error::Sealed { .. } => "credential_sealed",
             Error::Malformed(_) => "credential_not_json",
             Error::Write(_) => "credential_write_failed",
             Error::NotDurable(_) => "credential_not_durable",
@@ -377,6 +384,10 @@ pub(crate) fn vault_list(ctx: &Context) -> Result<Option<Vec<String>>, Error> {
 /// Whether another `PITBOARD_HOME` could have parked a login where this one parks its own.
 pub(crate) fn vault_is_shared(ctx: &Context) -> bool {
     ctx.host().vault_is_shared()
+}
+
+pub(crate) fn vault_kind(ctx: &Context) -> Backend {
+    vault(ctx).kind()
 }
 
 /// What writing the live credential would cost, asked of the backend that would take the

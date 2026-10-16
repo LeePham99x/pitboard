@@ -16,6 +16,7 @@ mod daemon;
 mod dpapi;
 mod exelookup;
 mod files;
+mod handover;
 mod homes;
 mod job;
 mod processes;
@@ -98,6 +99,13 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             action,
             file,
         } => dpapi::dpapi(scratch, *action, file),
+        C::RestrictedToken { scratch } => tokens::restricted(scratch),
+        C::FdHandover {
+            bun,
+            script,
+            token,
+            kind,
+        } => handover::fd_handover(bun, script, token.as_bytes(), *kind),
         C::Task {
             action,
             scratch,

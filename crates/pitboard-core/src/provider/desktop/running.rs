@@ -87,6 +87,8 @@ mod tests {
                 pid,
                 parent,
                 path: PathBuf::from(path),
+                package: None,
+                placed: true,
             })
             .collect()
     }

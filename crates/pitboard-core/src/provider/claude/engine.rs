@@ -193,25 +193,21 @@ impl Provider for Claude {
         claude::program(ctx)
     }
 
-    /// Measured in 2.1.278: `claude auth login` opens the browser itself and finishes
-    /// through a loopback callback, printing progress with `stdout.write`. Read from
-    /// 2.1.289, as the register's `sign_in_output` holds: it also reads a pasted code from
-    /// stdin, from the start and whether or not the callback is reached. So it needs no
-    /// terminal: pipes are enough.
-    /// `CLAUDE_SECURESTORAGE_CONFIG_DIR` is taken away because it would pin the credential
-    /// slot back to a real one whatever `CLAUDE_CONFIG_DIR` says.
+    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one, and
+    // `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` the login into Credential Manager (2.1.300).
     fn sign_in(
         &self,
         ctx: &Context,
         permit: Permit,
         dir: &std::path::Path,
-    ) -> std::process::Command {
-        let mut command = crate::provider::command(ctx, permit, ProviderId::Claude);
+    ) -> std::io::Result<std::process::Command> {
+        let mut command = crate::provider::command(ctx, permit, ProviderId::Claude)?;
         command
             .args(["auth", "login"])
             .env("CLAUDE_CONFIG_DIR", dir)
-            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR");
-        command
+            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .env_remove("CLAUDE_CODE_FORCE_WINDOWS_CREDMAN");
+        Ok(command)
     }
 
     fn read_signin(
@@ -367,6 +363,29 @@ fn from_api(error: ApiError) -> ProviderError {
 )]
 mod tests {
     use super::*;
+
+    // Never run: a program that is there on every system.
+    #[test]
+    fn a_sign_in_withholds_what_would_store_its_login_elsewhere() {
+        let ctx = Context::new(PathBuf::from("/nowhere"))
+            .with_claude_program(std::env::current_exe().expect("this test"));
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        let command = Claude
+            .sign_in(&ctx, Permit::for_a_test(), dir)
+            .expect("found");
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["auth", "login"]);
+        for withheld in [
+            "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+            "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+        ] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(name, value)| name == withheld && value.is_none()),
+                "{withheld}"
+            );
+        }
+    }
 
     /// The manual address 2.1.289 prints, with its values made up.
     const ADDRESS: &str = "https://claude.com/cai/oauth/authorize?code=true\

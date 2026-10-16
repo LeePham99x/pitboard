@@ -26,6 +26,55 @@ pub(crate) fn sid() -> Option<String> {
     Opened::this_process()?.user_sid()
 }
 
+// The user another process runs as, where its token may be read.
+pub(crate) fn token_user(process: HANDLE) -> Option<String> {
+    let mut handle: HANDLE = std::ptr::null_mut();
+    // SAFETY: an open process handle; `handle` is written only on success.
+    let opened = unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut handle) };
+    (opened != 0).then(|| Opened(handle).user_sid()).flatten()
+}
+
+// `DOMAIN\name`'s SID, as WTS names the user of a session.
+pub(crate) fn account_sid(account: &str) -> Option<String> {
+    use windows_sys::Win32::Security::{LookupAccountNameW, SID_NAME_USE};
+    let name: Vec<u16> = account.encode_utf16().chain([0]).collect();
+    let (mut sid_length, mut domain_length) = (0u32, 0u32);
+    let mut kind: SID_NAME_USE = 0;
+    // SAFETY: with no buffers it writes only the lengths it needs.
+    unsafe {
+        LookupAccountNameW(
+            std::ptr::null(),
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut sid_length,
+            std::ptr::null_mut(),
+            &mut domain_length,
+            &mut kind,
+        );
+    }
+    if sid_length == 0 {
+        return None;
+    }
+    // Whole u64s, so the SID at its start is aligned.
+    let mut sid = vec![0u64; (sid_length as usize).div_ceil(size_of::<u64>())];
+    let mut domain = vec![0u16; domain_length as usize];
+    // SAFETY: both buffers hold at least the lengths given.
+    let found = unsafe {
+        LookupAccountNameW(
+            std::ptr::null(),
+            name.as_ptr(),
+            sid.as_mut_ptr().cast(),
+            &mut sid_length,
+            domain.as_mut_ptr(),
+            &mut domain_length,
+            &mut kind,
+        )
+    };
+    (found != 0)
+        .then(|| sid_text(sid.as_mut_ptr().cast()))
+        .flatten()
+}
+
 pub(crate) fn sid_text(sid: PSID) -> Option<String> {
     use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
     let mut text: windows_sys::core::PWSTR = std::ptr::null_mut();
@@ -294,7 +343,7 @@ pub(crate) fn floor() -> Floor {
 }
 
 // Not GetVersionEx, which answers what the manifest asks for, nor the registry's ProductName.
-fn version() -> Option<(u32, u32, u32)> {
+pub(crate) fn version() -> Option<(u32, u32, u32)> {
     let mut info = OSVERSIONINFOW {
         dwOSVersionInfoSize: size_of::<OSVERSIONINFOW>() as u32,
         ..OSVERSIONINFOW::default()

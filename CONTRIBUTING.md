@@ -342,7 +342,8 @@ volume it mounts for the run. The job fails when a run leaves a login item, a sc
 folder, the app's data folder, a link scheme, a notification registration, a start at
 sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a 0.x release is
 built and checks that it refuses and changes nothing. It runs the opened build with no
-argument as a fresh standard user, as winget's validation runs a program. The
+argument as a fresh standard user, as winget's validation runs a program. One test reads the
+app execution aliases in the job user's own profile, since a fresh standard user's has none. The
 `csharp-windows` job builds `pitboard_ffi.dll` twice, as a 0.x release is built and opened
 with its fixtures, checks that the bindings generated from each are the Linux job's byte for
 byte, and runs the C# tests against each the same way.

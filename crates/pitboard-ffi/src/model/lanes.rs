@@ -913,7 +913,6 @@ mod tests {
     };
     use pitboard_core::host::awake;
     use pitboard_core::provider::ProviderId;
-    #[cfg(unix)]
     use pitboard_core::testing::fs as files;
     use std::time::Instant;
 
@@ -1264,7 +1263,6 @@ mod tests {
     /// goes, which tells it not to, and a sign-in whose tool starts after that is stopped as
     /// it starts: nothing is left to say it is over.
     #[test]
-    #[cfg(unix)]
     fn a_sign_in_is_told_once_and_let_go_once_the_model_has_gone() {
         let sign_ins = SignIns::default();
         let (tell, told) = channel();
@@ -1316,7 +1314,6 @@ mod tests {
     /// thread ends, for no longer than asked, and one whose tool was stopped does not, though
     /// its thread may still be reading what the tool said.
     #[test]
-    #[cfg(unix)]
     fn the_sign_ins_have_stopped_once_each_tool_has_or_its_thread_has_ended() {
         let sign_ins = Arc::new(SignIns::default());
         let mut world = World::new("stopped-within");
@@ -1399,7 +1396,6 @@ mod tests {
     /// then the tool has been waited for and the core's one sign-in at a time let go of, and
     /// one that reaches nothing says nothing of it.
     #[test]
-    #[cfg(unix)]
     fn a_code_and_a_stop_reach_only_a_tool_that_has_started_and_still_speaks() {
         let mut world = World::new("reach");
         let claude = world.claude_stand_in();
@@ -1495,24 +1491,21 @@ mod tests {
         assert_eq!(Job::FindCommandLine.lane(), Lane::Discovery);
     }
 
-    /// The `pitboard` a terminal runs: the first on the login shell's `PATH`, then where each
-    /// way of installing Pitboard puts one, and whether it is this app's own once every link
-    /// on the way to it is followed. Looked for over real files in the scratch home, and in
-    /// none of this machine's places.
-    ///
-    /// MachineModelTests.swift's theCommandLineIsLookedForWhereATerminalWouldFindIt.
+    fn pitboard() -> String {
+        format!("pitboard{}", std::env::consts::EXE_SUFFIX)
+    }
+
+    // MachineModelTests.swift's theCommandLineIsLookedForWhereATerminalWouldFindIt.
     #[test]
-    #[cfg(unix)]
     fn the_command_line_is_looked_for_where_a_terminal_would_find_it() {
         use crate::FoundCommandLine;
         let mut world = World::new("command-line");
         let helper = world.app_with_a_command_line();
         let (bin, cargo) = (world.dir("bin"), world.dir("cargo/bin"));
         std::fs::create_dir_all(&bin).expect("a bin");
-        world.looks_for_pitboard_in(
-            vec![bin.clone()],
-            Some(format!("/nowhere/bin:{}", cargo.display())),
-        );
+        let login =
+            std::env::join_paths([world.dir("nowhere/bin"), cargo.clone()]).expect("a search path");
+        world.looks_for_pitboard_in(vec![bin.clone()], Some(login.to_string_lossy().into()));
         let worker = worker(world.core(), StandInApps::new(&[], true));
         let found = |worker: &Worker| match worker.work(Job::FindCommandLine) {
             Answer::CommandLineFound { found, own } => {
@@ -1523,55 +1516,53 @@ mod tests {
         };
         assert_eq!(found(&worker), FoundCommandLine::Nowhere);
 
-        files::link(&helper, &bin.join("pitboard")).expect("a link");
+        files::link(&helper, &bin.join(pitboard())).expect("a link");
         assert_eq!(
             found(&worker),
             FoundCommandLine::Bundled {
-                path: bin.join("pitboard").to_string_lossy().into_owned()
+                path: bin.join(pitboard()).to_string_lossy().into_owned()
             }
         );
 
-        crate::model::testing::a_program_at(&cargo.join("pitboard"));
+        crate::model::testing::a_program_at(&cargo.join(pitboard()));
         assert_eq!(
             found(&worker),
             FoundCommandLine::Another {
-                path: cargo.join("pitboard").to_string_lossy().into_owned()
+                path: cargo.join(pitboard()).to_string_lossy().into_owned()
             },
             "the login shell's PATH first"
         );
     }
 
-    /// The `pitboard` a terminal runs is looked for in a core made from its parts, as a
-    /// fixture makes its own, and in one made as the app makes its own, by
-    /// `AppCore::for_app` from the environment the app was started with. It is looked for on
-    /// the login shell's `PATH` ahead of what cargo installed, and then where each way of
-    /// installing Pitboard puts it under the app's home, which is all there is where the shell
-    /// could not be asked. Only a copy of the app has a command line inside it for a link to
-    /// lead back to: a core not run from an app has none, and nor does a build directory.
-    /// Each look finds a copy in the scratch home before any place of this machine's. The
-    /// core made from its parts names no tool's program and is given an empty search path
-    /// for one, needing neither; the one made from the environment names each tool's
-    /// program outright, and the login shell it names cannot be run. So nothing of this
-    /// machine is looked in.
-    ///
-    /// AppModelTests.swift's theSettingsLookForTheCommandLineWhereTheLoginShellSays, but for
-    /// linking nothing, since linking is the app's own.
+    // AppModelTests.swift's theSettingsLookForTheCommandLineWhereTheLoginShellSays. Nothing of
+    // this machine is looked in: each tool is named outright, and no login shell or registry read.
     #[test]
-    #[cfg(unix)]
     fn the_settings_look_for_the_command_line_where_the_login_shell_says() {
         use crate::{FoundCommandLine, Made, OwnCommandLine};
-        use pitboard_core::context::Context;
+        use pitboard_core::context::{Context, Environment};
         use pitboard_core::host::{OS, Os};
         use std::path::Path;
         let world = World::new("installs");
-        let app = world.dir("Pitboard.app");
-        let helper = app.join("Contents/Helpers/pitboard");
+        let (app, helper) = match OS {
+            Os::MacOs | Os::Linux => {
+                let app = world.dir("Pitboard.app");
+                let helper = app.join("Contents/Helpers/pitboard");
+                (app, helper)
+            }
+            Os::Windows => {
+                let install = world.dir("Pitboard");
+                (
+                    install.join("Pitboard.exe"),
+                    install.join("bin").join(pitboard()),
+                )
+            }
+        };
         let (bin, home) = (world.dir("bin"), world.dir("home"));
-        let cargo = home.join(".cargo/bin/pitboard");
+        let cargo = home.join(".cargo").join("bin").join(pitboard());
         crate::model::testing::a_program_at(&helper);
         crate::model::testing::a_program_at(&cargo);
         std::fs::create_dir_all(&bin).expect("a bin");
-        let linked = bin.join("pitboard");
+        let linked = bin.join(pitboard());
         files::link(&helper, &linked).expect("a link");
         let text = |path: &Path| path.to_string_lossy().into_owned();
         let bundled = |path: &Path| FoundCommandLine::Bundled { path: text(path) };
@@ -1583,8 +1574,12 @@ mod tests {
             other => panic!("not the command line: {other:?}"),
         };
 
+        let at_home: Environment = [("HOME", text(&home)), ("USERPROFILE", text(&home))]
+            .into_iter()
+            .collect();
         let told = |search_path: Option<String>, helper: Option<&Path>| {
             let (home, helper) = (home.clone(), helper.map(Path::to_path_buf));
+            let places = pitboard_core::app::command_line_places(&at_home, None);
             Arc::new(AppCore::asking(
                 move || {
                     let made = Made {
@@ -1596,14 +1591,16 @@ mod tests {
                         ),
                         search_path: search_path.clone(),
                         helper: helper.clone(),
-                        command_line_places: pitboard_core::app::command_line_places(&home),
+                        command_line_places: places.clone(),
                     };
                     (made, false)
                 },
                 crate::ASK_AGAIN_AFTER,
             ))
         };
-        let login = Some(format!("/nowhere/bin:{}", bin.display()));
+        let login =
+            std::env::join_paths([world.dir("nowhere/bin"), bin.clone()]).expect("a search path");
+        let login = Some(login.to_string_lossy().into_owned());
         assert_eq!(
             found(told(login.clone(), Some(&helper))).0,
             bundled(&linked),
@@ -1622,6 +1619,7 @@ mod tests {
 
         let environment: HashMap<String, String> = [
             ("HOME", text(&home)),
+            ("USERPROFILE", text(&home)),
             ("SHELL", "/nowhere/at/all/sh".into()),
             ("PITBOARD_HOME", text(&home.join(".pitboard"))),
             ("CLAUDE_CONFIG_DIR", text(&home.join(".claude"))),
@@ -1639,11 +1637,10 @@ mod tests {
             another(&cargo),
             "the login shell could not be run"
         );
-        // No app runs on Linux, so nothing there has a command line inside it, and the
-        // Windows app does not say where its own is yet.
+        // No app runs on Linux, so nothing there has a command line inside it.
         let inside = match OS {
-            Os::MacOs => true,
-            Os::Linux | Os::Windows => false,
+            Os::MacOs | Os::Windows => true,
+            Os::Linux => false,
         };
         assert_eq!(own.lasting(), inside, "{own:?}");
         let (from_a_build, own) = found(started_at(&world.dir(".build/debug")));

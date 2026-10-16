@@ -463,6 +463,9 @@ fn enroll_signing_in(pitboard: &Pitboard, label: &str) -> Report {
                 "Opening {}'s sign-in. Sign in as {who}; the account in use now stays signed in.",
                 tool.name()
             );
+            if let Some(running) = pitboard.running_before_sign_in(label) {
+                eprint!("{running}");
+            }
             pitboard.sign_in(label)
         }
         // Each line as the wait says it, until the app has quit signed in.

@@ -1244,7 +1244,7 @@ mod tests {
         Made {
             search_path: None,
             helper: helper.map(Path::to_path_buf),
-            command_line_places: pitboard_core::app::command_line_places(&nowhere()),
+            command_line_places: pitboard_core::app::command_line_places(&at_nowhere(), None),
             core: service::Pitboard::new(ctx),
         }
     }
@@ -1270,6 +1270,13 @@ mod tests {
             Os::MacOs | Os::Linux => PathBuf::from("/dev/null"),
             Os::Windows => std::env::temp_dir().join("pitboard-app-nowhere"),
         }
+    }
+
+    fn at_nowhere() -> Environment {
+        let home = nowhere().to_string_lossy().into_owned();
+        [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+            .into_iter()
+            .collect()
     }
 
     fn installed(core: &AppCore) -> Vec<String> {

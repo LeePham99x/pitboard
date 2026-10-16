@@ -74,16 +74,33 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     later_on_windows(
         "codex_runs_inside_the_chatgpt_app",
         "26.928.31416",
-        &["W18"],
-        "codex_windows_app_identity: how the ChatGPT app for Windows runs its own codex, and \
-         how that codex is told apart",
+        &["W27"],
+        "whether the app codex_windows_app_identity names runs its own codex inside its \
+         package, and whether closing its windows leaves it running, session step 10",
     ),
-    later_on_windows(
-        "codex_app_server_daemon",
-        "0.159.3",
-        &["W18"],
-        "where the background app server runs from on Windows, and what starts it",
-    ),
+    PerSystem {
+        name: "codex_app_server_daemon",
+        macos: Read("0.159.3"),
+        linux: Read("0.159.3"),
+        windows: NotRead(
+            "where the app server runs from on Windows, and how it starts there, is \
+             codex_windows_app_server's",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_app_server",
+        macos: NotRead("where the app server runs from on macOS is codex_app_server_daemon's"),
+        linux: NotRead("where the app server runs from on Linux is codex_app_server_daemon's"),
+        windows: Read("0.162.1"),
+    },
+    PerSystem {
+        name: "codex_windows_app_identity",
+        macos: NotRead(
+            "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
+        ),
+        linux: NotRead("OpenAI makes no desktop app for Linux"),
+        windows: Read("0.162.1"),
+    },
     PerSystem {
         name: "codex_home_isolates_a_sign_in",
         macos: Read("0.160.0"),
@@ -108,17 +125,36 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     ),
     everywhere("codex_identity_is_the_person", VERIFIED_AGAINST),
     everywhere("codex_refusal_is_invalid_grant", VERIFIED_AGAINST),
-    later_on_windows(
-        "codex_install_places",
-        "0.159.2",
-        &["W17"],
-        "where Codex's installers put `codex.exe` on Windows",
-    ),
+    PerSystem {
+        name: "codex_install_places",
+        macos: Read("0.159.2"),
+        linux: Read("0.159.2"),
+        windows: NotRead(
+            "install.ps1, npm and winget put `codex.exe` elsewhere on Windows, which \
+             codex_windows_install_places reads",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_install_places",
+        macos: NotRead("where macOS's installers put `codex` is codex_install_places'"),
+        linux: NotRead("where Linux's installers put `codex` is codex_install_places'"),
+        windows: Read("0.162.1"),
+    },
+    PerSystem {
+        name: "codex_windows_version",
+        macos: NotRead("a macOS install names its version in its path or its package.json"),
+        linux: NotRead("a Linux install names its version in its path or its package.json"),
+        windows: Read("0.162.1"),
+    },
+    // Its static half read from 0.162.1's source: it binds 127.0.0.1:1455, sends `GET /cancel`
+    // to a login server already there and falls back to 1457, opens the browser with the `http`
+    // association's command as a child of its own with no stdio, and reads nothing typed back.
     later_on_windows(
         "codex_login_is_driveable",
         VERIFIED_AGAINST,
-        &["W19"],
-        "whether `codex login` runs piped, with no console window, from a program on Windows",
+        &["W27"],
+        "whether `codex login` runs piped, with no console window, from a program on Windows, \
+         session step 9",
     ),
     everywhere("codex_login_prints_its_address", "0.160.0"),
     later_on_windows(
@@ -274,6 +310,48 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_windows_app_server",
+        fact: "on Windows the background app server runs \
+               `<CODEX_HOME>\\packages\\app-server-daemon\\current\\bin\\codex.exe`, where \
+               `current` is a junction Codex itself points at one of its \
+               `releases\\<version>-<target>`. Codex starts it with `DETACHED_PROCESS | \
+               CREATE_BREAKAWAY_FROM_JOB`, out of the starting terminal's job, refuses to from \
+               an elevated terminal, and `codex app-server daemon restart` starts it again",
+        read_from: "package_root and managed_codex_bin in \
+                    codex-rs/app-server-daemon/src/managed_install.rs, select_release in \
+                    prepare_install_windows.rs, the Windows start in backend/pid_start.rs and \
+                    ensure_not_elevated in backend/windows.rs, at tag rust-v0.162.1, read on \
+                    2026-10-16; the win32-x64 and win32-arm64 builds hold their messages",
+        verified_against: "0.162.1",
+        depends: "provider::codex::holders's app_server_daemon on Windows",
+        probe: &[
+            "app-server daemon restart",
+            "failed to create managed daemon junction after native creation was denied",
+            "start the Windows daemon from a non-elevated terminal",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_app_identity",
+        fact: "OpenAI's desktop app for Windows, ChatGPT- or Codex-branded, is the Store package \
+               of family `OpenAI.Codex_2p2nqsd0c76g0`, so its app's id is \
+               `OpenAI.Codex_2p2nqsd0c76g0!App`, the one Start lists as `OpenAI.Codex_*!App`. \
+               Codex tells the app's running process by that family, from \
+               `GetPackageFamilyName`",
+        read_from: "installed_windows_app and process_package_family in \
+                    codex-rs/cli/src/doctor/desktop/platform.rs, and codex_app_is_installed in \
+                    codex-rs/cli/src/desktop_app/windows.rs, at tag rust-v0.162.1, read on \
+                    2026-10-16; the win32-x64 and win32-arm64 builds hold both",
+        verified_against: "0.162.1",
+        depends: "provider::codex::holders's chatgpt_app on Windows, and the app id it hands \
+                  an app to quit ChatGPT with",
+        probe: &[
+            "OpenAI.Codex_2p2nqsd0c76g0",
+            "Get-StartApps | Where-Object AppID -Like 'OpenAI.Codex_*!App'",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_home_isolates_a_sign_in",
         fact: "`CODEX_HOME` moves everything Codex keeps in a home, so a sign-in with \
                `CODEX_HOME` set to an empty private directory writes `auth.json` there and \
@@ -369,6 +447,49 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
             "npm install -g @openai/codex",
             "brew upgrade --cask codex",
         ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_install_places",
+        fact: "on Windows install.ps1 keeps each release in `<CODEX_HOME or \
+               %USERPROFILE%\\.codex>\\packages\\standalone\\releases\\<version>-<target>`, \
+               points `current` at it by a junction, and makes `CODEX_INSTALL_DIR`, or \
+               `%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin` where that is unset or white \
+               space, a junction to `current\\bin`, which it puts on the user `Path`. A global \
+               npm install's `codex.cmd` in its prefix, `%APPDATA%\\npm` by default, starts \
+               `bin/codex.js`, which runs `vendor/<target>/bin/codex.exe` of the platform's \
+               package, beside `codex-package.json`. It finds that package as Node finds one \
+               from its own `bin`, else uses its own `vendor`, and starts the program with its \
+               arguments and every variable it was given, `CODEX_MANAGED_PACKAGE_ROOT` set to \
+               its own package's folder and `CODEX_MANAGED_BY_NPM` to `1`, where no other \
+               package manager's files are found, the other `CODEX_MANAGED_BY_` ones removed. \
+               winget's `OpenAI.Codex` is a zip whose \
+               nested portable `codex-<target>.exe` is linked in winget's `Links` as `codex`",
+        read_from: "scripts/install/install.ps1 at tag rust-v0.162.1; `bin/codex.js` of \
+                    `@openai/codex@0.162.1`, and its win32-x64 and win32-arm64 packages; the \
+                    installer manifest of `OpenAI.Codex` 0.161.0, the newest in \
+                    microsoft/winget-pkgs; read on 2026-10-15, and `bin/codex.js` again on \
+                    2026-10-16. `Programs\\OpenAI\\Codex` is in install.ps1 alone, so the build \
+                    is probed for the package's own file and the variable the launcher sets",
+        verified_against: "0.162.1",
+        depends: "codex::paths::install_places and host::Os::package_bins, where an app looks \
+                  for `codex.exe` after the registry's `Path`, and codex::paths::npm_native, \
+                  which a sign-in starts in place of npm's `codex.cmd`",
+        probe: &["codex-package.json", "CODEX_MANAGED_PACKAGE_ROOT"],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_version",
+        fact: "on Windows `codex.exe` carries no version resource at all. The package it runs \
+               from, npm's vendored one or a standalone release, holds `codex-package.json` \
+               beside its `bin`, `{layoutVersion, version, target, variant: \"codex\", \
+               entrypoint: \"bin/codex.exe\"}`, whose `version` is the release",
+        read_from: "the win32-x64 and win32-arm64 builds of 0.162.1, which have no resource \
+                    directory, their packages' `codex-package.json`, and the build's own check \
+                    of a local package, read on 2026-10-15",
+        verified_against: "0.162.1",
+        depends: "doctor's codex_version, which reads the release there on Windows",
+        probe: &["codex-package.json"],
         absent: &[],
     },
     Assumption {
@@ -564,9 +685,13 @@ mod tests {
                 "codex_usage_endpoint",
                 "codex_revokes_on_its_own_sign_out",
                 "codex_never_follows_a_switch",
+                "codex_windows_app_server",
+                "codex_windows_app_identity",
                 "codex_windows_home",
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
+                "codex_windows_install_places",
+                "codex_windows_version",
                 "codex_login_prints_its_address",
                 "codex_login_takes_a_store_override",
             ]
@@ -576,7 +701,14 @@ mod tests {
     // The conformance run checks a build of each system for them.
     #[test]
     fn macos_and_linux_read_every_fact() {
-        for line in PER_SYSTEM.iter().filter(|l| l.name != "codex_windows_home") {
+        let windows = [
+            "codex_windows_app_server",
+            "codex_windows_app_identity",
+            "codex_windows_home",
+            "codex_windows_install_places",
+            "codex_windows_version",
+        ];
+        for line in PER_SYSTEM.iter().filter(|l| !windows.contains(&l.name)) {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),

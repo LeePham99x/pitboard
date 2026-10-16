@@ -77,8 +77,9 @@ pub enum ProviderId {
 pub struct Cli {
     // Pitboard's own variable naming the tool's program outright
     pub program_variable: &'static str,
-    // where the tool's own installers put its program under a home
-    pub install_places: fn(&std::path::Path) -> Vec<std::path::PathBuf>,
+    // where the tool's own installers put its program, as an app started with this
+    // environment finds them
+    pub install_places: fn(&crate::context::Environment) -> Vec<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -527,23 +528,14 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// absence is worth saying before anybody opens a browser.
     fn program(&self, ctx: &Context) -> Option<std::path::PathBuf>;
 
-    /// The tool's own sign-in, pointed at `dir` so the live login is never touched.
-    ///
-    /// `dir` exists and is private when this is called, and it is where the tool writes the
-    /// new login: every tool Pitboard handles lets a home variable move its whole store,
-    /// which is the only reason a second account can be signed in without signing the first
-    /// one out. Whether that really isolates the live login is
-    /// [`Provider::private_signin_isolation`]'s question, asked first.
-    ///
-    /// Starting it changes things a run that may change nothing must not: `codex login`
-    /// revokes whatever login is in the home it is given before it signs in. So the command
-    /// is made only with the [`Permit`] only the one gate every change passes makes.
+    // Pointed at `dir`, private and there already, so the live login is never touched; only
+    // with the Permit, since `codex login` revokes whatever login its home holds.
     fn sign_in(
         &self,
         ctx: &Context,
         permit: Permit,
         dir: &std::path::Path,
-    ) -> std::process::Command;
+    ) -> std::io::Result<std::process::Command>;
 
     /// The login a sign-in left in `dir`, as the tool stored it.
     fn read_signin(
@@ -703,14 +695,15 @@ pub(crate) fn program_among(
     tool: ProviderId,
     runnable: impl FnMut(&std::path::Path) -> bool,
 ) -> Option<std::path::PathBuf> {
-    let installers = tool
-        .cli()
-        .filter(|_| ctx.installer_places)
-        .map(|cli| (cli.install_places)(ctx.home()))
-        .unwrap_or_default();
+    let installers = ctx
+        .installer_places
+        .get(&tool)
+        .into_iter()
+        .flatten()
+        .cloned();
     let search = ctx.search_path();
     let dirs = std::env::split_paths(&search).chain(installers);
-    crate::host::program::find_in(ctx.program_for(tool)?, dirs, runnable)
+    crate::host::program::find_in(ctx.program_for(tool)?, dirs, &ctx.lookup(), runnable)
 }
 
 // What a sign-in of each tool could start here now: its program, or its app's data folder.
@@ -728,33 +721,24 @@ pub(crate) fn installed_among(
         .collect()
 }
 
-/// A command that runs `tool`'s own program, by the path it was found at, with the search
-/// path as its `PATH`, and the program's own directory in front of it when it is not on it
-/// already.
-///
-/// An npm install is a script that starts `#!/usr/bin/env node`, and npm puts it beside the
-/// `node` that installed it, under whatever prefix or version manager that was. So a
-/// program found somewhere the search path does not reach, where an app finds one its
-/// installer put there, finds its interpreter in its own directory, even for an app whose
-/// `PATH` has neither. The directory as found, never the script it links to: npm links
-/// `<prefix>/bin/codex` to a file deep inside `lib/node_modules`, where no `node` is. A
-/// program found on the search path runs with that path as it is, so `env` finds the `node`
-/// the person's own terminal would, and not an older one that happens to sit beside it.
-///
-/// A program that was not found is left to the search path, where starting it fails the
-/// way a missing program does.
-///
-/// What it runs is a tool's sign-in, which changes what that tool keeps, so it is made only
-/// with the [`Permit`] the one gate every change passes makes.
-pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::process::Command {
+// The program's own folder goes in front of a search path that lacks it, so an npm script
+// finds the `node` beside it. A bare name on Windows would start one beside Pitboard (RF-F3).
+pub(crate) fn command(
+    ctx: &Context,
+    _: Permit,
+    tool: ProviderId,
+) -> std::io::Result<std::process::Command> {
     let search = ctx.search_path();
     let Some(program) = program_of(ctx, tool) else {
+        if ctx.os == crate::host::Os::Windows {
+            return Err(std::io::ErrorKind::NotFound.into());
+        }
         let named = ctx
             .program_for(tool)
             .unwrap_or(std::path::Path::new(tool.program()));
         let mut command = std::process::Command::new(named);
         command.env("PATH", search);
-        return command;
+        return Ok(command);
     };
     // An empty search path has no entries. Split, it would give one empty entry, and an
     // empty entry is the current directory.
@@ -773,9 +757,37 @@ pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::proces
             .unwrap_or(search),
         None => search,
     };
-    let mut command = std::process::Command::new(program);
+    let (started, set) = behind_npms_shim(tool, &program).unwrap_or((program, Vec::new()));
+    let mut command = std::process::Command::new(started);
     command.env("PATH", path);
-    command
+    for (name, value) in set {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+    Ok(command)
+}
+
+// A variable a launcher sets, or with `None` takes away.
+pub(crate) type Launched = Vec<(&'static str, Option<std::ffi::OsString>)>;
+
+// Started by its `cmd.exe`, a tool asks "Terminate batch job (Y/N)?" on a Ctrl+C.
+fn behind_npms_shim(
+    tool: ProviderId,
+    shim: &std::path::Path,
+) -> Option<(std::path::PathBuf, Launched)> {
+    let target = crate::host::program::npm_shim_target(shim)?;
+    let a_program = target
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"));
+    if a_program {
+        return crate::host::proc::can_run(&target).then(|| (target, Vec::new()));
+    }
+    match tool {
+        ProviderId::Codex => codex::paths::npm_native(&target),
+        ProviderId::Claude | ProviderId::Desktop => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -959,9 +971,16 @@ mod tests {
         assert!(matches!(Adoption::PollingWithin(33), Adoption::PollingWithin(s) if s == 33));
     }
 
-    /// A scratch directory standing in for an npm prefix's `bin`, with an empty file for
-    /// each tool's program that anybody may run. Nothing here is ever run.
+    // Nothing here is ever run.
     struct Prefix(std::path::PathBuf);
+
+    fn file_of(program: &str) -> String {
+        format!("{program}{}", std::env::consts::EXE_SUFFIX)
+    }
+
+    fn joined(dirs: &[&std::path::Path]) -> std::ffi::OsString {
+        std::env::join_paths(dirs).expect("a search path")
+    }
 
     impl Prefix {
         fn new(name: &str) -> Prefix {
@@ -971,10 +990,10 @@ mod tests {
                 std::thread::current().id()
             ));
             let _ = std::fs::remove_dir_all(&root);
-            let bin = root.join("npm/bin");
+            let bin = root.join("npm").join("bin");
             std::fs::create_dir_all(&bin).expect("a scratch prefix");
             for tool in documents().map(|tool| tool.id()) {
-                let program = bin.join(tool.program());
+                let program = bin.join(file_of(tool.program()));
                 std::fs::write(&program, "").expect("a program");
                 crate::host::fs::testing::make_runnable(&program).expect("runnable");
             }
@@ -982,17 +1001,27 @@ mod tests {
         }
 
         fn bin(&self) -> std::path::PathBuf {
-            self.0.join("npm/bin")
+            self.0.join("npm").join("bin")
         }
 
-        /// A directory beside `bin` holding something named for each tool's program that
-        /// cannot be run: a directory of that name, or a file with no execute bit.
+        fn program(&self, tool: ProviderId) -> std::path::PathBuf {
+            self.bin().join(file_of(tool.program()))
+        }
+
+        // Where no folder is.
+        fn nowhere(&self) -> std::path::PathBuf {
+            self.0.join("nowhere")
+        }
+
+        // A folder of each program's name, and a file of it nobody may run.
         fn decoys(&self) -> (std::path::PathBuf, std::path::PathBuf) {
             let (dirs, files) = (self.0.join("dirs"), self.0.join("files"));
             for tool in documents().map(|tool| tool.id()) {
-                std::fs::create_dir_all(dirs.join(tool.program())).expect("a directory");
+                std::fs::create_dir_all(dirs.join(file_of(tool.program()))).expect("a directory");
                 std::fs::create_dir_all(&files).expect("a directory");
-                std::fs::write(files.join(tool.program()), "").expect("a file");
+                let file = files.join(file_of(tool.program()));
+                std::fs::write(&file, "").expect("a file");
+                crate::host::fs::testing::deny_running(&file).expect("nobody may run it");
             }
             (dirs, files)
         }
@@ -1011,42 +1040,38 @@ mod tests {
             .and_then(|(_, value)| value)
     }
 
-    /// A program is looked for where the caller says, not on this process's own `PATH`: an
-    /// app opened from Finder has only the system's directories there.
+    // An app opened from Finder has only the system's folders on its own `PATH`.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_program_is_looked_for_on_the_search_path_it_is_given() {
         let prefix = Prefix::new("find");
-        let search = format!("/nowhere/at/all::{}", prefix.bin().display());
-        let found = crate::host::program::find(std::path::Path::new("codex"), search.as_ref());
-        assert_eq!(found, Some(prefix.bin().join("codex")));
+        let search = joined(&[&prefix.nowhere(), &prefix.bin()]);
+        let lookup = crate::host::program::Lookup::here();
+        let found = crate::host::program::find(std::path::Path::new("codex"), &search, &lookup);
+        assert_eq!(found, Some(prefix.program(ProviderId::Codex)));
+        let everywhere = match crate::host::OS {
+            crate::host::Os::MacOs | crate::host::Os::Linux => "ls",
+            crate::host::Os::Windows => "cmd",
+        };
         assert_eq!(
-            crate::host::program::find(std::path::Path::new("ls"), search.as_ref()),
+            crate::host::program::find(std::path::Path::new(everywhere), &search, &lookup),
             None,
-            "ls is on this process's PATH and not on the one given"
+            "{everywhere} is on this process's PATH and not on the one given"
         );
     }
 
-    /// A directory named for the program, or a file of that name nobody may run, is passed
-    /// over the way `execvp` passes over it, so what is found is what a sign-in can start.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn what_cannot_be_run_is_passed_over() {
         let prefix = Prefix::new("decoys");
         let (dirs, files) = prefix.decoys();
-        let search = format!(
-            "{}:{}:{}",
-            dirs.display(),
-            files.display(),
-            prefix.bin().display()
-        );
+        let search = joined(&[&dirs, &files, &prefix.bin()]);
+        let lookup = crate::host::program::Lookup::here();
         assert_eq!(
-            crate::host::program::find(std::path::Path::new("codex"), search.as_ref()),
-            Some(prefix.bin().join("codex"))
+            crate::host::program::find(std::path::Path::new("codex"), &search, &lookup),
+            Some(prefix.program(ProviderId::Codex))
         );
-        for decoy in [dirs.join("codex"), files.join("codex")] {
+        for decoy in [dirs.join(file_of("codex")), files.join(file_of("codex"))] {
             assert_eq!(
-                crate::host::program::find(&decoy, "".as_ref()),
+                crate::host::program::find(&decoy, "".as_ref(), &lookup),
                 None,
                 "{}",
                 decoy.display()
@@ -1054,78 +1079,258 @@ mod tests {
         }
     }
 
-    /// Every tool's sign-in runs the program found, by its full path. Found on the search
-    /// path, it runs with that path as it is: its directory is on it already, and putting it
-    /// first would only change which `node` an npm install's `env` finds from the one the
-    /// person's own terminal finds.
+    // Its folder first would change which `node` an npm script finds from the terminal's.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_sign_in_runs_the_program_found_with_the_search_path_as_it_is() {
         let prefix = Prefix::new("sign-in");
-        let search = format!("/nowhere/before:{}", prefix.bin().display());
-        let ctx =
-            Context::new(std::path::PathBuf::from("/nowhere")).with_search_path(search.clone());
+        let search = joined(&[&prefix.nowhere(), &prefix.bin()]);
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_search_path(search.to_string_lossy().into_owned());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         for tool in documents().map(|tool| tool.id()) {
-            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
-            let program = prefix.bin().join(tool.program());
+            let command = document(tool)
+                .sign_in(&ctx, Permit::for_a_test(), dir)
+                .expect("found");
+            let program = prefix.program(tool);
             assert_eq!(command.get_program(), program.as_os_str(), "{tool}");
-            assert_eq!(env_of(&command, "PATH"), Some(search.as_ref()), "{tool}");
+            assert_eq!(env_of(&command, "PATH"), Some(search.as_os_str()), "{tool}");
             assert_eq!(document(tool).program(&ctx), Some(program), "{tool}");
         }
     }
 
-    /// A program named outright where the search path does not reach is run with its own
-    /// directory first on `PATH`, which is how an app that found it where its installer
-    /// puts it starts it: an npm install's script names `node` through `env`, and `node` is
-    /// beside it. Named outright on the search path, it runs with that path as it is.
+    // An npm script names `node` through `env`, and `node` is beside it.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_program_named_outright_is_run_with_its_own_directory_on_path() {
         let prefix = Prefix::new("named");
+        let (system, other) = (prefix.0.join("system"), prefix.0.join("other"));
         let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
-            .with_claude_program(prefix.bin().join("claude"))
-            .with_codex_program(prefix.bin().join("codex"))
-            .with_search_path("/usr/bin:/bin".into());
+            .with_claude_program(prefix.program(ProviderId::Claude))
+            .with_codex_program(prefix.program(ProviderId::Codex))
+            .with_search_path(joined(&[&system, &other]).to_string_lossy().into_owned());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         for tool in documents().map(|tool| tool.id()) {
-            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+            let command = document(tool)
+                .sign_in(&ctx, Permit::for_a_test(), dir)
+                .expect("found");
             assert_eq!(
                 command.get_program(),
-                prefix.bin().join(tool.program()).as_os_str(),
+                prefix.program(tool).as_os_str(),
                 "{tool}"
             );
             assert_eq!(
                 env_of(&command, "PATH"),
-                Some(format!("{}:/usr/bin:/bin", prefix.bin().display()).as_ref()),
+                Some(joined(&[&prefix.bin(), &system, &other]).as_os_str()),
                 "{tool}"
             );
         }
-        let on_it = format!("/usr/bin:{}/", prefix.bin().display());
-        let ctx = ctx.with_search_path(on_it.clone());
+        let mut bin = prefix.bin().into_os_string();
+        bin.push(std::path::MAIN_SEPARATOR_STR);
+        let on_it = joined(&[&system, std::path::Path::new(&bin)]);
+        let ctx = ctx.with_search_path(on_it.to_string_lossy().into_owned());
         for tool in documents().map(|tool| tool.id()) {
-            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
-            assert_eq!(env_of(&command, "PATH"), Some(on_it.as_ref()), "{tool}");
+            let command = document(tool)
+                .sign_in(&ctx, Permit::for_a_test(), dir)
+                .expect("found");
+            assert_eq!(env_of(&command, "PATH"), Some(on_it.as_os_str()), "{tool}");
         }
     }
 
-    /// A program found nowhere is left to the search path, so starting it fails the way a
-    /// missing program does rather than running whatever this process's `PATH` has.
+    // std's `Command` looks for a bare name beside Pitboard first on Windows (RF-F3).
     #[test]
-    fn a_program_found_nowhere_is_left_to_the_search_path() {
-        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
-            .with_search_path("/nowhere/at/all".into());
+    fn a_program_found_nowhere_is_started_by_its_bare_name_only_off_windows() {
+        let prefix = Prefix::new("nowhere");
+        let nowhere = prefix.nowhere();
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        for tool in documents().map(|tool| tool.id()) {
-            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
-            assert_eq!(command.get_program(), tool.program(), "{tool}");
+        for os in [
+            crate::host::Os::MacOs,
+            crate::host::Os::Linux,
+            crate::host::Os::Windows,
+        ] {
+            let env = crate::context::Environment::on(
+                os,
+                [
+                    ("HOME", prefix.0.as_os_str()),
+                    ("USERPROFILE", prefix.0.as_os_str()),
+                    ("PATH", nowhere.as_os_str()),
+                ],
+            );
+            let ctx = Context::for_command_line(&env);
+            for tool in documents().map(|tool| tool.id()) {
+                let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+                assert_eq!(document(tool).program(&ctx), None, "{tool}");
+                match os {
+                    crate::host::Os::MacOs | crate::host::Os::Linux => {
+                        let command = command.expect("left to the search path");
+                        assert_eq!(command.get_program(), tool.program(), "{tool}");
+                        assert_eq!(
+                            env_of(&command, "PATH"),
+                            Some(nowhere.as_os_str()),
+                            "{tool}"
+                        );
+                    }
+                    crate::host::Os::Windows => assert_eq!(
+                        command.map(drop).map_err(|e| e.kind()),
+                        Err(std::io::ErrorKind::NotFound),
+                        "{tool}"
+                    ),
+                }
+            }
+        }
+    }
+
+    // As npm's cmd-shim 9.0.2 writes one for a program, and for a script `node` runs.
+    fn npm_shim(at: &std::path::Path, target: &str, interpreted: bool) {
+        let run = if interpreted {
+            format!(
+                "\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  \
+                 SET \"_prog=node\"\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title \
+                 %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & \"%_prog%\"  \"%dp0%\\{target}\" %*\r\n"
+            )
+        } else {
+            format!("\"%dp0%\\{target}\"   %*\r\n")
+        };
+        std::fs::write(
+            at,
+            format!(
+                "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n\
+                 SETLOCAL\r\nCALL :find_dp0\r\n{run}"
+            ),
+        )
+        .expect("a shim");
+        crate::host::fs::testing::make_runnable(at).expect("runnable");
+    }
+
+    fn a_program_at(at: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(at.parent().expect("its folder")).expect("a folder");
+        std::fs::write(at, "").expect("a program");
+        crate::host::fs::testing::make_runnable(at).expect("runnable");
+        at.to_path_buf()
+    }
+
+    fn under(root: &std::path::Path, parts: &[&str]) -> std::path::PathBuf {
+        parts
+            .iter()
+            .fold(root.to_path_buf(), |at, part| at.join(part))
+    }
+
+    // npm's own `codex.cmd` and `claude.cmd`, as `npm install -g` leaves them on Windows.
+    #[test]
+    fn behind_npms_shim_a_sign_in_starts_the_program_the_shim_would() {
+        let prefix = Prefix::new("npm-shim");
+        let npm = prefix.0.join("npm");
+        let claude = a_program_at(&under(
+            &npm,
+            &[
+                "node_modules",
+                "@anthropic-ai",
+                "claude-code",
+                "bin",
+                "claude.exe",
+            ],
+        ));
+        npm_shim(
+            &npm.join("claude.cmd"),
+            r"node_modules\@anthropic-ai\claude-code\bin\claude.exe",
+            false,
+        );
+        let package = under(&npm, &["node_modules", "@openai", "codex"]);
+        a_program_at(&package.join("bin").join("codex.js"));
+        let platform = under(&package, &["node_modules", "@openai", "codex-win32-x64"]);
+        let codex = a_program_at(&under(
+            &platform,
+            &["vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe"],
+        ));
+        std::fs::write(platform.join("package.json"), "{}").expect("its package.json");
+        npm_shim(
+            &npm.join("codex.cmd"),
+            r"node_modules\@openai\codex\bin\codex.js",
+            true,
+        );
+        let search = joined(&[&prefix.nowhere()]);
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_claude_program(npm.join("claude.cmd"))
+            .with_codex_program(npm.join("codex.cmd"))
+            .with_search_path(search.to_string_lossy().into_owned());
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        let on_path = joined(&[&npm, &prefix.nowhere()]);
+        for (tool, native) in [(ProviderId::Claude, &claude), (ProviderId::Codex, &codex)] {
+            let command = document(tool)
+                .sign_in(&ctx, Permit::for_a_test(), dir)
+                .expect("found");
+            assert_eq!(command.get_program(), native.as_os_str(), "{tool}");
             assert_eq!(
                 env_of(&command, "PATH"),
-                Some("/nowhere/at/all".as_ref()),
+                Some(on_path.as_os_str()),
                 "{tool}"
             );
-            assert_eq!(document(tool).program(&ctx), None, "{tool}");
         }
+        let command = codex_sign_in(&ctx, dir);
+        let root = crate::host::without_verbatim_prefix(
+            std::fs::canonicalize(&package).expect("the package's folder"),
+        );
+        assert_eq!(
+            env_of(&command, "CODEX_MANAGED_PACKAGE_ROOT"),
+            Some(root.as_os_str())
+        );
+        assert_eq!(
+            env_of(&command, "CODEX_MANAGED_BY_NPM"),
+            Some(std::ffi::OsStr::new("1"))
+        );
+        for other in [
+            "CODEX_MANAGED_BY_BUN",
+            "CODEX_MANAGED_BY_PNPM",
+            "CODEX_MANAGED_BY_VITE_PLUS",
+        ] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == other && value.is_none()),
+                "{other} removed"
+            );
+        }
+    }
+
+    // Where the platform's package sits beside Codex's, or is missing, or the shim is not npm's.
+    #[test]
+    fn behind_any_other_cmd_a_sign_in_starts_the_cmd() {
+        let prefix = Prefix::new("npm-hoisted");
+        let npm = prefix.0.join("npm");
+        let package = under(&npm, &["node_modules", "@openai", "codex"]);
+        a_program_at(&package.join("bin").join("codex.js"));
+        npm_shim(
+            &npm.join("codex.cmd"),
+            r"node_modules\@openai\codex\bin\codex.js",
+            true,
+        );
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_codex_program(npm.join("codex.cmd"))
+            .with_search_path(prefix.nowhere().to_string_lossy().into_owned());
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        assert_eq!(
+            codex_sign_in(&ctx, dir).get_program(),
+            npm.join("codex.cmd").as_os_str(),
+            "no codex.exe for it to start"
+        );
+
+        let hoisted = under(&npm, &["node_modules", "@openai", "codex-win32-arm64"]);
+        let codex = a_program_at(&under(
+            &hoisted,
+            &["vendor", "aarch64-pc-windows-msvc", "bin", "codex.exe"],
+        ));
+        std::fs::write(hoisted.join("package.json"), "{}").expect("its package.json");
+        assert_eq!(codex_sign_in(&ctx, dir).get_program(), codex.as_os_str());
+
+        let own = a_program_at(&npm.join("other").join("codex.cmd"));
+        std::fs::write(&own, "@echo off\r\n\"%~dp0codex.exe\" %*\r\n").expect("a script");
+        a_program_at(&npm.join("other").join("codex.exe"));
+        let ctx = ctx.with_codex_program(own.clone());
+        assert_eq!(codex_sign_in(&ctx, dir).get_program(), own.as_os_str());
+    }
+
+    fn codex_sign_in(ctx: &Context, dir: &std::path::Path) -> std::process::Command {
+        document(ProviderId::Codex)
+            .sign_in(ctx, Permit::for_a_test(), dir)
+            .expect("found")
     }
 
     /// The address to open is the first `https` one. Codex prints its loopback address

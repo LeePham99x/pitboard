@@ -60,10 +60,14 @@ pub(crate) fn clear(permit: Permit, home: &Path) {
     let _ = crate::home::remove_all(permit, home);
 }
 
-/// `tool`'s own program, in `home`, with nothing of this process's environment but `PATH`, the
-/// person's name and the proxy Pitboard was given.
-pub(crate) fn command(ctx: &Context, permit: Permit, tool: ProviderId, home: &Path) -> Command {
-    let mut command = crate::provider::command(ctx, permit, tool);
+// Nothing of this process's environment but `PATH`, the person's name and the proxy.
+pub(crate) fn command(
+    ctx: &Context,
+    permit: Permit,
+    tool: ProviderId,
+    home: &Path,
+) -> std::io::Result<Command> {
+    let mut command = crate::provider::command(ctx, permit, tool)?;
     let path: Option<OsString> = command
         .get_envs()
         .find(|(name, _)| *name == "PATH")
@@ -85,7 +89,7 @@ pub(crate) fn command(ctx: &Context, permit: Permit, tool: ProviderId, home: &Pa
     for (name, value) in ctx.proxy.variables() {
         command.env(name, value);
     }
-    command
+    Ok(command)
 }
 
 /// What a test or a fixture plays a run as, in place of starting a program: given what the run

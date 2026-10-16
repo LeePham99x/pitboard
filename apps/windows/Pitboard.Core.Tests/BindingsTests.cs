@@ -47,7 +47,6 @@ public sealed class BindingsTests
     }
 
     [TestMethod]
-    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W17: finding programs on Windows")]
     public void TheAppAsksTheCoreWhereThingsAreAndWhatRuns()
     {
         Assert.IsNull(PitboardFfiMethods.AppCommandLine("/home/x/pitboard"));

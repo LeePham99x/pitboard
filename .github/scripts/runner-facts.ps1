@@ -2,10 +2,11 @@
 # as the job's user and as throwaway users this makes. Each change it makes is undone in a
 # finally: the probe's marker, VHDs, a ReFS or Dev Drive volume, an SMB share, Bun and
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
-# the job user's HKCU\Environment values, the state of OpenSSH Server where the image has one,
-# Developer Mode and the symbolic-link right, and for the channel rows Scoop in a scratch root,
-# winget's local manifests and the package they install, a build on the user PATH and in
-# ~\.cargo\bin, a loopback server and Defender's attack surface reduction rules.
+# the job user's HKCU\Environment values, the state of OpenSSH Server, installed from Microsoft's
+# release where the image ships none, Developer Mode and the symbolic-link right, and for the
+# channel rows Scoop in a scratch root, winget's local manifests and the package they install, a
+# build on the user PATH and in ~\.cargo\bin, a loopback server and Defender's attack surface
+# reduction rules.
 #
 # Everything goes into one JSON report at -Out, saved after each row, so a run cut short still
 # leaves what it gathered. A fact that cannot be gathered is recorded as an error and does not
@@ -25,14 +26,19 @@ param(
     [Parameter(Mandatory)] [string] $BunZip,
     [Parameter(Mandatory)] [string] $BunSha256,
     # pitboard.exe as a 0.x release builds it, for the channel rows.
-    [string] $Pitboard = ''
+    [string] $Pitboard = '',
+    # Win32-OpenSSH from Microsoft's release, installed where the image ships no sshd
+    # (windows-11-arm), so RF-M's network logon is measured on both images. Pinned by SHA-256.
+    [string] $OpenSshTag = '',
+    [string] $OpenSshZip = '',
+    [string] $OpenSshSha256 = ''
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
-    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder, starts OpenSSH Server and installs Bun for a run'
+    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder, installs and starts OpenSSH Server and installs Bun for a run'
 }
 
 $Probe = (Resolve-Path -Path $Probe).Path
@@ -726,13 +732,99 @@ function Get-SshdDiagnosis($User) {
     }
 }
 
-# RF-M: a loopback ssh session as $User by key, where the image ships sshd, in which the probe
-# reads the logon, DPAPI, Credential Manager and the processes of $User's other logon. $User
-# joins OpenSSH Users, the group AllowGroups admits. The service is put back as it was.
+# WF-b: install Win32-OpenSSH from Microsoft's release where the image ships none
+# (windows-11-arm), so RF-M measures the network logon on both images. The zip is taken only
+# when its SHA-256 is the one the workflow pinned. Uninstall-OpenSsh removes the service and
+# the files. Hands back the install folder, or $null when the image already has sshd or no zip
+# was given.
+function Install-OpenSsh($Result, [string] $Tag, [string] $Zip, [string] $Sha256) {
+    if (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue) { $Result.shipped_sshd = $true; return $null }
+    $Result.shipped_sshd = $false
+    if (-not $Zip) { return $null }
+    $dir = 'C:\pitboard-probe-openssh'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $download = Join-Path $dir $Zip
+    Invoke-WebRequest -Uri "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$Tag/$Zip" -OutFile $download -UseBasicParsing
+    $Result.sha256_matches = (Get-FileHash -Algorithm SHA256 -Path $download).Hash -eq $Sha256
+    if (-not $Result.sha256_matches) { throw "$Zip is not the Win32-OpenSSH build whose SHA-256 the workflow pinned; nothing of it is installed" }
+    $configDir = Join-Path $env:ProgramData 'ssh'
+    # Whether this run makes the config folder, so Uninstall-OpenSsh removes only what it made,
+    # and the ssh-agent the image ships, since install-sshd.ps1 deletes and recreates it and
+    # uninstall-sshd.ps1 then removes it.
+    $Result.config_existed = Test-Path -LiteralPath $configDir
+    $agent = Get-CimInstance -ClassName Win32_Service -Filter "Name='ssh-agent'" -ErrorAction SilentlyContinue
+    $Result.ssh_agent_before = if ($agent) {
+        [ordered]@{ present = $true; start_mode = [string] $agent.StartMode; path = [string] $agent.PathName }
+    } else {
+        [ordered]@{ present = $false }
+    }
+    $sshHome = $null
+    try {
+        Expand-Archive -Path $download -DestinationPath $dir -Force
+        $sshHome = Get-ChildItem -Path $dir -Directory | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $sshHome) { throw 'the Win32-OpenSSH zip held no folder' }
+        & (Join-Path $sshHome 'install-sshd.ps1') *> (Join-Path $scratch 'openssh-install.txt')
+        $Result.install_exit = $LASTEXITCODE
+        $env:PATH = "$sshHome;$env:PATH"
+        New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        $config = Join-Path $configDir 'sshd_config'
+        if (-not (Test-Path -LiteralPath $config)) { Copy-Item -Path (Join-Path $sshHome 'sshd_config_default') -Destination $config }
+        & (Join-Path $sshHome 'ssh-keygen.exe') -A *> (Join-Path $scratch 'openssh-keygen.txt')
+        try { & (Join-Path $sshHome 'FixHostFilePermissions.ps1') -Confirm:$false *> (Join-Path $scratch 'openssh-fixperms.txt') } catch { $null = $_ }
+        Set-Service -Name 'sshd' -StartupType Manual -ErrorAction SilentlyContinue
+        $Result.installed = [bool] (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue)
+        $Result.tag = $Tag
+    } catch {
+        Uninstall-OpenSsh $sshHome $Result
+        throw
+    }
+    $sshHome
+}
+
+# Remove what Install-OpenSsh added: the sshd service, the unpacked files and, when this run
+# made it, the whole %ProgramData%\ssh folder. uninstall-sshd.ps1 also removes the ssh-agent
+# service, so the image's own is recreated from what Install-OpenSsh recorded.
+function Uninstall-OpenSsh([string] $SshHome, $Result) {
+    try {
+        Stop-Service -Name 'sshd' -Force -ErrorAction SilentlyContinue
+        Stop-Service -Name 'ssh-agent' -Force -ErrorAction SilentlyContinue
+        if ($SshHome -and (Test-Path -LiteralPath (Join-Path $SshHome 'uninstall-sshd.ps1'))) {
+            & (Join-Path $SshHome 'uninstall-sshd.ps1') *> (Join-Path $scratch 'openssh-uninstall.txt')
+        }
+    } catch { $Result.uninstall_error = $_.Exception.Message }
+    Remove-Item -Recurse -Force -Path 'C:\pitboard-probe-openssh' -ErrorAction SilentlyContinue
+    if (-not $Result.config_existed) {
+        Remove-Item -Recurse -Force -Path (Join-Path $env:ProgramData 'ssh') -ErrorAction SilentlyContinue
+    }
+    $agent = $Result.ssh_agent_before
+    if ($agent -and $agent.present -and -not (Get-Service -Name 'ssh-agent' -ErrorAction SilentlyContinue) -and $agent.path) {
+        $startup = switch ($agent.start_mode) { 'Auto' { 'Automatic' } 'Manual' { 'Manual' } default { 'Disabled' } }
+        try {
+            New-Service -Name 'ssh-agent' -BinaryPathName $agent.path -DisplayName 'OpenSSH Authentication Agent' -StartupType $startup | Out-Null
+        } catch { $Result.ssh_agent_restore_error = $_.Exception.Message }
+        $Result.ssh_agent_restored = [bool] (Get-Service -Name 'ssh-agent' -ErrorAction SilentlyContinue)
+    }
+    $Result.sshd_gone = $null -eq (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue)
+}
+
+# RF-M: a loopback ssh session as $User by key, where the image ships sshd or Install-OpenSsh
+# put it there, in which the probe reads the logon, DPAPI, Credential Manager and the processes
+# of $User's other logon. $User joins OpenSSH Users where that group gates logins. The service
+# is put back as it was.
 function Measure-OpenSsh($User, $Result) {
     $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     $Result.sshd_present = [bool] $service
     if (-not $service) { return }
+    # The sshd build this logon ran under, so the next run attributes a DPAPI difference to the
+    # build rather than the image.
+    $sshdPath = (Get-CimInstance -ClassName Win32_Service -Filter "Name='sshd'" -ErrorAction SilentlyContinue).PathName
+    if ($sshdPath) { $sshdPath = ($sshdPath -replace '^"([^"]+)".*$', '$1').Trim('"') }
+    $Result.sshd = [ordered]@{
+        path = $sshdPath
+        product_version = if ($sshdPath -and (Test-Path -LiteralPath $sshdPath)) {
+            (Get-Item -LiteralPath $sshdPath).VersionInfo.ProductVersion
+        } else { $null }
+    }
     $before = [ordered]@{ status = [string] $service.Status; start_type = [string] $service.StartType }
     $Result.before = $before
     $keyDir = Join-Path $scratch 'pitboard-probe-ssh'
@@ -875,6 +967,12 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
             task = Measure-Task $User $s 'd2' 'probe' "--out $out dpapi --scratch $s --action unseal --file pitboard-probe-d2.bin" -WaitSeconds 30 -Expect $out
         }
     }
+    # RF-D2b: a restricted token like Codex's unelevated sandbox against a sealed park and a
+    # protected file. The restricted-token block seals and makes both as this user, then runs
+    # dpapi unseal and acl open from the restricted token.
+    Invoke-Row $Result 'rf_d2b' {
+        Invoke-AsUser $User 'd2b' @('restricted-token', '--scratch', (Join-Path $s 'd2b'))
+    }
     Invoke-Row $Result 'rf_e5' {
         $e5 = Join-Path $User.RunDir 'e5'
         $app = Join-Path $e5 'app'
@@ -917,9 +1015,25 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
             New-Item -ItemType Directory -Force -Path (Split-Path $copies[$k]) | Out-Null
             Copy-Item -Path $(if ($k -eq 'x64') { $X64 } else { $Probe }) -Destination $copies[$k]
         }
+        # winget's nested portable behind Links\codex.exe: a file symlink codex.exe ->
+        # codex-<triple>.exe, started through the link, so processes names the image Toolhelp
+        # reports for it.
+        $linkTargetName = "codex-$Triple.exe"
+        $linkTarget = Join-Path $h1 "link\$linkTargetName"
+        $link = Join-Path $h1 'link\codex.exe'
+        New-Item -ItemType Directory -Force -Path (Split-Path $linkTarget) | Out-Null
+        Copy-Item -Path $Probe -Destination $linkTarget
+        $linkMade = $false
+        try {
+            New-Item -ItemType SymbolicLink -Path $link -Target $linkTarget | Out-Null
+            $linkMade = $true
+        } catch { $null = $_ }
         $runs = [ordered]@{}
         foreach ($k in $copies.Keys) {
             $runs[$k] = Start-AsUser $User "h1-$k" @('lock', '--scratch', (Join-Path $s "h1-$k"), '--mode', 'hold', '--seconds', '40') -FilePath $copies[$k]
+        }
+        if ($linkMade) {
+            $runs.link = Start-AsUser $User 'h1-link' @('lock', '--scratch', (Join-Path $s 'h1-link'), '--mode', 'hold', '--seconds', '40') -FilePath $link
         }
         $jobCopy = Join-Path $scratch 'h1\codex.exe'
         New-Item -ItemType Directory -Force -Path (Split-Path $jobCopy) | Out-Null
@@ -927,10 +1041,14 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
         $jobRun = Start-Process -FilePath $jobCopy -ArgumentList (Format-Arguments @('lock', '--scratch', (Join-Path $scratch 'h1-job'), '--mode', 'hold', '--seconds', '40')) `
             -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $scratch 'h1-job-out.txt') -RedirectStandardError (Join-Path $scratch 'h1-job-err.txt')
         Start-Sleep -Seconds 8
+        # Find codex.exe and the triple name, so the report shows which Toolhelp gives the link.
+        $find = @('processes', '--find', 'codex.exe', '--find', $linkTargetName)
         $r = [ordered]@{
             x64_copy = [bool] $X64
-            as_the_user = Invoke-AsUser $User 'h1-find' @('processes', '--find', 'codex.exe')
-            as_the_job = Invoke-Probe 'h1-find-job' @('processes', '--find', 'codex.exe')
+            link_made = $linkMade
+            link_target = $linkTargetName
+            as_the_user = Invoke-AsUser $User 'h1-find' $find
+            as_the_job = Invoke-Probe 'h1-find-job' $find
         }
         foreach ($k in $runs.Keys) { $r["holder_$k"] = Wait-Run $runs[$k] 90 }
         $null = $jobRun.WaitForExit(90000)
@@ -956,6 +1074,15 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
                 $r.leak_check = Invoke-AsUser $User 'g3-leak-check' @('credman-names', '--leak-check')
             }
             $r
+        }
+        # RF-WW1: a dummy handed on descriptor 3 through the C runtime's inheritance table, read
+        # back by Bun the way Claude Code reads its token descriptor, as a pipe and as a socket.
+        Invoke-Row $Result 'rf_ww1' {
+            $fd3 = Join-Path $toolHelpers 'fd3-read.mjs'
+            [ordered]@{
+                pipe = Invoke-AsUser $User 'ww1-pipe' @('fd-handover', '--bun', $Bun, '--script', $fd3, '--kind', 'pipe')
+                socket = Invoke-AsUser $User 'ww1-socket' @('fd-handover', '--bun', $Bun, '--script', $fd3, '--kind', 'socket')
+            }
         }
     }
 }
@@ -1625,7 +1752,15 @@ try {
             Save-Report
             try { Measure-SmbShare $fresh $report.smb_share } catch { $report.smb_share.error = $_.Exception.Message }
             Save-Report
-            try { Measure-OpenSsh $fresh $report.openssh } catch { $report.openssh.error = $_.Exception.Message }
+            $opensshHome = $null
+            try {
+                $opensshHome = Install-OpenSsh $report.openssh $OpenSshTag $OpenSshZip $OpenSshSha256
+                Measure-OpenSsh $fresh $report.openssh
+            } catch {
+                $report.openssh.error = $_.Exception.Message
+            } finally {
+                if ($opensshHome) { Uninstall-OpenSsh $opensshHome $report.openssh }
+            }
             Save-Report
             Measure-PasswordChanges $fresh $report.fresh_standard_user
         }

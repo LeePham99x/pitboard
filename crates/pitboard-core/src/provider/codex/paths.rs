@@ -5,7 +5,7 @@
 //! [`super::layers`].
 
 use super::layers;
-use crate::context::Context;
+use crate::context::{Context, Environment};
 use crate::host::Os;
 use std::path::{Path, PathBuf};
 
@@ -35,17 +35,82 @@ pub(crate) fn auth_file(ctx: &Context) -> PathBuf {
     home(ctx).join(AUTH_FILE)
 }
 
-/// Where Codex's installers put `codex`, in the order an app looks there after the login
-/// shell's `PATH`: the link its standalone installer makes in `~/.local/bin`, then where the
-/// system's package managers put it, which is where its Homebrew cask and a global npm
-/// install go (`codex_install_places` in the register). The copy inside the ChatGPT app is
-/// not one: OpenAI documents no use of it, and in ChatGPT 26.1007.71326 it was a 0.162.0
-/// alpha for Apple silicon alone.
-pub(crate) fn install_places(home: &Path) -> Vec<PathBuf> {
-    std::iter::once(home.join(".local/bin"))
-        .chain(crate::host::OS.package_bins().iter().map(PathBuf::from))
+// `codex_install_places` and `codex_windows_install_places` in the register. Never the copy
+// inside the ChatGPT app: OpenAI documents no use of it, and in ChatGPT 26.1007.71326 it was a
+// 0.162.0 alpha for Apple silicon alone.
+pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
+    let standalone = match env.os() {
+        Os::MacOs | Os::Linux => Some(env.home().join(".local").join("bin")),
+        // install.ps1 takes one that is only white space for unset.
+        Os::Windows => env
+            .named_folder("CODEX_INSTALL_DIR")
+            .filter(|dir| !dir.to_string_lossy().trim().is_empty())
+            .or_else(|| {
+                let mut dir = env.named_folder("LOCALAPPDATA")?;
+                dir.extend(["Programs", "OpenAI", "Codex", "bin"]);
+                Some(dir)
+            }),
+    };
+    standalone
+        .into_iter()
+        .chain(env.os().package_bins(env))
         .collect()
 }
+
+// What npm's `codex.js` starts, with what it sets (`codex_windows_install_places`).
+pub(crate) fn npm_native(script: &Path) -> Option<(PathBuf, crate::provider::Launched)> {
+    let named = |path: &Path, name: &str| {
+        path.file_name()
+            .is_some_and(|its| its.eq_ignore_ascii_case(name))
+    };
+    let bin = script.parent().filter(|bin| named(bin, "bin"))?;
+    let package = bin.parent().filter(|package| named(package, "codex"))?;
+    package.parent().filter(|scope| named(scope, "@openai"))?;
+    if !named(script, "codex.js") {
+        return None;
+    }
+    let program = NPM_TARGETS.iter().find_map(|(target, platform)| {
+        let vendor = bin
+            .ancestors()
+            .filter(|dir| !named(dir, "node_modules"))
+            .map(|dir| dir.join("node_modules").join("@openai").join(platform))
+            .find(|found| found.join("package.json").is_file())
+            .unwrap_or_else(|| package.to_path_buf())
+            .join("vendor");
+        let program = vendor.join(target).join("bin").join("codex.exe");
+        crate::host::proc::can_run(&program).then_some(program)
+    })?;
+    let root = std::fs::canonicalize(package).map_or_else(
+        |_| package.to_path_buf(),
+        crate::host::without_verbatim_prefix,
+    );
+    let mut set: crate::provider::Launched = vec![
+        ("CODEX_MANAGED_PACKAGE_ROOT", Some(root.into_os_string())),
+        ("CODEX_MANAGED_BY_NPM", Some("1".into())),
+    ];
+    set.extend(
+        [
+            "CODEX_MANAGED_BY_BUN",
+            "CODEX_MANAGED_BY_PNPM",
+            "CODEX_MANAGED_BY_VITE_PLUS",
+        ]
+        .map(|other| (other, None)),
+    );
+    Some((program, set))
+}
+
+// npm installs the one its `node` runs on; an x64 `node` runs on an ARM64 PC too.
+const NPM_TARGETS: [(&str, &str); 2] = if cfg!(target_arch = "aarch64") {
+    [
+        ("aarch64-pc-windows-msvc", "codex-win32-arm64"),
+        ("x86_64-pc-windows-msvc", "codex-win32-x64"),
+    ]
+} else {
+    [
+        ("x86_64-pc-windows-msvc", "codex-win32-x64"),
+        ("aarch64-pc-windows-msvc", "codex-win32-arm64"),
+    ]
+};
 
 /// Which store this machine's Codex is configured to keep its login in.
 ///

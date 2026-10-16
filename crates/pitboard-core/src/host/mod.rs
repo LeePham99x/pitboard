@@ -42,6 +42,8 @@ mod linux;
 mod macos;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
+#[cfg(any(windows, test))]
+pub(crate) mod owner;
 pub(crate) mod program;
 #[cfg_attr(
     not(windows),
@@ -64,8 +66,10 @@ use macos as os;
 #[cfg(windows)]
 use windows as os;
 
-pub(crate) use administered::Administered;
+pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
+#[cfg(all(windows, test))]
+pub(crate) use windows::seal::Dpapi;
 
 /// The operating systems Pitboard runs on. Windows only once it is released
 /// ([`crate::release`]): until then a Windows build of a release refuses everything, and its
@@ -122,15 +126,7 @@ impl Os {
         }
     }
 
-    /// The folders of a home, relative to it, that the system asks the person about before
-    /// an app may look inside them. An app passes over a directory of `PATH` in one: looking
-    /// would put that question to the person for something Pitboard never needed, and a
-    /// program started from there would have it asked on its behalf.
-    ///
-    /// macOS asks for the Desktop, Documents and Downloads folders, iCloud Drive and the
-    /// folders of other cloud storage, under Privacy & Security's Files & Folders. Linux
-    /// asks nothing. Which folders Windows asks about, if any, is W17's to say, with where an
-    /// app finds a program there; until then none is passed over.
+    // Looking in one asks the person whether Pitboard may. Linux and Windows guard none.
     pub(crate) fn guarded_folders(self) -> &'static [&'static str] {
         match self {
             Os::MacOs => &[
@@ -144,19 +140,23 @@ impl Os {
         }
     }
 
-    /// Where the system's package managers put the programs they install, for an app that
-    /// has no shell's `PATH` to find one on, after each tool's own installer's place.
-    ///
-    /// On a Mac, Homebrew's `bin` on Apple silicon and on Intel. npm's global `bin` is one of
-    /// them where Homebrew installed Node, and `/usr/local/bin` where nodejs.org's installer
-    /// did, so a global npm install of a tool is found there too: Claude Code 2.1.289 lists
-    /// both among npm's places. Nothing on Linux looks, since no app runs there and the
-    /// command line has a shell's `PATH`, so none is said for it. Where winget, Scoop and npm
-    /// put programs on Windows is W17's to read; until then none is looked in.
-    pub(crate) fn package_bins(self) -> &'static [&'static str] {
+    // Homebrew's on a Mac, also npm's global `bin` there (Claude Code 2.1.289); none on Linux.
+    pub(crate) fn package_bins(self, env: &Environment) -> Vec<PathBuf> {
         match self {
-            Os::MacOs => &["/opt/homebrew/bin", "/usr/local/bin"],
-            Os::Linux | Os::Windows => &[],
+            Os::MacOs => vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+            Os::Linux => Vec::new(),
+            Os::Windows => [
+                ("APPDATA", &["npm"][..]),
+                ("LOCALAPPDATA", &["Microsoft", "WinGet", "Links"]),
+                ("USERPROFILE", &["scoop", "shims"]),
+            ]
+            .into_iter()
+            .filter_map(|(variable, below)| {
+                let mut place = env.named_folder(variable)?;
+                place.extend(below);
+                Some(place)
+            })
+            .collect(),
         }
     }
 
@@ -210,16 +210,17 @@ impl Os {
         }
     }
 
-    /// The command line an app at `app` comes with, which is what its renewal schedule runs:
-    /// the app itself is not one. A Mac app carries it at `Contents/Helpers/pitboard`, where
-    /// `build-app.sh` puts it, and anything that is not an app bundle, such as a test or a
-    /// build directory, has none. No app runs on Linux. Where the Windows app carries its
-    /// own is the app's to say, which it does not yet.
+    // Never beside the Windows app's `Pitboard.exe`, since NTFS takes the two names for one.
     pub(crate) fn app_command_line(self, app: &Path) -> Option<PathBuf> {
         match self {
             Os::MacOs => (app.extension() == Some("app".as_ref()))
                 .then(|| app.join("Contents/Helpers/pitboard")),
-            Os::Linux | Os::Windows => None,
+            Os::Linux => None,
+            Os::Windows => app
+                .file_name()
+                .filter(|name| name.eq_ignore_ascii_case("Pitboard.exe"))
+                .and_then(|_| app.parent())
+                .map(|install| install.join("bin").join("pitboard.exe")),
         }
     }
 }
@@ -438,8 +439,8 @@ pub(crate) fn upper_one_for_one(c: char) -> char {
     windows,
     allow(
         dead_code,
-        reason = "only a login shell says or is late, and Windows has none; W17 says which \
-                  `PATH` an app finds programs on there"
+        reason = "only a login shell is late, and Windows has none: its `Path` is read from \
+                  the registry"
     )
 )]
 pub(crate) enum LoginPath {
@@ -453,10 +454,7 @@ pub(crate) enum LoginPath {
     Late,
 }
 
-/// The `PATH` the person's own terminal has, which an app the system started does not: asked
-/// of their login shell where the system has one, which can take seconds, so never on an
-/// app's main thread. Windows has no login shell, and says nothing until W17 reads which
-/// `PATH` an app finds programs on there.
+// A login shell can take seconds, so never on an app's main thread.
 pub(crate) fn login_path(env: &Environment) -> LoginPath {
     os::login_path(env)
 }
@@ -526,14 +524,13 @@ pub(crate) fn windows_floor(version: Option<(u32, u32, u32)>) -> Floor {
     }
 }
 
-/// One process this user is running, and where its program runs from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Process {
     pub(crate) pid: u32,
-    /// The program's path where the system says one, or its bare name where it does not.
-    /// macOS gives what the program was started as, which is its full path when whatever
-    /// started it named one; Linux gives the file it runs, where this user may read that.
+    // macOS gives what it was started as, which a shell gives as the bare name.
     pub(crate) path: PathBuf,
+    // The family of the Windows package it runs from.
+    pub(crate) package: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -541,17 +538,49 @@ pub struct Listed {
     pub pid: u32,
     pub parent: u32,
     pub path: PathBuf,
+    pub package: Option<String>,
+    // False where Windows would not say whose it is or where it runs from: `path` is its name.
+    pub placed: bool,
 }
 
-// Those of `all` whose program's own name is `program`, as `Host::processes` answers.
-pub(crate) fn named(all: Vec<Listed>, program: &str) -> Vec<Process> {
-    all.into_iter()
-        .filter(|p| p.path.file_name().is_some_and(|name| name == program))
-        .map(|p| Process {
-            pid: p.pid,
-            path: p.path,
-        })
-        .collect()
+// None where one of them cannot be placed, since it may be any kind of holder.
+pub(crate) fn named(os: Os, all: Vec<Listed>, program: &str) -> Option<Vec<Process>> {
+    let files: Vec<String> = match os {
+        Os::MacOs | Os::Linux => vec![program.to_owned()],
+        Os::Windows => {
+            let mut files = vec![format!("{program}.exe")];
+            // winget's Codex is the nested portable codex-<triple>.exe behind Links\codex.exe;
+            // Toolhelp names the image the link resolves to (codex_windows_install_places).
+            if program == "codex" {
+                files.push("codex-x86_64-pc-windows-msvc.exe".to_owned());
+                files.push("codex-aarch64-pc-windows-msvc.exe".to_owned());
+            }
+            files
+        }
+    };
+    let runs = |name: &std::ffi::OsStr| match os {
+        Os::MacOs | Os::Linux => files.iter().any(|file| name == file.as_str()),
+        Os::Windows => files
+            .iter()
+            .any(|file| same_name_in_any_case(name, std::ffi::OsStr::new(file))),
+    };
+    let found: Vec<Listed> = all
+        .into_iter()
+        .filter(|p| p.path.file_name().is_some_and(runs))
+        .collect();
+    if found.iter().any(|p| !p.placed) {
+        return None;
+    }
+    Some(
+        found
+            .into_iter()
+            .map(|p| Process {
+                pid: p.pid,
+                path: p.path,
+                package: p.package,
+            })
+            .collect(),
+    )
 }
 
 pub struct Jar {
@@ -639,17 +668,13 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// nothing in it can be anybody else's.
     fn vault_is_shared(&self) -> bool;
 
-    // every process this user runs; Err says why the list could not be read
+    // Every process this user runs, in any session; Err says why the list could not be read.
     fn listing(&self) -> std::result::Result<Vec<Listed>, String>;
 
-    /// The processes this user is running `program` in, with where each runs from. `None`
-    /// where the process list could not be read, which is not the same as none running.
-    ///
-    /// What is compared is the program's own name, so a script or a shell that merely
-    /// mentions the program is not counted. Only this user's: another user's sessions use
-    /// another user's login, which a switch here never touches.
+    // By the program's own name, so a script that merely mentions it is not counted. None is
+    // not the same as none running. Another user's processes use that user's login.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
-        Some(named(self.listing().ok()?, program))
+        named(OS, self.listing().ok()?, program)
     }
 
     // a Chromium jar's rows for `hosts`, and those named one of `names` on any host, as stored
@@ -694,6 +719,20 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     ///
     /// Unset in a build for tests, on the real hosts ([`administered::READ_BY_REAL_HOSTS`]).
     fn managed_preference(&self, domain: &str, key: &str) -> Administered;
+
+    // None in a build for tests, on the real hosts.
+    fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
+        if administered::READ_BY_REAL_HOSTS {
+            administered::listed(dir)
+        } else {
+            Vec::new()
+        }
+    }
+
+    // A Windows policy value; unset elsewhere, and in a build for tests, on the real hosts.
+    fn policy(&self, _hive: Hive, _key: &str, _value: &str) -> Administered {
+        Administered::Unset
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,
@@ -813,6 +852,73 @@ mod tests {
         assert_eq!(
             ctx.host().file(PathBuf::from("/nowhere/at/all")).kind(),
             crate::store::Backend::File
+        );
+    }
+
+    fn listed(pid: u32, path: &str) -> Listed {
+        Listed {
+            pid,
+            parent: 1,
+            path: PathBuf::from(path),
+            package: None,
+            placed: true,
+        }
+    }
+
+    // 0.162.1's Windows package holds codex.exe beside programs whose names start like it.
+    #[test]
+    fn a_program_is_named_by_its_file_as_each_system_names_it() {
+        let all = || {
+            vec![
+                listed(
+                    1,
+                    "C:/Users/a/.codex/packages/standalone/current/bin/Codex.EXE",
+                ),
+                listed(2, "C:/n/vendor/codex-resources/codex-command-runner.exe"),
+                listed(3, "C:/n/vendor/bin/codex-code-mode-host.exe"),
+                listed(4, "C:/n/vendor/codex-path/rg.exe"),
+                listed(5, "/usr/local/bin/codex"),
+                listed(6, "C:/n/codex"),
+                // winget's nested portable, which Toolhelp names behind Links\codex.exe.
+                listed(
+                    7,
+                    "C:/Users/a/AppData/Local/Microsoft/WinGet/Packages/OpenAI.Codex_x/codex-x86_64-pc-windows-msvc.exe",
+                ),
+                listed(
+                    8,
+                    "C:/Users/a/AppData/Local/Microsoft/WinGet/Packages/OpenAI.Codex_x/codex-aarch64-pc-windows-msvc.exe",
+                ),
+            ]
+        };
+        let pids = |os: Os| {
+            named(os, all(), "codex").map(|found| found.iter().map(|p| p.pid).collect::<Vec<_>>())
+        };
+        assert_eq!(pids(Os::Windows), Some(vec![1, 7, 8]));
+        assert_eq!(pids(Os::MacOs), Some(vec![5, 6]));
+        assert_eq!(pids(Os::Linux), Some(vec![5, 6]));
+    }
+
+    // Such as the same person's elevated codex: it may be any kind of holder.
+    #[test]
+    fn a_process_that_cannot_be_placed_makes_the_answer_unknown() {
+        let unplaced = |name: &str| Listed {
+            placed: false,
+            ..listed(7, name)
+        };
+        let placed = listed(1, "C:/x/codex.exe");
+        assert_eq!(
+            named(
+                Os::Windows,
+                vec![placed.clone(), unplaced("codex.exe")],
+                "codex"
+            ),
+            None
+        );
+        assert_eq!(
+            named(Os::Windows, vec![placed, unplaced("svchost.exe")], "codex")
+                .map(|found| found.len()),
+            Some(1),
+            "unless it is not the program"
         );
     }
 

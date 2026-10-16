@@ -104,16 +104,33 @@ pub struct MemoryHost {
     administered: Mutex<HashMap<PathBuf, Administered>>,
     /// The managed preferences a profile forces, by domain and key, as a test said.
     forced: Mutex<HashMap<(String, String), Administered>>,
+    // The registry's policies, by hive, key and value, as a test said.
+    policies: Mutex<HashMap<(super::Hive, String, String), Administered>>,
 }
 
 impl Default for MemoryHost {
     fn default() -> MemoryHost {
+        MemoryHost::parking_in(Backend::Keychain, true)
+    }
+}
+
+impl MemoryHost {
+    pub fn new() -> Arc<MemoryHost> {
+        Arc::new(MemoryHost::default())
+    }
+
+    // Parking as Windows does: in files sealed to the account, inside this home alone.
+    pub fn sealed() -> Arc<MemoryHost> {
+        Arc::new(MemoryHost::parking_in(Backend::SealedFile, false))
+    }
+
+    fn parking_in(vault: Backend, shared: bool) -> MemoryHost {
         let refuse_start = Arc::new(AtomicBool::new(false));
         let trail = Arc::default();
         MemoryHost {
             // Keychain, because that is the chain the interesting rules are written for.
             keychain: MemoryStore::on_trail(Backend::Keychain, "live".into(), Arc::clone(&trail)),
-            vault: MemoryStore::on_trail(Backend::Keychain, "vault".into(), Arc::clone(&trail)),
+            vault: MemoryStore::on_trail(vault, "vault".into(), Arc::clone(&trail)),
             files: Mutex::new(HashMap::new()),
             trail,
             running: Mutex::new(HashMap::new()),
@@ -124,7 +141,7 @@ impl Default for MemoryHost {
             jars_asked: Mutex::new(Vec::new()),
             jar_faults: Mutex::new(HashMap::new()),
             versions: Mutex::new(HashMap::new()),
-            shared_vault: AtomicBool::new(true),
+            shared_vault: AtomicBool::new(shared),
             scheduler: super::os::pretend_scheduler(Arc::clone(&refuse_start)),
             refuse_start,
             unscheduled: AtomicBool::new(false),
@@ -132,13 +149,8 @@ impl Default for MemoryHost {
             floor: Mutex::new(Floor::Met),
             administered: Mutex::new(HashMap::new()),
             forced: Mutex::new(HashMap::new()),
+            policies: Mutex::new(HashMap::new()),
         }
-    }
-}
-
-impl MemoryHost {
-    pub fn new() -> Arc<MemoryHost> {
-        Arc::new(MemoryHost::default())
     }
 
     /// The keychain, where a tool that uses one keeps its live credential.
@@ -197,13 +209,13 @@ impl MemoryHost {
         self.runs_at(program, &vec![program; count]);
     }
 
-    /// Say that a process is running `program` from each of `paths`.
     pub fn runs_at(&self, program: &str, paths: &[&str]) {
         let processes = (1..)
             .zip(paths)
             .map(|(pid, path)| Process {
                 pid,
                 path: PathBuf::from(path),
+                package: None,
             })
             .collect();
         self.running
@@ -298,6 +310,30 @@ impl MemoryHost {
             .insert(path, holds);
     }
 
+    // On whatever system the tests run on.
+    #[cfg(test)]
+    pub(crate) fn sets_policy(&self, hive: super::Hive, key: &str, value: &str, text: &str) {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(
+                (hive, key.to_string(), value.to_string()),
+                Administered::Set(text.into()),
+            );
+    }
+
+    // A policy read that fails, such as a hive key that denies this user read access.
+    #[cfg(test)]
+    pub(crate) fn policy_unreadable(&self, hive: super::Hive, key: &str, value: &str, why: &str) {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(
+                (hive, key.to_string(), value.to_string()),
+                Administered::Unreadable(why.into()),
+            );
+    }
+
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
     /// managed preference, on whatever system the tests run on.
     pub fn forces(&self, domain: &str, key: &str, value: &str) {
@@ -369,6 +405,8 @@ impl Host for MemoryHost {
                     .and_then(|parent| paths.iter().position(|p| p == parent))
                     .map_or(1, pid),
                 path: path.clone(),
+                package: None,
+                placed: true,
             })
             .collect())
     }
@@ -474,6 +512,25 @@ impl Host for MemoryHost {
             .lock()
             .expect("a poisoned test host is a failed test")
             .get(&(domain.to_string(), key.to_string()))
+            .cloned()
+            .unwrap_or(Administered::Unset)
+    }
+
+    fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
+        self.administered
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .keys()
+            .filter(|path| path.parent() == Some(dir))
+            .cloned()
+            .collect()
+    }
+
+    fn policy(&self, hive: super::Hive, key: &str, value: &str) -> Administered {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .get(&(hive, key.to_string(), value.to_string()))
             .cloned()
             .unwrap_or(Administered::Unset)
     }

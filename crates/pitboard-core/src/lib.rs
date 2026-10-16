@@ -177,6 +177,10 @@ pub mod testing {
         Ok(crate::store::vault_write(ctx, permit, service, contents)?)
     }
 
+    pub fn may_be_running(pid: u32) -> bool {
+        crate::host::proc::may_be_running(pid)
+    }
+
     /// Deletes what is parked under `service`, once the gate has let it.
     pub fn vault_delete(ctx: &crate::context::Context, service: &str) -> crate::error::Result<()> {
         let permit = crate::service::gate(ctx)?;

@@ -20,6 +20,9 @@ pub struct Report {
     block: String,
     logon: LogonSession,
     body: Result<Value, String>,
+    // A block that produced data but did not measure what it set out to, so `ok` is false
+    // while the data it did gather stays; the reason rides in the data as `incomplete`.
+    incomplete: bool,
 }
 
 impl Report {
@@ -40,7 +43,24 @@ impl Report {
             block: block.into(),
             logon,
             body,
+            incomplete: false,
         }
+    }
+
+    /// A block that gathered some data but did not measure what it was for, so `ok` is false
+    /// and the reason rides inside the data as `incomplete`.
+    pub fn incomplete(
+        block: impl Into<String>,
+        logon: LogonSession,
+        mut data: Value,
+        reason: impl Into<String>,
+    ) -> Self {
+        if let Some(map) = data.as_object_mut() {
+            map.insert("incomplete".into(), Value::String(reason.into()));
+        }
+        let mut report = Report::ok(block, logon, data);
+        report.incomplete = report.body.is_ok();
+        report
     }
 
     /// A block that refused or could not run, with the reason in words. It still names the
@@ -54,6 +74,7 @@ impl Report {
             block: block.into(),
             logon,
             body: Err(reason.into()),
+            incomplete: false,
         }
     }
 
@@ -63,7 +84,7 @@ impl Report {
             "logon": self.logon.as_str(),
             "logon_type": self.logon.raw,
             "logon_expects_user_keys": self.logon.expects_user_keys(),
-            "ok": self.body.is_ok(),
+            "ok": self.body.is_ok() && !self.incomplete,
         });
         let map = obj.as_object_mut().expect("a JSON object");
         match &self.body {
@@ -83,7 +104,7 @@ impl Report {
 
     /// Whether the block refused or failed, which decides the exit code.
     pub fn failed(&self) -> bool {
-        self.body.is_err()
+        self.body.is_err() || self.incomplete
     }
 }
 

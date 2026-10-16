@@ -1260,6 +1260,15 @@ impl Pitboard {
         state::load(&self.ctx).map_or_else(|_| key.typed(), |state| state.typed(&key))
     }
 
+    // What the tool already runs, for a front end to print before a program sign-in, since the
+    // core prints nothing. `None` off Windows, and for a tool with no holders.
+    pub fn running_before_sign_in(&self, typed: &str) -> Option<String> {
+        let which = crate::label::choose(typed)
+            .map(|chosen| chosen.provider)
+            .unwrap_or(crate::label::DEFAULT);
+        switch::running_already(&self.ctx, which)
+    }
+
     // A program's sign-in runs in a private directory and takes no lock but its own.
     pub fn sign_in(&self, typed: &str) -> std::result::Result<SignIn, Failed> {
         let permit = self.permitted()?;

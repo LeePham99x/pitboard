@@ -1402,32 +1402,34 @@ impl World {
         ))
     }
 
-    /// An app on this machine with a command line inside it, in the scratch home, which a
-    /// schedule runs and a link would reach, as `build-app.sh` puts one in a copy of the app.
-    /// Where it is.
-    #[cfg(unix)]
+    // Where `build-app.sh` puts one in a copy of the app, or the MSI beside `Pitboard.exe`.
     pub(super) fn app_with_a_command_line(&mut self) -> PathBuf {
         self.app_with_a_command_line_in("")
     }
 
     /// The same, with the app in `dir` of the scratch home: under `AppTranslocation/…`, the
     /// temporary copy macOS runs an app from where it was downloaded.
-    #[cfg(unix)]
     pub(super) fn app_with_a_command_line_in(&mut self, dir: &str) -> PathBuf {
-        let helper = self
-            .root
-            .join(dir)
-            .join("Pitboard.app/Contents/Helpers/pitboard");
+        use pitboard_core::host::{OS, Os};
+        let helper = match OS {
+            Os::MacOs | Os::Linux => self
+                .root
+                .join(dir)
+                .join("Pitboard.app/Contents/Helpers/pitboard"),
+            Os::Windows => self
+                .root
+                .join(dir)
+                .join("Pitboard")
+                .join("bin")
+                .join("pitboard.exe"),
+        };
         a_program_at(&helper);
         self.ctx = self.ctx.clone().with_schedule_program(helper.clone());
         self.helper = Some(helper.clone());
         helper
     }
 
-    /// Where the app looks for the `pitboard` a terminal would run, after the login shell's
-    /// `PATH`: `places`, and nothing of this machine's. For the test that makes an app with a
-    /// command line inside it, as its own helpers are.
-    #[cfg(unix)]
+    // After the login shell's `PATH`, and nothing of this machine's.
     pub(super) fn looks_for_pitboard_in(
         &mut self,
         places: Vec<PathBuf>,
@@ -1567,10 +1569,7 @@ impl World {
     /// one as it is written never finds it half there. Written in place, its process id was
     /// read empty, as CI met on Linux (run 37437853042).
     ///
-    /// The stand-in runs on every system. The tests that use it, and [`StandIn`], are still
-    /// macOS's and Linux's, since whether it runs is asked of the shell's `kill -0`; W19 of
-    /// the Windows work asks Windows.
-    #[cfg(unix)]
+    /// The stand-in runs on every system, as `claude.exe` on Windows, the name a cancel ends.
     pub(super) fn claude_stand_in(&mut self) -> StandIn {
         self.a_claude_stand_in(false)
     }
@@ -1581,12 +1580,10 @@ impl World {
     /// `bin/codex.js` starts the program with its own output and hands on only `SIGINT`,
     /// `SIGTERM` and `SIGHUP`. Reading what the tool says then ends only once that program
     /// has, long after the tool was stopped and waited for.
-    #[cfg(unix)]
     pub(super) fn claude_stand_in_holding_its_output(&mut self) -> StandIn {
         self.a_claude_stand_in(true)
     }
 
-    #[cfg(unix)]
     fn a_claude_stand_in(&mut self, holding: bool) -> StandIn {
         use pitboard_core::testing::stand_in::{self, Script, Step};
         let bin = self.root.join("bin");
@@ -1621,7 +1618,7 @@ impl World {
                 refuses: "Invalid code. Please make sure the full code was copied.\n".into(),
             },
         ]);
-        let program = bin.join("claude");
+        let program = bin.join(format!("claude{}", std::env::consts::EXE_SUFFIX));
         let script = Script::Plays {
             args: Some(vec!["auth".into(), "login".into()]),
             steps,
@@ -1637,7 +1634,6 @@ impl World {
     /// `percent` used. `access` names its access token, so a new login of an account already
     /// here can be told from the one it has. Planted once the sign-in has started, since
     /// starting one clears whatever a sign-in before it left there.
-    #[cfg(unix)]
     pub(super) fn signed_in_privately(&self, who: &str, access: &str, percent: f64) {
         let dir = self.root.join(".pitboard").join("signin");
         let service = pitboard_core::testing::service_for_dir(&dir.to_string_lossy());
@@ -1646,7 +1642,6 @@ impl World {
     }
 
     /// Whether the login Claude Code has in use is the one whose access token is `access`.
-    #[cfg(unix)]
     pub(super) fn claude_code_uses(&self, access: &str) -> bool {
         self.host
             .live()
@@ -1832,7 +1827,6 @@ impl World {
 /// What a test's stand-in for `claude` left: its process id, every line typed back to it,
 /// and, where it holds its output open, the process id of what holds it and the file it holds
 /// it for.
-#[cfg(unix)]
 pub(super) struct StandIn {
     pid: PathBuf,
     typed: PathBuf,
@@ -1840,7 +1834,6 @@ pub(super) struct StandIn {
     holding: PathBuf,
 }
 
-#[cfg(unix)]
 impl StandIn {
     /// Every line typed back to it, in order, as it last wrote them down whole.
     pub(super) fn typed(&self) -> Vec<String> {
@@ -1877,7 +1870,6 @@ impl StandIn {
 }
 
 /// Nothing a stand-in started outlives its test holding its output open.
-#[cfg(unix)]
 impl Drop for StandIn {
     fn drop(&mut self) {
         self.let_go_of_output();
@@ -1886,7 +1878,6 @@ impl Drop for StandIn {
 
 /// The process id a stand-in wrote whole at `path`, waited for until it has: a test asking
 /// before would otherwise take a process that has not started yet for one that has stopped.
-#[cfg(unix)]
 fn written_pid(path: &std::path::Path) -> u32 {
     let asked = std::time::Instant::now();
     loop {
@@ -1918,6 +1909,11 @@ fn running(pid: u32) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+#[cfg(windows)]
+fn running(pid: u32) -> bool {
+    pitboard_core::testing::may_be_running(pid)
+}
+
 /// Claude Code's write lock, held until this is dropped.
 pub(super) struct Writing(PathBuf);
 
@@ -1941,7 +1937,6 @@ impl Drop for World {
 /// and not taken for one that has stopped: this process stands in for it here, and writes
 /// its own id the way the stand-in does, whole, a moment after the question.
 #[test]
-#[cfg(unix)]
 fn whether_the_stand_in_runs_is_answered_once_it_has_written_its_process_id() {
     let world = World::new("stand-in-pid");
     let stand_in = StandIn {
@@ -1961,9 +1956,7 @@ fn whether_the_stand_in_runs_is_answered_once_it_has_written_its_process_id() {
     writing.join().expect("the writer");
 }
 
-/// A program at `path` that anybody may run, with the directories it needs: the compiled
-/// stand-in, there to be found, which refuses to do anything were it run.
-#[cfg(unix)]
+// The compiled stand-in, which refuses to do anything were it run.
 pub(super) fn a_program_at(path: &std::path::Path) {
     use pitboard_core::testing::stand_in::{self, Script};
     let dir = path.parent().expect("a program's directory");

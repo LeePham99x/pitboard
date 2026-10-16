@@ -282,7 +282,7 @@ pub(super) fn path_vars(scratch: &Path) -> Report {
             out.as_os_str(),
             OsStr::new("env-child"),
         ];
-        match ffi::spawn(None, &exe, &args, CREATE_NO_WINDOW, Some(&block)) {
+        match ffi::spawn(None, &exe, &args, CREATE_NO_WINDOW, Some(&block), None) {
             Ok(child) => json!({ "exit": child.wait_ms(30_000), "child": take_child_report(&out) }),
             Err(code) => json!({ "spawn_error": code }),
         }

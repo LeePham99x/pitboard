@@ -224,6 +224,13 @@ jobs:
             if ($left.Count -ne 0) { throw "$folder holds $($left.Name -join ', ')" }
           }
           exit 0
+      # The standard user's fresh profile has no app execution alias to read; the job user's has.
+      - name: The job user's own app execution aliases, read only
+        env:
+          PITBOARD_TEST_ALIASES: '1'
+        run: >
+          cargo nextest run --locked --workspace --no-capture
+          -E 'binary_id(pitboard-core) & test(=host::windows::proc::tests::an_app_execution_alias_runs_from_windows_apps)'
       # winget's validation installs as a standard user, runs the program with no argument and
       # wants 0. Until Windows is released the opened build only has to run to its own exit, and
       # the step says what it gave.

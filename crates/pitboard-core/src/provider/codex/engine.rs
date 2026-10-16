@@ -240,36 +240,20 @@ impl Provider for Codex {
         crate::provider::program_of(ctx, ProviderId::Codex)
     }
 
-    /// `codex -c cli_auth_credentials_store="file" login` with `CODEX_HOME` pointed at the
-    /// private directory.
-    ///
-    /// Read from 0.154.0. It revokes whatever login is stored in the home it is given
-    /// before it signs in, which in an empty directory is nothing; run against the real
-    /// home it would end the account in use, which is why the directory is always set and
-    /// never empty. It opens the browser itself, prints the address to stderr for when it
-    /// cannot, listens for the callback on a loopback port, and reads nothing from stdin.
-    ///
-    /// The `-c` names the file store, read from 0.160.0 (`codex_login_takes_a_store_override`
-    /// in the register): given before `login`, where Codex's own command line takes it, it is
-    /// over the private home's config, which holds none, over `/etc/codex/config.toml` and over
-    /// a trusted project's `.codex/config.toml`. Without it, either could send the new login to
-    /// the keychain, where this could not read it back. Only a requirement or a managed layer
-    /// is over it, and one that chooses another store chooses the live store too, which
-    /// [`Codex::live`] refuses before a sign-in starts.
-    ///
-    /// Started from inside the directory too, so no project's config is read at all.
+    // The `-c` keeps the new login in the file, over every layer but a requirement or a managed
+    // one, which `Codex::live` refuses first (`codex_login_takes_a_store_override`).
     fn sign_in(
         &self,
         ctx: &Context,
         permit: Permit,
         dir: &std::path::Path,
-    ) -> std::process::Command {
-        let mut command = crate::provider::command(ctx, permit, ProviderId::Codex);
+    ) -> std::io::Result<std::process::Command> {
+        let mut command = crate::provider::command(ctx, permit, ProviderId::Codex)?;
         command
             .args(["-c", super::layers::FILE_STORE, "login"])
             .env("CODEX_HOME", dir)
             .current_dir(dir);
-        command
+        Ok(command)
     }
 
     fn read_signin(
@@ -581,18 +565,18 @@ mod tests {
         assert!(Codex.slice(&login()).is_ok());
     }
 
-    /// The sign-in runs Codex's own login against the private directory, from inside it,
-    /// and never against the real home: `codex login` revokes whatever it finds stored in
-    /// the home it is given before it signs in. It names the file store before `login`, where
-    /// Codex's own command line takes a `-c`, so no setting of `/etc/codex` or of a project
-    /// sends the new login where it cannot be read back.
+    // `codex login` revokes whatever its home holds, so never the real one.
     #[test]
     fn a_sign_in_is_codex_login_in_the_private_directory() {
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
-            .with_codex_program(std::path::PathBuf::from("/opt/codex/bin/codex"));
-        let command = Codex.sign_in(&ctx, Permit::for_a_test(), dir);
-        assert_eq!(command.get_program(), "/opt/codex/bin/codex");
+        // Never run: a program that is there on every system.
+        let codex = std::env::current_exe().expect("this test");
+        let ctx =
+            Context::new(std::path::PathBuf::from("/nowhere")).with_codex_program(codex.clone());
+        let command = Codex
+            .sign_in(&ctx, Permit::for_a_test(), dir)
+            .expect("found");
+        assert_eq!(command.get_program(), codex.as_os_str());
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             ["-c", "cli_auth_credentials_store=\"file\"", "login"]

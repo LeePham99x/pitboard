@@ -559,7 +559,8 @@ pub(crate) fn remove_dir_all(_: Permit, path: &Path) -> io::Result<()> {
     std::fs::remove_dir_all(path)
 }
 
-// Claude Desktop is macOS only, so nothing asks these here.
+// Claude Desktop is macOS only: a release refuses its folder first, and a build for tests
+// stops here once the process list says its scratch Claude is closed.
 pub(crate) fn private_dir(_path: &Path) -> io::Result<Private> {
     Err(macos_only())
 }
