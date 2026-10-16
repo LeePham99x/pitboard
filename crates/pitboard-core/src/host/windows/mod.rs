@@ -5,12 +5,11 @@
 //! A Windows build of a 0.x release refuses before it gets here ([`crate::release`]). A build
 //! opened to Windows, for working on Pitboard and for CI, reaches this face, and finds:
 //!
-//! - no store of secrets for a tool, only a look at Credential Manager (W23a offers its store);
 //! - no scheduler (W25).
 //!
 //! Which store a tool keeps its login in is the tool's to say, in its provider's code.
 
-mod credman;
+pub(crate) mod credman;
 #[allow(
     clippy::disallowed_methods,
     reason = "the face every file and folder Pitboard makes is made through"
@@ -128,9 +127,8 @@ fn policy(hive: Hive, key: &str, value: &str) -> Administered {
 struct Windows;
 
 impl Host for Windows {
-    // Credential Manager as a store is W23a's; until then only `credential_held` looks in it.
-    fn foreign_secrets(&self, _ctx: &Context, _account: &str) -> Option<Box<dyn RawStore>> {
-        None
+    fn foreign_secrets(&self, ctx: &Context, account: &str) -> Option<Box<dyn RawStore>> {
+        Some(Box::new(credman::Generic::of(ctx, account)))
     }
 
     fn file(&self, path: PathBuf) -> Box<dyn RawStore> {

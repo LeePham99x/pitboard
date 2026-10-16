@@ -1470,30 +1470,65 @@ fn a_switch_through_credentials_json_keeps_its_access_and_its_time_moves_while_i
     assert!(modified > long_ago, "a session reads it again by its time");
 }
 
-// Cached in the test's own config file, the feature turns Credential Manager on for its slot.
+// Cached in the test's own config file, the feature turns Credential Manager on for its slot,
+// which held nothing: the first switch moves the login there and takes the file away, as Claude
+// Code's own write does (`credman_migration`). The harness deletes the slot's items by name.
 #[cfg(windows)]
 #[test]
-fn a_switch_is_refused_and_writes_nothing_while_credential_manager_is_turned_on() {
+fn with_credential_manager_turned_on_a_switch_moves_the_login_there_and_back() {
     let env = two_accounts("windows-credman-on");
     let mut config = env.config();
     config["cachedGrowthBookFeatures"] = serde_json::json!({"tengu_windows_credman": true});
     std::fs::write(env.root.join(".claude.json"), config.to_string()).expect("cached");
-    let kept = || {
-        (
-            std::fs::read(env.root.join(".credentials.json")).expect("the login"),
-            std::fs::read(env.root.join(".claude.json")).expect("the config"),
-            env.state(),
-            tree(&env.root.join("pitboard").join("vault")),
-        )
+    let ctx = env.context();
+    let stored = |label: &str| {
+        let raw = pitboard_core::testing::credman::read(&ctx, &env.service)
+            .expect("readable")
+            .unwrap_or_else(|| panic!("{label}: a login in Credential Manager"));
+        serde_json::from_str::<serde_json::Value>(&raw).expect("JSON")["claudeAiOauth"]
+            ["refreshToken"]
+            .clone()
     };
-    let before = kept();
+    assert_eq!(
+        pitboard_core::testing::credman::read(&ctx, &env.service).expect("readable"),
+        None
+    );
 
     let (_, err, code) = env.run(&["use", "beta"]);
-    assert_ne!(code, 0, "{err}");
-    assert!(
-        err.contains("while it keeps its login in Credential Manager"),
-        "{err}"
+    assert_eq!(code, 0, "use beta: {err}");
+    assert_eq!(stored("beta"), "refresh-b");
+    assert!(!env.root.join(".credentials.json").exists());
+
+    let (out, err, _) = env.run(&["doctor", "--json"]);
+    let value: serde_json::Value =
+        serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}{err}"));
+    let check = |code: &str| {
+        value["data"]["checks"]
+            .as_array()
+            .expect("checks")
+            .iter()
+            .find(|check| check["code"] == code)
+            .unwrap_or_else(|| panic!("no {code} check: {value}"))
+            .clone()
+    };
+    let store = check("credential_store");
+    assert_eq!(
+        store["detail"],
+        format!(
+            "Credential Manager  ·  {}/claude-code-user  ·  every logon of yours on this PC reads it",
+            env.service
+        ),
+        "{store}"
     );
-    assert_eq!(kept(), before);
-    assert!(!env.root.join("pitboard").join("journal.json").exists());
+    let size = check("credential_size");
+    assert!(
+        size["detail"]
+            .as_str()
+            .is_some_and(|said| said.ends_with("bytes, in one item")),
+        "{size}"
+    );
+
+    let (_, err, code) = env.run(&["use", "alpha"]);
+    assert_eq!(code, 0, "use alpha: {err}");
+    assert_eq!(stored("alpha"), "refresh-a");
 }

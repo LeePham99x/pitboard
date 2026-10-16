@@ -73,27 +73,8 @@ fn base64url(text: &str) -> Option<Vec<u8>> {
     ((held & ((1u32 << bits) - 1)) == 0).then_some(out)
 }
 
-// Standard base64, padded, for every test that writes some.
 #[cfg(test)]
-pub(crate) fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let held = chunk.iter().enumerate().fold(0u32, |held, (at, byte)| {
-            held | (u32::from(*byte) << (16 - 8 * at))
-        });
-        for at in 0..4 {
-            if at <= chunk.len() {
-                out.push(char::from(
-                    ALPHABET[((held >> (18 - 6 * at)) & 63) as usize],
-                ));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
+pub(crate) use crate::base64::encode as base64;
 
 // Unpadded base64url, the inverse of what `claims` decodes.
 #[cfg(test)]

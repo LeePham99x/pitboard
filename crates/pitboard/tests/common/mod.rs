@@ -1203,6 +1203,12 @@ impl Drop for Env {
             Kept::InFile => {}
             Kept::Sealed => unreachable!("{SEALS_NOTHING}"),
         }
+        // A test that turned Claude Code's Credential Manager store on left its login in this
+        // test's slot there, each piece by name.
+        #[cfg(windows)]
+        if let Err(why) = pitboard_core::testing::credman::discard(&self.context(), &self.service) {
+            eprintln!("{} could not be deleted: {why}", self.service);
+        }
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }

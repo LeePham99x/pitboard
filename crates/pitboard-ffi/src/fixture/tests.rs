@@ -122,10 +122,6 @@ fn sign_in_to_the_end(core: &AppCore, label: &str) -> Result<Enrolled, PitboardE
 ///
 /// FixtureTests.swift's eachFixtureStartsWhereItsTestsExpect.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn each_fixture_starts_where_its_tests_expect() {
     let work = "claude/work, in use";
     for world in World::ALL {
@@ -252,10 +248,6 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
 /// the app starts, through the core's own warm-up with the run played: its row then says when
 /// it warms up again, and the activity log has the warm-up.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
     let launched = made(World::WarmUp);
     let (model, told) = started(&launched);
@@ -297,10 +289,6 @@ fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
 ///
 /// FixtureTests.swift's aSwitchMovesWhoIsInUseWithinItsOwnTool.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_moves_who_is_in_use_within_its_own_tool() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -369,10 +357,6 @@ fn a_switch_moves_who_is_in_use_within_its_own_tool() {
 ///
 /// FixtureTests.swift's anExpiredParkedLoginStaysUnusableAcrossSwitches.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_expired_parked_login_stays_unusable_across_switches() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -402,10 +386,6 @@ fn an_expired_parked_login_stays_unusable_across_switches() {
 /// FixtureTests.swift's aSwitchNamesTheAccountsAsTheCoreTypesThem, its model half asked of
 /// the model an app launches into the world.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_names_the_accounts_as_the_core_types_them() {
     {
         let launched = made(World::TwoTools);
@@ -458,10 +438,6 @@ fn a_switch_names_the_accounts_as_the_core_types_them() {
 ///
 /// FixtureTests.swift's theLoginSignedInNowIsNamedWithANameNotTaken.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
     let launched = made(World::Unnamed);
     let core = &launched.core;
@@ -495,10 +471,6 @@ fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
 ///
 /// FixtureTests.swift's onlyAnAccountNotInUseIsForgotten.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn only_an_account_not_in_use_is_forgotten() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -525,10 +497,6 @@ fn only_an_account_not_in_use_is_forgotten() {
 ///
 /// FixtureTests.swift's aRenameNeedsANameItsToolHasNotGiven.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_rename_needs_a_name_its_tool_has_not_given() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -558,10 +526,6 @@ fn a_rename_needs_a_name_its_tool_has_not_given() {
 ///
 /// FixtureTests.swift's aClaudeCodeSignInWaitsForTheCodeAndThenParksTheAccount.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_claude_code_sign_in_waits_for_the_code_and_then_parks_the_account() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -612,10 +576,6 @@ fn a_claude_code_sign_in_waits_for_the_code_and_then_parks_the_account() {
 /// register's `sign_in_takes_another_code` holds of 2.1.289. A line typed before it asks is
 /// read once it does.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -655,10 +615,6 @@ fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
 /// code: what AccountsWindowTests.swift's tests that add a Claude Code account meet in this
 /// world, where they type `fixture-code` with no state, until they type a code with its `#`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_refused_code_is_said_in_the_sheet_and_another_is_asked_for() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -713,10 +669,6 @@ fn a_refused_code_is_said_in_the_sheet_and_another_is_asked_for() {
 ///
 /// FixtureTests.swift's aCodexSignInFinishesByItself.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_codex_sign_in_finishes_by_itself() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -749,10 +701,6 @@ fn a_codex_sign_in_finishes_by_itself() {
 ///
 /// FixtureTests.swift's aStoppedSignInEnrolsNothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_stopped_sign_in_enrols_nothing() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -778,10 +726,6 @@ fn a_stopped_sign_in_enrols_nothing() {
 /// FixtureTests.swift's signingInAgainToAnExpiredAccountMakesItSwitchable and
 /// signingInAgainPutsAwayWhatWasWrongWithTheParkedLogin.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn signing_in_again_to_an_expired_account_makes_it_switchable() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -817,10 +761,6 @@ fn signing_in_again_to_an_expired_account_makes_it_switchable() {
 ///
 /// FixtureTests.swift's signingInAgainToTheAccountInUseKeepsItInUse.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn signing_in_again_to_the_account_in_use_keeps_it_in_use() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -854,10 +794,6 @@ fn signing_in_again_to_the_account_in_use_keeps_it_in_use() {
 ///
 /// FixtureTests.swift's givingUpOnTheInterruptedSwitchHappensOnce.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn giving_up_on_the_interrupted_switch_happens_once() {
     let launched = made(World::Stuck);
     let core = &launched.core;
@@ -918,10 +854,6 @@ fn giving_up_on_the_interrupted_switch_happens_once() {
 /// account index last changed: that a change made elsewhere is noticed is threaded.rs's
 /// `a_change_another_front_end_makes_is_told_without_asking_anyone`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_log_records_changes_newest_last_as_they_are_typed() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
@@ -1011,10 +943,6 @@ fn the_schedule_turns_on_and_off() {
 /// FixtureTests.swift's everyLaunchStartsWhereTheLastOneDid, but for the login item and
 /// notifications' permission, which are the app's.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn every_launch_starts_where_the_last_one_did() {
     use pitboard_core::app::AppFile;
     let known = |core: &AppCore| match core.status_offline() {
@@ -1084,10 +1012,6 @@ fn every_launch_starts_where_the_last_one_did() {
 ///
 /// FixtureTests.swift's aLaunchLinksItsCommandLineInATemporaryDirectory, but for linking.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_launch_keeps_its_command_line_in_its_own_folder() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -1178,10 +1102,6 @@ fn started(launched: &Launched) -> (Arc<PitboardModel>, Arc<Told>) {
 ///
 /// FixtureTests.swift's aLaunchReadsWithoutBeingAsked.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_launch_reads_without_being_asked() {
     let launched = made(World::TwoTools);
     let (model, told) = started(&launched);
@@ -1199,10 +1119,6 @@ fn a_launch_reads_without_being_asked() {
 ///
 /// FixtureTests.swift's theChatGPTFixtureIsQuitForACodexSwitchAndOpenedAgain.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_chatgpt_fixture_is_quit_for_a_codex_switch_and_opened_again() {
     let launched = made(World::ChatGptOpen);
     let core = &launched.core;
@@ -1589,10 +1505,6 @@ fn a_move_the_give_up_settles_is_said_as_finished() {
 /// The fixture's ChatGPT leaves the process list as it quits and comes back as it is
 /// opened again, so the core sees it go and come back as it would on a real machine.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn chatgpt_leaves_the_process_list_as_it_quits() {
     use crate::model::AppControl;
     let launched = made(World::ChatGptOpen);
@@ -1617,10 +1529,6 @@ fn chatgpt_leaves_the_process_list_as_it_quits() {
 /// Every account is an item under its tool, as MenuBarTests.swift's
 /// testTheMenuListsEveryAccountUnderItsTool reads them.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_menu_lists_every_account_under_its_tool() {
     let launched = made(World::TwoTools);
     let (model, told) = started(&launched);
@@ -1721,10 +1629,6 @@ fn a_machine_nobody_is_signed_in_on_offers_an_account() {
 /// The login in use with no name is offered one, as AccountsWindowTests.swift's
 /// testNamingTheAccountInUse reads it, and naming it lists it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_login_in_use_is_offered_a_name() {
     let launched = made(World::Unnamed);
     let (model, told) = started(&launched);
@@ -1756,7 +1660,7 @@ fn the_login_in_use_is_offered_a_name() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
 )]
 fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
     let launched = made(World::LeftInFile);
@@ -1795,10 +1699,6 @@ fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
 /// One account is offered a second until Not Now, as AccountsWindowTests.swift's
 /// testOneAccountIsOfferedASecondUntilNotNow reads it, which the fixture's own folder keeps.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn one_account_is_offered_a_second_until_not_now() {
     let launched = made(World::OnlyOne);
     let (model, told) = started(&launched);
@@ -1829,10 +1729,6 @@ fn one_account_is_offered_a_second_until_not_now() {
 /// testCommandNAddsAnAccountFromAnyPane read it. A switch is named "Switch" from the verb
 /// the core logs it under, `use`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn activity_lists_every_switch_above_every_enrolment() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -1877,10 +1773,6 @@ fn daily_renewal_turns_on_and_renew_now_says_what_it_did() {
 /// A Codex switch says running sessions keep the old account until they are restarted, as
 /// AccountsWindowTests.swift's testUsingACodexAccountSaysSessionsKeepTheOldOne reads it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_codex_switch_says_sessions_keep_the_old_account() {
     let launched = made(World::TwoTools);
     let (model, told) = started(&launched);
@@ -1910,10 +1802,6 @@ fn a_codex_switch_says_sessions_keep_the_old_account() {
 /// the code and lists the account once it is typed back, Codex's lists it by itself, and one
 /// cancelled adds nothing and lets another start.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn accounts_are_added_through_each_tools_sign_in() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -1983,10 +1871,6 @@ fn accounts_are_added_through_each_tools_sign_in() {
 /// of the core's one sign-in at a time, then asks for the code, and nothing on the way is
 /// refused as a sign-in already waiting.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_sign_in_asked_for_at_once_after_a_cancel_asks_for_the_code() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -2041,10 +1925,6 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_asks_for_the_code() {
 /// offers no Forget, and any other is forgotten, as its testTheAccountInUseOffersNoForget
 /// and testForgettingAsksFirst read it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -2148,10 +2028,6 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
 /// and no account is listed, where the Swift fixture listed claude/work. The window says it
 /// could not read the accounts instead, with Try Again.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
     let launched = made(World::ReadFailure);
     let told = Arc::new(Told::default());
@@ -2217,10 +2093,6 @@ fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
 /// readFailure failed the read, `unreachable`, which the core's never does; so oneTool is
 /// made so here, once its accounts have been read.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account() {
     let launched = made(World::OneTool);
     out_of_reach(&launched.machine).expect("out of reach");
@@ -2264,10 +2136,6 @@ fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account()
 /// on This Mac, for a check called "Keychain", which the core's doctor has none of; there it
 /// has "interrupted switch", worth looking at, beside personal's parked login.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
     let launched = made(World::Stuck);
     let (model, told) = started(&launched);
@@ -2366,10 +2234,6 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
 /// checks rather than one called "Keychain". work's parked login and personal's are two
 /// checks of one code, so the pane lists them by their ids.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn this_mac_shows_the_cores_checks() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);
@@ -2434,10 +2298,6 @@ fn this_mac_shows_the_cores_checks() {
 /// with its store recorded in the fixture's own folder; and a link to another site is
 /// refused, saying where it is.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_account_windows_are_what_their_ui_tests_read() {
     use crate::SiteMenu;
     use crate::account_windows::WindowNoteKind;
@@ -2656,10 +2516,6 @@ const EXPORTED_CHILD: &str = "PITBOARD_TEST_EXPORTED_FIXTURE_CHILD";
 /// app calls, in the folder it finds there. Setting `TMPDIR` in this process would change
 /// the environment while the harness's other threads may read it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 #[allow(
     clippy::disallowed_methods,
     reason = "the child is told it is the child through its environment"
@@ -2706,11 +2562,20 @@ fn in_a_child_with_a_temporary_directory_of_its_own() {
     );
 }
 
+// The folder a fixture made in `made` keeps Pitboard's files in, as each system names it.
+fn pitboard_in(made: &std::path::Path) -> std::path::PathBuf {
+    let home = made.join("home");
+    match OS {
+        Os::MacOs | Os::Linux => home.join(".pitboard"),
+        Os::Windows => home.join("AppData").join("Local").join("Pitboard"),
+    }
+}
+
 /// The test itself, in a process whose temporary directory is its own.
 fn an_exported_fixture_is_made_in_the_temporary_directory() {
     let _forgets = ForgetsTheLaunches;
     let shared = std::env::temp_dir().join("pitboard-fixture");
-    let told = shared.join("home/.pitboard/told.json");
+    let told = pitboard_in(&shared).join("told.json");
     std::fs::create_dir_all(told.parent().expect("a folder")).expect("a folder");
     std::fs::write(&told, r#"{"claude/work/session/":7200}"#).expect("left behind");
 
@@ -2721,7 +2586,7 @@ fn an_exported_fixture_is_made_in_the_temporary_directory() {
         Arc::new(Utc),
     )
     .expect("a fixture");
-    assert!(shared.join("home/.pitboard").is_dir());
+    assert!(pitboard_in(&shared).is_dir());
     assert!(!told.exists(), "what the last launch told is gone");
     model.send(Intent::Start);
     let shown = listener.until("the accounts read", read_in);
@@ -2739,14 +2604,10 @@ fn an_exported_fixture_is_made_in_the_temporary_directory() {
 /// own, so that neither empties the world of a debug build launched into a fixture, or of
 /// another run of the same tests, as they did launching with `fixture`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_exported_fixture_in_a_directory_of_its_own_is_made_there() {
     let own = Folder::own("exported-in").expect("a folder");
     let made = own.path().join("pitboard-fixture");
-    let told = made.join("home/.pitboard/told.json");
+    let told = pitboard_in(&made).join("told.json");
     std::fs::create_dir_all(told.parent().expect("a folder")).expect("a folder");
     std::fs::write(&told, r#"{"claude/work/session/":7200}"#).expect("left behind");
 
@@ -2760,7 +2621,7 @@ fn an_exported_fixture_in_a_directory_of_its_own_is_made_there() {
         Arc::new(Utc),
     )
     .expect("a fixture");
-    assert!(made.join("home/.pitboard").is_dir());
+    assert!(pitboard_in(&made).is_dir());
     assert!(!told.exists(), "what the last launch told is gone");
     model.send(Intent::Start);
     let shown = listener.until("the accounts read", read_in);
@@ -2820,10 +2681,6 @@ fn uses(snapshot: &Snapshot, qualified: &str) -> bool {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_codex_switch_quits_and_reopens_chatgpt_through_the_apps_fixture_in_is_given() {
     let own = Folder::own("given-apps").expect("a folder");
     let apps = StandInApps::new(&[CHATGPT], true);
@@ -2865,10 +2722,6 @@ fn a_codex_switch_quits_and_reopens_chatgpt_through_the_apps_fixture_in_is_given
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_refusal_to_quit_from_the_apps_fixture_in_is_given_stops_the_switch() {
     let own = Folder::own("refusing-apps").expect("a folder");
     let apps = StandInApps::new(&[CHATGPT], true);
@@ -2904,10 +2757,6 @@ fn a_refusal_to_quit_from_the_apps_fixture_in_is_given_stops_the_switch() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_run_out_is_posted_through_the_notifications_fixture_in_is_given() {
     let own = Folder::own("given-notifications").expect("a folder");
     let posted = Arc::new(Posted::default());

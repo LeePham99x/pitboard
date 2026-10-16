@@ -8,6 +8,12 @@ filter = "binary_id(pitboard::keychain_write_is_harmless)"
 threads-required = "num-test-threads"
 priority = 100
 
+# Credential Manager's counterpart, alone as that one runs.
+[[profile.default.overrides]]
+filter = "binary_id(pitboard::credman_write_is_harmless)"
+threads-required = "num-test-threads"
+priority = 100
+
 [profile.ci]
 fail-fast = false
 # A retry tells a flaky test from a failing one, and a flaky test still fails the run.

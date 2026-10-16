@@ -303,10 +303,6 @@ fn what_still_runs_the_old_login_is_told_apart_by_where_it_runs_from() {
 /// nothing running. Claude Code's sessions follow a switch by themselves, so nothing is
 /// asked about them and nothing said.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_process_list_nobody_could_read_is_said_rather_than_taken_for_none() {
     let m = codex_machine("listless");
     m.mem.without_a_process_list();

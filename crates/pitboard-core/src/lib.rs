@@ -78,6 +78,7 @@ pub mod usage;
 pub mod words;
 
 pub(crate) mod atomic;
+pub(crate) mod base64;
 pub(crate) mod fault;
 #[cfg(test)]
 mod helper;
@@ -151,6 +152,69 @@ pub mod testing {
 
     pub fn may_be_running(pid: u32) -> bool {
         crate::host::proc::may_be_running(pid)
+    }
+
+    /// Claude Code's login in Credential Manager as Pitboard writes, reads and deletes it, under
+    /// a test's own service, and each item as Windows keeps it, its blob by length alone.
+    #[cfg(windows)]
+    pub mod credman {
+        use crate::context::Context;
+        use crate::store::RawStore;
+
+        pub struct Item {
+            pub kind: u32,
+            pub persist: u32,
+            pub user: String,
+            pub comment: Option<String>,
+            pub attributes: u32,
+            pub bytes: usize,
+        }
+
+        fn refused(target: &str) -> std::io::Result<()> {
+            match crate::provider::names::refusal(target, &[]) {
+                Some(why) => Err(std::io::Error::other(why)),
+                None => Ok(()),
+            }
+        }
+
+        pub fn item(target: &str) -> std::io::Result<Option<Item>> {
+            refused(target)?;
+            Ok(
+                crate::host::windows_credman::item(target)?.map(|held| Item {
+                    kind: held.kind,
+                    persist: held.persist,
+                    user: held.user,
+                    comment: held.comment,
+                    attributes: held.attributes,
+                    bytes: held.blob.len(),
+                }),
+            )
+        }
+
+        // As `Bun.secrets.set` writes one (RF-G3).
+        pub fn write_as_bun(target: &str, user: &str, value: &str) -> std::io::Result<()> {
+            refused(target)?;
+            crate::host::windows_credman::write(target, user, value.as_bytes())
+        }
+
+        fn store(ctx: &Context) -> crate::provider::claude::credman::Store {
+            crate::provider::claude::credman::Store::of(ctx)
+        }
+
+        pub fn write(ctx: &Context, service: &str, contents: &str) -> crate::error::Result<()> {
+            let permit = crate::service::gate(ctx)?;
+            Ok(store(ctx).write(permit, service, contents)?)
+        }
+
+        pub fn read(ctx: &Context, service: &str) -> crate::error::Result<Option<String>> {
+            Ok(store(ctx).read(service)?)
+        }
+
+        // Every piece too, as Claude Code deletes its login.
+        pub fn discard(ctx: &Context, service: &str) -> crate::error::Result<()> {
+            let permit = crate::service::gate(ctx)?;
+            Ok(store(ctx).delete(permit, service)?)
+        }
     }
 
     /// Deletes what is parked under `service`, once the gate has let it.

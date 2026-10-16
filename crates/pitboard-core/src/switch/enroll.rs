@@ -1168,10 +1168,6 @@ mod tests {
     /// account uuid is the person in both, and identified by it alone the second was
     /// refused as already enrolled, and a switch to it said the first was already in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn one_account_in_two_organisations_is_two_logins() {
         let m = machine("two-organisations");
         let (enrolled, _) = enrolled_as(&m, "team", here_in(&m, "org-team", "team-refresh"))
@@ -1233,10 +1229,6 @@ mod tests {
     /// lapse. The new login is the one the tool uses from now on, and nothing is parked:
     /// a park of the account in use is a copy the next switch away would only replace.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn signing_in_again_to_the_account_in_use_puts_the_new_login_in_use() {
         for (tool, make) in MACHINES {
             let m = make("again-in-use");
@@ -1276,10 +1268,6 @@ mod tests {
     /// A park the account in use already holds, from before it was signed in to with the
     /// tool itself, is kept as it is: this sign-in is about the login in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn signing_in_again_to_the_account_in_use_keeps_the_park_it_holds() {
         for (tool, make) in MACHINES {
             let m = make("again-keeps-park");
@@ -1319,10 +1307,6 @@ mod tests {
     /// switch away parked the old one over it, which for Codex could be a login whose
     /// chain was already revoked. Now the switch parks what is in use, the new login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_next_switch_away_parks_the_new_login_not_the_old() {
         for (tool, make) in MACHINES {
             let m = make("again-then-switch");
@@ -1460,10 +1444,6 @@ mod tests {
     /// is still the account Pitboard last saw in use. A sign-in to `here` is parked and said
     /// as for any login whose account cannot be told, and the record still names `here`.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_while_the_login_claude_code_names_cannot_be_found_is_parked_and_said() {
         let m = machine("untold-elsewhere");
         m.mem.live().delete_everything();
@@ -1497,10 +1477,6 @@ mod tests {
     /// Only the account Pitboard last saw in use is warned about. Signing in again to a
     /// parked account renews its park whoever is signed in, as it always did.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
         m.sign_in(&harness::document("here-renewed"));
@@ -1519,10 +1495,6 @@ mod tests {
     /// label can be the account signed in now before anything enrolled it. It is enrolled
     /// with its new login in use, and says it was enrolled rather than signed in again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_first_sign_in_to_the_account_in_use_enrols_it_with_the_new_login_in_use() {
         for (tool, make) in MACHINES {
             let m = make("first-in-use");
@@ -1553,10 +1525,6 @@ mod tests {
     /// Somebody signs the tool in to another account between the first read and the one
     /// made under the tool's lock. Nothing is written over the account now signed in.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_changing_before_the_write_is_refused_and_nothing_is_written() {
         for (tool, make) in MACHINES {
             let m = make("changed-before-write");
@@ -1612,10 +1580,6 @@ mod tests {
     /// goes with the sign-in. That is said as a sign-in's failure: the new login was not
     /// kept, and signing in again is the way on.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_cannot_be_written_leaves_the_old_one_in_use() {
         for (tool, make) in MACHINES {
             let m = make("again-write-fails");
@@ -1642,10 +1606,6 @@ mod tests {
     /// have no login for the account now, so the new one, the one copy known to be good, is
     /// parked rather than thrown away, and the failure says so.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_did_not_hold_is_parked_rather_than_lost() {
         for (tool, make) in MACHINES {
             let m = make("again-did-not-hold");
@@ -1677,10 +1637,6 @@ mod tests {
     /// would spend the token the tool is using, so none is made: the next renewal once the
     /// slot can be read drops the copy instead, and so does the next change.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_could_not_be_read_back_is_not_kept_beside_itself() {
         for (tool, make) in MACHINES {
             for locked in ["by the write", "after it"] {
@@ -1917,10 +1873,6 @@ mod tests {
     /// back. Each tool's program is named where there is none, so a seam that let the tool's
     /// program start would fail to start one, never start this machine's own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_scripted_sign_in_enrols_what_it_stored_without_starting_the_tool() {
         for (tool, make) in MACHINES {
             let m = make("scripted");

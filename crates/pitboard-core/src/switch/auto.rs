@@ -311,10 +311,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_account_at_the_share_is_switched_from_and_the_switch_is_recorded_as_automatic() {
         let (m, _) = nearly_out("auto-switches", 96.0);
         let done = auto(&m).expect("a switch");
@@ -357,10 +353,6 @@ mod tests {
     /// for that login: taken from the config, `there` read as in use with room, and `here`
     /// was left at its limit.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_anthropic_names_is_the_one_switched_from() {
         let (m, _) = nearly_out("auto-config-names-another", 96.0);
         config_names(&m, "there");
@@ -437,10 +429,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn with_no_account_to_go_to_nothing_moves() {
         let (m, _) = nearly_out("auto-no-room", 97.0);
         measured(&m, "there", 96.0, 30.0);
@@ -503,10 +491,6 @@ mod tests {
     /// No account with room is said and recorded once for the limit and its reset: the first
     /// look goes to the lock to record it, and the next stands on that record.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn no_room_is_recorded_once_for_a_limit_and_its_reset() {
         let (m, _) = nearly_out("auto-no-room-once", 97.0);
         measured(&m, "there", 96.0, 30.0);
@@ -534,10 +518,6 @@ mod tests {
     /// reset, so a reason told with each answer's own was said again for a window it was
     /// recorded once for.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_reason_is_told_of_the_window_it_was_recorded_under() {
         let (m, _) = nearly_out("auto-said-window", 97.0);
         measured(&m, "there", 96.0, 30.0);
@@ -570,10 +550,6 @@ mod tests {
     /// gave that window's reset a second after the one it was said under. Forgotten at its
     /// own reset, it was recorded and told again, under the later reset, in the second between.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_reason_said_is_kept_while_a_later_answer_of_its_window_runs() {
         let (m, clock) = nearly_out("auto-said-past-reset", 97.0);
         let session_resets = |uuid: &str, session: f64, resets_at: i64| {
@@ -614,10 +590,6 @@ mod tests {
     /// A reason said of a limit that gives no reset is kept as an attempt at one is, for a week
     /// after it was said: no look says it again within the week, and the first after it does.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_reason_said_of_a_limit_with_no_reset_is_kept_for_a_week() {
         let (m, clock) = nearly_out("auto-said-no-reset", 97.0);
         let unending = |kind: &str, percent: f64| Window {
@@ -670,10 +642,6 @@ mod tests {
     /// from under the name of the one switched to. Taken as `here`'s, a full five-hour limit
     /// in it switched `here` away at 10%.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_usage_cache_in_claude_codes_config_moves_nothing() {
         let (m, _) = nearly_out("auto-cache", 10.0);
         cache_usage(&m, usage_answer(100.0));
@@ -685,10 +653,6 @@ mod tests {
     /// Two front ends whose looks both found a switch due make it once: the second finds,
     /// under the lock, the account switched to in use, with room.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn two_front_ends_that_decided_one_switch_make_it_once() {
         let (m, _) = nearly_out("auto-twice", 96.0);
         let state = state::load(&m.ctx).expect("state");
@@ -802,10 +766,6 @@ mod tests {
     /// lock, by the login's fingerprint where it is the one Anthropic named, and records what
     /// the config names, so the next look has nothing to settle and takes no lock.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_doubt_is_settled_under_the_lock_once() {
         let (m, _) = nearly_out("auto-doubt", 94.0);
         config_names(&m, "there");
@@ -845,10 +805,6 @@ mod tests {
     /// the last attempt records why at once, and the look after it stands on that: a front end
     /// waiting after the failure said it only once its wait was over.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_too_large_to_write_counts_as_an_attempt() {
         let (mut m, clock) = nearly_out("auto-too-large", 96.0);
         m.ctx = m.ctx.clone().with_argv_fallback(false);
@@ -923,10 +879,6 @@ mod tests {
     /// The attempts at one limit spent, another at the share is still tried, so nothing is
     /// recorded until none is left, and then of the furthest past the share.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_attempts_spent_are_recorded_once_no_limit_is_left_to_try() {
         let (mut m, clock) = nearly_out("auto-spent-two-limits", 96.0);
         measured(&m, "here", 96.0, 97.0);
@@ -965,10 +917,6 @@ mod tests {
     /// switch stops with nothing installed over it, the account it would have switched to
     /// keeps its parked login, and the next attempt, a minute on, switches.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_claude_code_renews_partway_through_is_not_written_over() {
         let (m, clock) = nearly_out("auto-renewed-meanwhile", 96.0);
         let renewed = document("here-renewed");
@@ -1031,10 +979,6 @@ mod tests {
     /// a little later each time. The login going out is known by its fingerprint and needs
     /// no answer.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_outage_does_not_use_up_the_attempts() {
         let (m, clock) = nearly_out("auto-outage", 96.0);
         m.api
@@ -1057,10 +1001,6 @@ mod tests {
     /// A parked login Anthropic refuses is no switch, and the next attempt goes to another
     /// account with room rather than to the same one again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_account_whose_login_is_refused_is_passed_over_for_the_next() {
         let (m, clock) = nearly_out("auto-refused", 96.0);
         let parked = park::reserve(&m.ctx, Permit::for_a_test(), "other").expect("a name");
@@ -1099,10 +1039,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_switch_waiting_to_be_finished_is_left_to_the_change_that_finishes_it() {
         let (m, _) = nearly_out("auto-interrupted", 96.0);
         let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -1134,10 +1070,6 @@ mod tests {
     /// Pitboard's lock. A look then says only a decision under the lock can say, which waits
     /// for that run. The same record with the lock free is of a switch nobody is finishing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_switch_under_way_in_another_run_is_not_one_interrupted() {
         let (m, _) = nearly_out("auto-under-way", 96.0);
         let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -1187,10 +1119,6 @@ mod tests {
     /// Under a custom OAuth endpoint Claude Code keeps its login where Pitboard does not act,
     /// so there is nothing to watch, whatever the numbers say, and nothing is settled.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn under_a_custom_oauth_endpoint_nothing_is_watched() {
         let (m, _) = nearly_out("auto-custom-oauth", 96.0);
         let config = m.ctx_home().join(".claude");
@@ -1221,10 +1149,6 @@ mod tests {
     /// asked again until the wait is over, a minute and then twice as long each time, as an
     /// attempt waits. Once Anthropic answers, the account it names is judged.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_identification_that_fails_is_said_and_waited_on() {
         let (m, clock) = nearly_out("auto-unidentified", 96.0);
         m.api.token_trouble("access-here-renewed", Trouble::Offline);
@@ -1285,10 +1209,6 @@ mod tests {
     /// renews it as Claude Code would, tells whose it is and decides, and the login parked
     /// for the account switched from is the renewed one.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_lapsed_stored_login_is_renewed_to_tell_whose_it_is_and_the_switch_decided() {
         let (m, _) = nearly_out("auto-lapsed", 96.0);
         m.sign_in(&harness::lapsed("here-renewed"));
@@ -1316,10 +1236,6 @@ mod tests {
     /// telling it under the lock does, though the look then finds nothing to decide and never
     /// takes the lock. The next failure, at Claude Code's next renewal, waits a minute again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_tells_whose_the_login_is_ends_the_failures_in_a_row() {
         let (m, clock) = nearly_out("auto-told-by-a-read", 96.0);
         let waits_until = |m: &Machine| match auto(m).expect("no failure").value {
@@ -1351,10 +1267,6 @@ mod tests {
     /// front end that reads the keychain, such as the app, switches at once. No account was
     /// chosen, so the line names none: a label may be `claude`.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_keychain_one_front_end_cannot_read_holds_back_no_other() {
         let (m, _) = nearly_out("auto-locked-here", 96.0);
         m.fault_live(Fault::Locked);
@@ -1381,10 +1293,6 @@ mod tests {
     /// of it to judge and no account Pitboard could park it under, so that is said, and once
     /// recorded, said again from the record alone.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_account_nobody_enrolled_in_use_is_not_watched() {
         let (m, _) = nearly_out("auto-not-enrolled", 96.0);
         m.api.owned_by("access-stranger-refresh", owner("stranger"));
@@ -1411,10 +1319,6 @@ mod tests {
 
     /// Claude Code has no login stored, as its `/logout` leaves it: nothing is watched.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn with_no_login_stored_nothing_is_watched() {
         let (m, _) = nearly_out("auto-signed-out", 96.0);
         m.sign_in(&serde_json::json!({"mcpOAuth": {"some-server": {"token": "unrelated"}}}));
@@ -1446,10 +1350,6 @@ mod tests {
     /// Claude Code authenticated some other way uses none of the logins Pitboard moves, so
     /// a switch would change nothing its sessions see.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn claude_code_signed_in_some_other_way_is_not_switched() {
         let (m, _) = nearly_out("auto-overridden", 96.0);
         let config = m.ctx_home().join(".claude");
@@ -1496,10 +1396,6 @@ mod tests {
     /// and `use` write the config, so the switch it no longer needs leaves the config and the
     /// login as they are.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_to_the_account_it_would_switch_to_writes_no_config() {
         let (m, _) = nearly_out("auto-signed-in-to-target", 96.0);
         m.api.owned_by("access-there-again-refresh", owner("there"));

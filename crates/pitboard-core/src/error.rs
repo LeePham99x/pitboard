@@ -173,12 +173,7 @@ pub enum Error {
     #[error("{}.", codex_home_missing(path))]
     CodexHomeMissing { path: PathBuf },
 
-    #[error(
-        "the login for `{label}` needs {bytes} bytes and `security` reads {limit} from \
-         stdin, so it can only be written on the argument line, which PITBOARD_NO_ARGV \
-         forbids. {}",
-        smaller(*tool)
-    )]
+    #[error("{}", too_large(*tool, label, *bytes, *limit))]
     CredentialTooLarge {
         tool: ProviderId,
         label: String,
@@ -1179,6 +1174,23 @@ fn login_elsewhere(os: crate::host::Os, email: &str) -> String {
 }
 
 /// What makes a login smaller, where anything does.
+// A keychain's ceiling is what `security` reads from stdin; Credential Manager's, 256 pieces.
+fn too_large(tool: ProviderId, label: &str, bytes: usize, limit: usize) -> String {
+    match crate::host::OS {
+        crate::host::Os::MacOs | crate::host::Os::Linux => format!(
+            "the login for `{label}` needs {bytes} bytes and `security` reads {limit} from \
+             stdin, so it can only be written on the argument line, which PITBOARD_NO_ARGV \
+             forbids. {}",
+            smaller(tool)
+        ),
+        crate::host::Os::Windows => format!(
+            "the login for `{label}` needs {bytes} bytes, past the {limit} Claude Code keeps in \
+             Credential Manager. Sign out of MCP servers you no longer use to make the login \
+             smaller."
+        ),
+    }
+}
+
 fn smaller(tool: ProviderId) -> &'static str {
     match tool {
         ProviderId::Claude => {

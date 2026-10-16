@@ -2803,10 +2803,6 @@ mod tests {
     /// status` never said it at all. A read says it now, in the words of the refusal, and
     /// changes nothing: the record is kept for whatever finishes it or gives up on it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_an_interrupted_switch_it_cannot_finish_is_waiting() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("read-stuck-{tool}"));
@@ -2834,10 +2830,6 @@ mod tests {
     /// Where only the service can say whose the live login is, a read asks it, as the next
     /// change would.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_asks_whose_the_login_is_where_only_the_service_can_say() {
         let m = stuck_unless_asked("read-stuck-asked");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -2861,10 +2853,6 @@ mod tests {
     /// about. The rows already say who is signed in, from the tool's login and not from
     /// Pitboard's record, and the change that finishes it says what it found.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_nothing_of_a_switch_the_next_change_finishes() {
         for (tool, make) in MACHINES {
             let m = interrupted(make, &format!("read-settles-{tool}"));
@@ -2885,10 +2873,6 @@ mod tests {
     /// settled under one as anywhere else, and given up on as anywhere else: giving up
     /// refused it, so the read offered a way out that could not be taken.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_a_switch_is_waiting_only_where_a_change_would_stop_at_it() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("read-stuck-custom-{tool}"));
@@ -2937,10 +2921,6 @@ mod tests {
     /// the refusal, and changes nothing. Where only Anthropic could say whose the login is,
     /// it does not say what it cannot know.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_asks_nobody_says_a_switch_is_waiting_wherever_it_can_tell() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("known-stuck-{tool}"));
@@ -2976,10 +2956,6 @@ mod tests {
     /// from. Four of five caches captured on one machine were another login's numbers, so
     /// no read takes a reading from it, whether or not Anthropic answered this time.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn what_claude_code_cached_is_never_an_accounts_reading() {
         use crate::switch::harness::{NOW, cache_usage, usage_answer};
         let m = machine("cached-usage");
@@ -3018,10 +2994,6 @@ mod tests {
     /// so a read asks whose it is only once the login has changed. It asked on every read,
     /// one round trip more each time for an answer it already had.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_already_identified_is_not_asked_about_again() {
         use crate::api::scripted::Asked;
         let m = machine("read-known-login");
@@ -3045,10 +3017,6 @@ mod tests {
     /// row says why it has nothing parked. It read as `nothing parked`, and nothing said what
     /// had happened.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_outside_pitboard_is_said_recorded_and_shown_on_its_row() {
         use crate::switch::harness::NOW;
         let m = signed_in_outside("read-signed-in-outside");
@@ -3173,10 +3141,6 @@ mod tests {
     /// A read that finds what the record already says writes nothing, so several front ends
     /// reading one machine never take turns rewriting its account index.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_finds_nothing_new_writes_nothing() {
         let m = machine("read-nothing-new");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -3194,10 +3158,6 @@ mod tests {
     /// here is still found by the next read here, and reads taking turns under the two write
     /// nothing once each has its record.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_under_another_claude_config_dir_keeps_this_ones_record() {
         use crate::switch::harness::{NOW, account, document, owner};
         let m = machine("read-two-slots");
@@ -3249,10 +3209,6 @@ mod tests {
     /// says it was replaced, least of all one under the slot where it is in use. Once the
     /// other slot's is replaced too, it is.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_still_stored_under_another_claude_config_dir_is_not_said_replaced() {
         use crate::switch::harness::{NOW, account, document, owner};
         let m = machine("read-two-slots-one-account");
@@ -3332,10 +3288,6 @@ mod tests {
     /// login is somewhere Pitboard does not look, which is not a sign-out. A read records
     /// nothing, and says of no account that its login was replaced.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_cannot_find_the_login_claude_code_names_records_nothing() {
         let m = machine("read-login-elsewhere");
         m.mem.live().delete_everything();
@@ -3367,10 +3319,6 @@ mod tests {
     /// that asks nobody takes the account in use from what Anthropic last said of the login
     /// stored, and says the config has moved since. It took the config's account.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_names_the_account_anthropic_named_whatever_the_config_says() {
         let m = machine("offline-config-moved");
         switch::harness::config_names(&m, "there");
@@ -3397,10 +3345,6 @@ mod tests {
     /// Anthropic never named. Where Claude Code's config names another account, a read that
     /// asks nobody says the account in use is not confirmed, as doctor and the status line do.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_of_a_record_never_asked_about_says_the_config_names_another() {
         let m = machine("offline-never-asked");
         let mut state = state::load(&m.ctx).expect("state");
@@ -3438,10 +3382,6 @@ mod tests {
     /// The same record where the config names that account, as on nearly every machine
     /// updated from 0.9.0 until its first read that asks: nothing is said, and nobody is asked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_of_a_record_never_asked_about_says_nothing_where_the_config_agrees() {
         let m = machine("offline-never-asked-agrees");
         let mut state = state::load(&m.ctx).expect("state");
@@ -3472,10 +3412,6 @@ mod tests {
     /// another account, which `/status` in Claude Code shows. Said by every read after it,
     /// the one that asks nobody too, until something writes the config again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_settles_it_and_says_the_config_names_another() {
         use crate::api::scripted::Asked;
         let m = machine("read-config-names-another");
@@ -3605,10 +3541,6 @@ mod tests {
     /// one: the refusal, and the way out. Where only the service could tell, it says what
     /// it always said, that a switch did not finish.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn doctor_says_a_switch_is_stuck_where_it_can_tell_without_asking() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("doctor-stuck-{tool}"));
@@ -3667,10 +3599,6 @@ mod tests {
     /// all anybody was told. It is settled now, recorded the way any recovery is, and
     /// reported beside the refusal.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_change_refused_over_its_name_still_recovers_an_interrupted_switch() {
         for (tool, make) in MACHINES {
             for (change, verb, code, audited, refuse) in REFUSALS {
@@ -3731,10 +3659,6 @@ mod tests {
     /// parking a login too big for `security`'s standard input puts it on the argument line.
     /// The change then fails, and that is still said beside the failure.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_parked_after_it_did_not_hold_says_how_it_was_parked() {
         for (tool, make) in MACHINES {
             let m = make(&format!("not-installed-said-{tool}"));
@@ -3757,10 +3681,6 @@ mod tests {
     /// change: the recovery of a Claude Code switch, and not of a Codex one. What it stops
     /// is left for a later run, and the refusal is reported as it always was.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_custom_claude_endpoint_stops_only_the_recovery_of_a_claude_code_switch() {
         let codex = interrupted(codex_machine, "refused-custom-codex");
         let mut ctx = codex.ctx.clone();
@@ -3946,10 +3866,6 @@ mod tests {
                     assert!([$(stringify!($case)),*].len() == MACHINES.len() * REFUSED.len());
                 $(
                     #[test]
-                    #[cfg_attr(
-                        windows,
-                        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-                    )]
                     fn $case() {
                         every_change_is_refused(stringify!($case), $make, $refused);
                     }

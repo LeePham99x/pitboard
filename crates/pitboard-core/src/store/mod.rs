@@ -29,9 +29,12 @@ pub(crate) enum Backend {
     // Files only this Windows account can open: Pitboard's parks there.
     #[cfg_attr(not(windows), allow(dead_code))]
     SealedFile,
+    // Windows' store of generic credentials, where Claude Code keeps its login once its store
+    // there is on (`windows_backend_choice`).
+    CredentialManager,
     Absent,
-    // A store Pitboard does not read: Claude Code's on Windows wherever Credential Manager may
-    // hold its login.
+    // A store Pitboard does not read: Claude Code's on Windows where a login sits in Credential
+    // Manager though nothing Pitboard reads turns that store on.
     Unknown,
 }
 
@@ -41,14 +44,15 @@ impl Backend {
             Backend::Keychain => "keychain",
             Backend::File => "file",
             Backend::SealedFile => "sealed_file",
+            Backend::CredentialManager => "credential_manager",
             Backend::Absent => "absent",
             Backend::Unknown => "unknown",
         }
     }
 }
 
-// A store Pitboard does not read or write, such as Claude Code's on Windows wherever
-// Credential Manager may hold its login: every call says why it cannot be read, which no
+// A store Pitboard does not read or write, such as Claude Code's on Windows where a login sits
+// in Credential Manager that nothing turns on: every call says why it cannot be read, which no
 // caller takes for a store with nothing in it.
 pub(crate) struct Refused {
     kind: Backend,
@@ -99,6 +103,18 @@ pub(crate) const LOCKED: &str = "the keychain is locked and cannot ask to be unl
                                  here; unlock it with `security unlock-keychain`, or run \
                                  Pitboard from a desktop session";
 
+// `ERROR_NO_SUCH_LOGON_SESSION`: a network logon has no credential set (MC-net, measured over
+// sshd on windows-2025).
+const UNREACHABLE: &str = "Credential Manager cannot be reached from this logon, as in a sign-in \
+                           over SSH with a key; run Pitboard from a desktop session";
+
+pub(crate) fn locked(os: crate::host::Os) -> &'static str {
+    match os {
+        crate::host::Os::MacOs | crate::host::Os::Linux => LOCKED,
+        crate::host::Os::Windows => UNREACHABLE,
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -106,8 +122,9 @@ pub enum Error {
     #[error("the credential store could not be read: {0}")]
     Unreadable(String),
     /// The keychain is locked and cannot ask to be unlocked from where this runs, as over
-    /// SSH. Never "no credential" either, and nothing is wrong with what it holds.
-    #[error("the credential store could not be read: {LOCKED}")]
+    /// SSH, or Credential Manager cannot be reached from this logon. Never "no credential"
+    /// either, and nothing is wrong with what it holds.
+    #[error("the credential store could not be read: {}", locked(crate::host::OS))]
     Locked,
     /// A park sealed to this account is there but does not open in this logon: an
     /// administrator's password reset, a profile restored on another PC, or a logon without
@@ -225,7 +242,10 @@ pub(crate) fn vault_dir(ctx: &Context) -> PathBuf {
 /// Built by that tool's own module. Which backends can hold a login, and in what order, is
 /// a fact about the tool: Claude Code looks in the keychain and then in a plaintext file it
 /// demotes to, while Codex and Gemini have one file and nothing behind it.
-pub(crate) struct Live(Vec<Box<dyn RawStore>>);
+pub(crate) struct Live {
+    backends: Box<[Box<dyn RawStore>]>,
+    takes_over: bool,
+}
 
 impl Live {
     pub(crate) fn of(backends: Vec<Box<dyn RawStore>>) -> Live {
@@ -233,11 +253,23 @@ impl Live {
             !backends.is_empty(),
             "a live chain with no backends can hold nothing"
         );
-        Live(backends)
+        Live {
+            backends: backends.into_boxed_slice(),
+            takes_over: false,
+        }
+    }
+
+    // A chain whose first backend takes every write, and whose others lose the login where the
+    // first held none before it: Claude Code's Credential Manager on Windows (`credman_migration`).
+    pub(crate) fn taken_over_by_the_first(backends: Vec<Box<dyn RawStore>>) -> Live {
+        Live {
+            takes_over: true,
+            ..Live::of(backends)
+        }
     }
 
     fn refs(&self) -> Vec<&dyn RawStore> {
-        self.0.iter().map(Box::as_ref).collect()
+        self.backends.iter().map(Box::as_ref).collect()
     }
 }
 
@@ -263,6 +295,25 @@ fn write_in(
 ) -> Result<(), Error> {
     let backend = resolve_in(chain, service)?.unwrap_or(chain[0]);
     backend.write(permit, service, contents)
+}
+
+// As Claude Code's fallback wrapper writes on Windows: the first backend whatever holds the
+// login, then the rest deleted where the first held none, a failure to delete ignored as it
+// ignores one. A failed first write moves nothing to the rest.
+fn take_over_in(
+    chain: &[&dyn RawStore],
+    permit: Permit,
+    service: &str,
+    contents: &str,
+) -> Result<(), Error> {
+    let held = chain[0].contains(service)?;
+    chain[0].write(permit, service, contents)?;
+    if !held {
+        for rest in &chain[1..] {
+            let _ = rest.delete(permit, service);
+        }
+    }
+    Ok(())
 }
 
 fn with_live<T>(live: &Live, run: impl FnOnce(&[&dyn RawStore]) -> T) -> T {
@@ -352,7 +403,13 @@ pub(crate) fn write_raw(
     service: &str,
     contents: &str,
 ) -> Result<(), Error> {
-    with_live(live, |chain| write_in(chain, permit, service, contents))
+    with_live(live, |chain| {
+        if live.takes_over {
+            take_over_in(chain, permit, service, contents)
+        } else {
+            write_in(chain, permit, service, contents)
+        }
+    })
 }
 
 #[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
@@ -398,11 +455,8 @@ pub(crate) fn vault_kind(ctx: &Context) -> Backend {
 /// the keychain's.
 pub(crate) fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
     with_live(live, |chain| {
-        resolve_in(chain, service)
-            .ok()
-            .flatten()
-            .unwrap_or(chain[0])
-            .cost(service, contents)
+        let first = (!live.takes_over).then(|| resolve_in(chain, service).ok().flatten());
+        first.flatten().unwrap_or(chain[0]).cost(service, contents)
     })
 }
 
@@ -515,6 +569,54 @@ mod tests {
         assert_eq!(keychain.read("svc").unwrap().as_deref(), Some("before"));
     }
 
+    // Claude Code's wrapper on Windows (`credman_migration`): the first store takes the write,
+    // and a login it did not hold before leaves the file.
+    #[test]
+    fn a_chain_taken_over_writes_the_first_and_empties_the_rest_only_where_it_held_nothing() {
+        let first = store(Backend::CredentialManager);
+        let file = holding(Backend::File, "svc", "in the file");
+        let live = |first: &Arc<MemoryStore>, file: &Arc<MemoryStore>| {
+            Live::taken_over_by_the_first(vec![
+                Box::new(Arc::clone(first)),
+                Box::new(Arc::clone(file)),
+            ])
+        };
+        write_raw(&live(&first, &file), Permit::for_a_test(), "svc", "moved").unwrap();
+        assert_eq!(first.peek("svc").as_deref(), Some("moved"));
+        assert_eq!(
+            file.peek("svc"),
+            None,
+            "a login the first held none of leaves the file"
+        );
+
+        file.plant("svc", "left behind");
+        write_raw(&live(&first, &file), Permit::for_a_test(), "svc", "again").unwrap();
+        assert_eq!(first.peek("svc").as_deref(), Some("again"));
+        assert_eq!(
+            file.peek("svc").as_deref(),
+            Some("left behind"),
+            "Claude Code deletes no file behind a store that held a login"
+        );
+
+        let first = store(Backend::CredentialManager);
+        first.fault("svc", Fault::FailWrite("unreachable".into()));
+        let file = holding(Backend::File, "svc", "in the file");
+        assert!(matches!(
+            write_raw(&live(&first, &file), Permit::for_a_test(), "svc", "lost"),
+            Err(Error::Write(_))
+        ));
+        assert_eq!(
+            file.peek("svc").as_deref(),
+            Some("in the file"),
+            "a failed write moves nothing into the file and takes nothing out of it"
+        );
+        assert_eq!(
+            cost(&live(&first, &file), "svc", "x"),
+            None,
+            "the first store's ceiling, whatever holds the login"
+        );
+    }
+
     #[test]
     fn a_write_that_does_not_read_back_is_reported_rather_than_believed() {
         let keychain = holding(Backend::Keychain, "svc", "before");
@@ -611,6 +713,19 @@ mod tests {
             "not built yet",
         ))]);
         unreadable(resolve(&live, "svc").map(|b| b.name().to_string()));
+    }
+
+    // Credential Manager out of a network logon's reach is no keychain locked (MC-net).
+    #[test]
+    fn a_store_out_of_reach_says_so_in_each_systems_words() {
+        use crate::host::Os;
+        assert_eq!(Error::Locked.code(), "credential_store_locked");
+        assert_eq!(locked(Os::MacOs), LOCKED);
+        assert_eq!(locked(Os::Linux), LOCKED);
+        assert!(
+            locked(Os::Windows).starts_with("Credential Manager cannot be reached from this logon")
+        );
+        assert!(!locked(Os::Windows).contains("keychain"));
     }
 
     #[test]

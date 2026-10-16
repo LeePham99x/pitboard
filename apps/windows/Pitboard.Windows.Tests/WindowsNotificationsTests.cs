@@ -167,7 +167,6 @@ public sealed class WindowsNotificationsTests
 
     // ModelTests.ARunOutIsPostedThroughTheAppsNotifications, through to what Windows is asked to show.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AFixturesRunOutIsShownWithItsSwitchButton()
     {
         var folder = Directory.CreateTempSubdirectory("pitboard-notifications-").FullName;

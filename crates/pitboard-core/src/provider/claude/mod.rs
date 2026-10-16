@@ -19,5 +19,6 @@ pub(crate) mod document;
 pub(crate) mod engine;
 pub(crate) mod live;
 pub(crate) mod paths;
+pub(crate) mod pieces;
 pub(crate) mod slot;
 pub(crate) mod warm;

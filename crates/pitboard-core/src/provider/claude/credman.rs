@@ -1,9 +1,12 @@
 // Whether Claude Code keeps its login in Credential Manager on Windows, as far as anything
-// Pitboard can read says (`windows_backend_choice`), and a look there that never writes.
+// Pitboard can read says (`windows_backend_choice`), and that store as Claude Code keeps it.
 
+use super::pieces::{self, Items};
 use super::{paths as claude, slot};
 use crate::context::Context;
 use crate::host::Administered;
+use crate::service::Permit;
+use crate::store::{Backend, Cost, Error, RawStore};
 use serde_json::Value;
 
 pub(crate) const FORCE: &str = "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN";
@@ -90,14 +93,9 @@ pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, String> {
     Ok(false)
 }
 
-// None where `.credentials.json` alone is Claude Code's store.
-pub(crate) fn refusal(ctx: &Context) -> Option<String> {
-    if let Some(said) = turned_on(ctx) {
-        return Some(format!(
-            "Pitboard cannot switch Claude Code yet while it keeps its login in Credential \
-             Manager ({said})"
-        ));
-    }
+// With nothing turning its store on, why Claude Code may still keep its login in Credential
+// Manager; None where `.credentials.json` alone is its store.
+pub(crate) fn ambiguity(ctx: &Context) -> Option<String> {
     let service = claude::live_service(ctx);
     let target = target(ctx, &service);
     match holds(ctx, &service) {
@@ -113,6 +111,88 @@ pub(crate) fn refusal(ctx: &Context) -> Option<String> {
             "Credential Manager could not say whether it holds a Claude Code login under \
              `{target}` ({why})"
         )),
+    }
+}
+
+// Claude Code's login in Credential Manager, under `<service>/claude-code-user` and its pieces.
+pub(crate) struct Store {
+    ctx: Context,
+}
+
+impl Store {
+    pub(crate) fn of(ctx: &Context) -> Store {
+        Store { ctx: ctx.clone() }
+    }
+
+    fn items<'a>(&'a self, service: &'a str) -> Of<'a> {
+        Of {
+            ctx: &self.ctx,
+            service,
+        }
+    }
+}
+
+struct Of<'a> {
+    ctx: &'a Context,
+    service: &'a str,
+}
+
+impl Of<'_> {
+    fn item(&self, name: &str) -> Result<Box<dyn RawStore>, Error> {
+        let account = format!("{}{name}", slot::account_name(self.ctx));
+        self.ctx
+            .host()
+            .foreign_secrets(self.ctx, &account)
+            .ok_or_else(|| Error::Unreadable("this system has no Credential Manager".into()))
+    }
+}
+
+impl Items for Of<'_> {
+    fn get(&self, name: &str) -> Result<Option<String>, Error> {
+        self.item(name)?.read(self.service)
+    }
+
+    fn set(&self, permit: Permit, name: &str, value: &str) -> Result<(), Error> {
+        self.item(name)?.write(permit, self.service, value)
+    }
+
+    fn delete(&self, permit: Permit, name: &str) -> Result<(), Error> {
+        self.item(name)?.delete(permit, self.service)
+    }
+}
+
+impl RawStore for Store {
+    fn kind(&self) -> Backend {
+        Backend::CredentialManager
+    }
+
+    fn contains(&self, service: &str) -> Result<bool, Error> {
+        pieces::holds(&self.items(service))
+    }
+
+    fn read(&self, service: &str) -> Result<Option<String>, Error> {
+        pieces::read(&self.items(service), &target(&self.ctx, service))
+    }
+
+    fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
+        pieces::write(
+            &self.items(service),
+            permit,
+            contents,
+            &target(&self.ctx, service),
+        )
+    }
+
+    fn delete(&self, permit: Permit, service: &str) -> Result<(), Error> {
+        pieces::delete(&self.items(service), permit)
+    }
+
+    fn cost(&self, _service: &str, contents: &str) -> Option<Cost> {
+        Some(Cost {
+            needs: contents.len(),
+            limit: pieces::MOST_BYTES,
+            second_route: false,
+        })
     }
 }
 
@@ -134,14 +214,21 @@ fn own_slots(ctx: &Context, real: &[std::path::PathBuf]) -> Vec<String> {
         .collect()
 }
 
-// Before every Credential Manager call a build for tests makes, which only Windows' host makes.
+// What a build for tests may address in Credential Manager, which only Windows' host asks.
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
+    match crate::host::real_login_places(None) {
+        Ok(real) => own_slots(ctx, &real),
+        Err(_) => Vec::new(),
+    }
+}
+
+// Before every Credential Manager call a build for tests makes.
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn refused_in_a_build_for_tests(ctx: &Context, target: &str) -> Option<String> {
-    let own = match crate::host::real_login_places(None) {
-        Ok(real) => own_slots(ctx, &real),
-        Err(_) => Vec::new(),
-    };
+    let own = own_slots_for_tests(ctx);
     let own: Vec<&str> = own.iter().map(String::as_str).collect();
     crate::provider::names::refusal(target, &own)
 }
@@ -191,6 +278,8 @@ mod tests {
         ];
         pairs.extend_from_slice(extra);
         let memory = MemoryHost::new();
+        // A machine in memory on Windows turns the store on there; these read every signal.
+        memory.sets_user_environment(FORCE, "0");
         let ctx = Context::for_command_line(&Environment::on(Os::Windows, pairs))
             .with_memory_stores(Arc::clone(&memory));
         Scratch {
@@ -351,14 +440,14 @@ mod tests {
 
     #[test]
     fn credential_manager_holding_the_live_target_is_ambiguous_with_the_store_off() {
-        assert_eq!(refusal(&windows(&[]).ctx), None);
+        assert_eq!(ambiguity(&windows(&[]).ctx), None);
         for piece in ["", "#m", "#0"] {
             let scratch = windows(&[]);
             let service = claude::live_service(&scratch.ctx);
             scratch
                 .memory
                 .keeps_credentials(&[&format!("{service}/CLAUDE-CODE-USER{piece}")]);
-            let said = refusal(&scratch.ctx);
+            let said = ambiguity(&scratch.ctx);
             if piece == "#0" {
                 assert_eq!(said, None, "a piece alone is no login");
                 continue;
@@ -383,13 +472,12 @@ mod tests {
         let chain = super::super::live::chain(&scratch.ctx);
         assert_eq!(
             crate::store::resolve(&chain, &service).expect("readable"),
-            crate::store::Backend::Absent
+            Backend::Absent
         );
-        crate::store::write_raw(&chain, crate::service::Permit::for_a_test(), &service, "{}")
-            .expect("written");
+        crate::store::write_raw(&chain, Permit::for_a_test(), &service, "{}").expect("written");
         assert_eq!(
             crate::store::resolve(&chain, &service).expect("readable"),
-            crate::store::Backend::File
+            Backend::File
         );
         scratch
             .memory
@@ -397,29 +485,157 @@ mod tests {
         let chain = super::super::live::chain(&scratch.ctx);
         assert!(matches!(
             crate::store::read_raw(&chain, &service),
-            Err(crate::store::Error::Unreadable(_))
+            Err(Error::Unreadable(_))
         ));
     }
 
     #[test]
-    fn a_look_that_fails_refuses_and_the_store_on_refuses_before_any_look() {
+    fn a_look_that_fails_refuses_and_the_store_on_is_followed_without_one() {
         let scratch = windows(&[]);
         scratch.memory.credentials_unreadable("1312");
-        let said = refusal(&scratch.ctx).expect("refused");
+        let said = ambiguity(&scratch.ctx).expect("refused");
         assert!(
             said.starts_with("Credential Manager could not say whether it holds"),
             "{said}"
         );
         assert!(said.ends_with("(1312)"), "{said}");
+    }
+
+    // The chain is built for this build's own system.
+    #[cfg(windows)]
+    #[test]
+    fn with_the_store_on_claude_codes_chain_is_credential_manager_then_its_file() {
         let scratch = windows(&[(FORCE, "1")]);
         scratch.memory.credentials_unreadable("1312");
+        let service = claude::live_service(&scratch.ctx);
+        let chain = super::super::live::chain(&scratch.ctx);
+        crate::store::write_raw(&chain, Permit::for_a_test(), &service, "{}").expect("written");
         assert_eq!(
-            refusal(&scratch.ctx).as_deref(),
-            Some(
-                "Pitboard cannot switch Claude Code yet while it keeps its login in Credential \
-                 Manager (`CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is 1 in Pitboard's environment)"
-            )
+            crate::store::resolve(&chain, &service).expect("readable"),
+            Backend::CredentialManager
         );
+        assert_eq!(scratch.memory.live().peek(&service).as_deref(), Some("{}"));
+    }
+
+    // Claude Code's login in this test's own scratch slot, each item taken away by name however
+    // the test ends, so the leak check after the run finds none.
+    #[cfg(windows)]
+    struct Scratched {
+        ctx: Context,
+        service: String,
+        _home: tempfile::TempDir,
+    }
+
+    #[cfg(windows)]
+    impl Drop for Scratched {
+        fn drop(&mut self) {
+            let _ = Store::of(&self.ctx).delete(Permit::for_a_test(), &self.service);
+        }
+    }
+
+    #[cfg(windows)]
+    fn scratched() -> Scratched {
+        let home = tempfile::tempdir().expect("a scratch home");
+        let config = home.path().join(".claude").to_string_lossy().into_owned();
+        let ctx = Context::new(home.path().to_path_buf()).with_claude_config_dir(config.clone());
+        Scratched {
+            service: slot::service_for_dir(&config),
+            ctx,
+            _home: home,
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn claude_codes_login_round_trips_through_credential_manager_and_shrinks_back_to_one_item() {
+        use pieces::{MANIFEST, MOST_BYTES, PENDING, WHOLE, login, piece, pieces_for};
+        let scratch = scratched();
+        let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
+        let items = store.items(&scratch.service);
+        let there = |name: &str| items.get(name).expect("asked").is_some();
+        for bytes in [2399, 2400, 2401, 30_000, MOST_BYTES, 2400, 100] {
+            let text = login(bytes);
+            store
+                .write(permit, &scratch.service, &text)
+                .unwrap_or_else(|e| panic!("{bytes}: {e}"));
+            assert_eq!(
+                store.read(&scratch.service).expect("read").as_deref(),
+                Some(text.as_str()),
+                "{bytes}"
+            );
+            let n = pieces_for(bytes).expect("it fits");
+            assert_eq!(there(WHOLE), n == 0, "{bytes}");
+            assert_eq!(there(MANIFEST), n > 0, "{bytes}");
+            assert!(!there(PENDING), "{bytes}");
+            assert!(!there(&piece(n)), "{bytes}: nothing past the last piece");
+            assert!(n == 0 || there(&piece(n - 1)), "{bytes}");
+        }
+        assert!(matches!(
+            store.write(permit, &scratch.service, &login(MOST_BYTES + 1)),
+            Err(Error::Write(_))
+        ));
+        assert_eq!(
+            store.read(&scratch.service).expect("read"),
+            Some(login(100)),
+            "257 pieces write nothing"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_marker_beside_pieces_or_a_manifest_claude_code_does_not_write_reads_unreadable() {
+        use pieces::{MANIFEST, PENDING, login};
+        let scratch = scratched();
+        let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
+        let items = store.items(&scratch.service);
+        store
+            .write(permit, &scratch.service, &login(9000))
+            .expect("in pieces");
+        items.set(permit, PENDING, "4").expect("a marker");
+        assert!(matches!(
+            store.read(&scratch.service),
+            Err(Error::Unreadable(_))
+        ));
+        items.delete(permit, PENDING).expect("gone");
+        items
+            .set(permit, MANIFEST, "not a manifest")
+            .expect("a bad one");
+        assert!(matches!(
+            store.read(&scratch.service),
+            Err(Error::Unreadable(_))
+        ));
+    }
+
+    // Pieces replaced in place, the same length: the case Claude Code's own order leaves open.
+    #[cfg(windows)]
+    #[test]
+    fn a_write_to_credential_manager_stopped_after_any_step_leaves_no_login_half_written() {
+        use pieces::{claude_code_reads, login};
+        let scratch = scratched();
+        let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
+        let items = store.items(&scratch.service);
+        let (before, after) = (login(5000), login(5000).replace('a', "b"));
+        store
+            .write(permit, &scratch.service, &before)
+            .expect("written");
+        let steps = crate::fault::counting("credman.step", || {
+            store.write(permit, &scratch.service, &after)
+        })
+        .1;
+        assert!(steps > 4, "{steps}");
+        for stop in 1..=steps {
+            store
+                .write(permit, &scratch.service, &before)
+                .expect("written again over whatever was left");
+            let _ = crate::fault::killing_nth("credman.step", stop, || {
+                store.write(permit, &scratch.service, &after)
+            });
+            match claude_code_reads(&items) {
+                Ok(Some(read)) => assert!(read == before || read == after, "stopped at {stop}"),
+                Ok(None) => panic!("stopped at {stop}: signed out"),
+                Err(()) => {}
+            }
+        }
     }
 
     #[test]
@@ -444,16 +660,23 @@ mod tests {
             refused(&scratch.ctx, &format!("{own}/claude-code-user")),
             None
         );
-        assert_eq!(
-            refused(&scratch.ctx, &format!("{own}/claude-code-user#m")),
-            None
-        );
+        for piece in ["#m", "#p", "#0", "#255"] {
+            assert_eq!(
+                refused(&scratch.ctx, &format!("{own}/claude-code-user{piece}")),
+                None,
+                "{piece}"
+            );
+        }
         for name in [
             "Claude Code-credentials/claude-code-user".to_owned(),
+            "Claude Code-credentials/claude-code-user#0".to_owned(),
             format!(
                 "{}/claude-code-user",
                 slot::service_for_dir(r"C:\Users\x\.claude")
             ),
+            "cli|0123456789abcdef.Codex Auth".to_owned(),
+            "secrets|0123456789abcdef.codex".to_owned(),
+            "linear|3f2a.Codex MCP Credentials".to_owned(),
         ] {
             assert!(refused(&scratch.ctx, &name).is_some(), "{name}");
         }

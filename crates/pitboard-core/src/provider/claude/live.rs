@@ -20,9 +20,10 @@ pub(crate) fn credential_file(ctx: &Context) -> PathBuf {
 }
 
 // Claude Code's chain in the order it reads, resolved on every call: it moves the login between
-// backends when a keychain write fails for good (`live_chain_order`). On Windows the file alone
-// is its store unless Credential Manager may hold the login, where every call refuses
-// (`windows_backend_choice`).
+// backends when a keychain write fails for good (`live_chain_order`). On Windows its store is
+// Credential Manager with the file behind it where anything turns that on, and every write goes
+// there (`credman_migration`); else the file alone, unless Credential Manager holds a login,
+// where every call refuses (`windows_backend_choice`).
 pub(crate) fn chain(ctx: &Context) -> Live {
     let host = ctx.host();
     match OS {
@@ -34,7 +35,11 @@ pub(crate) fn chain(ctx: &Context) -> Live {
             backends.push(host.file(credential_file(ctx)));
             Live::of(backends)
         }
-        Os::Windows => match credman::refusal(ctx) {
+        Os::Windows if credman::turned_on(ctx).is_some() => Live::taken_over_by_the_first(vec![
+            Box::new(credman::Store::of(ctx)),
+            host.file(credential_file(ctx)),
+        ]),
+        Os::Windows => match credman::ambiguity(ctx) {
             None => Live::of(vec![host.file(credential_file(ctx))]),
             Some(why) => Live::of(vec![Box::new(Refused::new(Backend::Unknown, why))]),
         },
@@ -90,45 +95,39 @@ pub(crate) fn login_in(held: &str) -> Option<Value> {
 }
 
 // What a private sign-in left: the keychain item its own hashing names, or the file inside the
-// folder where there is no keychain. On Windows a login it left in Credential Manager is
-// refused until Pitboard can delete one there (W23a).
+// folder where there is no keychain. On Windows the item its hashing names in Credential Manager,
+// where something turned that store on for it, then the file.
 pub(crate) fn read_signin(ctx: &Context, dir: &Path) -> Result<Option<String>, Error> {
     let service = slot::service_for_dir(&dir.to_string_lossy());
+    let file = ctx.host().file(dir.join(slot::CRED_FILE));
     match OS {
         Os::MacOs | Os::Linux => match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
             Some(keychain) => keychain.read(&service),
-            None => ctx.host().file(dir.join(slot::CRED_FILE)).read(""),
+            None => file.read(""),
         },
         Os::Windows => {
-            if credman::holds(ctx, &service).map_err(Error::Unreadable)? {
-                return Err(Error::Unreadable(format!(
-                    "the sign-in left its login in Credential Manager, under `{}`, which Pitboard \
-                     does not read yet",
-                    credman::target(ctx, &service)
-                )));
-            }
-            ctx.host().file(dir.join(slot::CRED_FILE)).read("")
+            let left = Live::of(vec![Box::new(credman::Store::of(ctx)), file]);
+            store::read_raw(&left, &service)
         }
     }
 }
 
 // Never a name that could be a real login: the default slot, or the one this context's own
-// `CLAUDE_CONFIG_DIR` hashes to. On Windows the file alone: an item left in Credential Manager
-// stays until W23a.
+// `CLAUDE_CONFIG_DIR` hashes to.
 pub(crate) fn discard_signin(ctx: &Context, permit: Permit, dir: &Path) -> Result<(), Error> {
     let service = slot::service_for_dir(&dir.to_string_lossy());
     if service == slot::LIVE_SERVICE || service == claude::live_service(ctx) {
         return Err(Error::Write(format!("refusing to delete {service}")));
     }
-    let keychain = match OS {
-        Os::MacOs | Os::Linux => ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)),
-        Os::Windows => None,
-    };
-    match keychain {
-        Some(keychain) => keychain.delete(permit, &service),
-        None => ctx
-            .host()
-            .file(dir.join(slot::CRED_FILE))
-            .delete(permit, ""),
+    let file = ctx.host().file(dir.join(slot::CRED_FILE));
+    match OS {
+        Os::MacOs | Os::Linux => match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
+            Some(keychain) => keychain.delete(permit, &service),
+            None => file.delete(permit, ""),
+        },
+        Os::Windows => {
+            credman::Store::of(ctx).delete(permit, &service)?;
+            file.delete(permit, "")
+        }
     }
 }

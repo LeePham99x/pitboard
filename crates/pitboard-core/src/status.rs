@@ -1584,10 +1584,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_nobody_enrolled_says_its_plan() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("stranger-uuid"));

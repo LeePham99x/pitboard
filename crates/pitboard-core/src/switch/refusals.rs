@@ -14,10 +14,6 @@ use crate::service::Permit;
 /// The account is kept, the label is kept, and the copy that cannot work is dropped, so the
 /// way back is one sign-in rather than an enrolment.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_parked_login_anthropic_refuses_is_not_installed() {
     let m = machine("refused-park");
     m.api
@@ -69,13 +65,32 @@ fn a_parked_login_anthropic_refuses_is_not_installed() {
     );
 }
 
+// Claude Code keeps no login past 256 pieces of 2400 characters, 460800 bytes, in Credential
+// Manager, and neither does a switch.
+#[cfg(windows)]
+#[test]
+fn a_login_too_large_for_credential_manager_is_refused_before_anything_moves() {
+    let m = machine("too-large-for-pieces");
+    let mut login: Value =
+        serde_json::from_str(&m.mem.live().peek(&m.service).expect("a live login")).expect("JSON");
+    login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+    m.mem.live().plant(&m.service, &login.to_string());
+    let (live_before, vault_before) = (m.mem.live().services(), m.mem.vault().services());
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover")
+        .0;
+    let failed = switch(settled, &Key::new(ProviderId::Claude, "there")).expect_err("too large");
+
+    assert_eq!(failed.code(), "credential_too_large");
+    assert_eq!(m.mem.live().services(), live_before);
+    assert_eq!(m.mem.vault().services(), vault_before);
+    assert!(!journal::pending(&m.ctx));
+}
+
 /// A park filed under the wrong label is the failure the identity check exists to prevent,
 /// caught on the way in rather than after both accounts have moved.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_parked_login_that_belongs_to_another_account_is_refused() {
     let m = machine("misfiled-park");
     m.api
@@ -105,10 +120,6 @@ fn a_parked_login_that_belongs_to_another_account_is_refused() {
 /// With nobody to ask about the login going in, the answer is to do nothing. The login that
 /// is working is worth more than the switch.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_will_not_install_a_login_it_could_not_ask_about() {
     let m = machine("offline-in");
     m.api
@@ -137,10 +148,6 @@ fn a_switch_will_not_install_a_login_it_could_not_ask_about() {
 /// The ordinary path, kept honest: a park that answers for the account it is filed under is
 /// installed, and asking about it costs one round trip and no writes.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_park_that_answers_for_its_own_account_is_installed() {
     let m = machine("proved");
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -163,10 +170,6 @@ fn a_park_that_answers_for_its_own_account_is_installed() {
 /// asked about on every switch, which also refused to move a login whose session had lapsed
 /// though its account was known.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_from_a_login_already_identified_asks_only_about_the_login_going_in() {
     let m = machine("known-going-out");
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -301,10 +304,6 @@ fn config_names_now(m: &harness::Machine) -> String {
 /// that one. Using the account in use writes it there again, as a switch to it does, keeping
 /// a copy of the config first, and moves no login. It changed nothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn using_the_account_in_use_writes_claude_codes_config_again() {
     let m = machine("use-names-again");
     harness::config_names(&m, "there");
@@ -365,10 +364,6 @@ fn using_the_account_in_use_writes_claude_codes_config_again() {
 /// says why the config was not, as a switch does; the config and what Pitboard records of
 /// it are as they were, so every read still says it names another account.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_config_that_could_not_be_written_again_is_said() {
     let m = machine("use-names-again-refused");
     harness::config_names(&m, "there");
@@ -408,10 +403,6 @@ fn a_config_that_could_not_be_written_again_is_said() {
 /// naming what it named before, as `use` does, so a read from files alone says the config
 /// names another account, not that something may have signed in.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_whose_config_could_not_be_written_is_said_to_name_another() {
     let m = machine("switch-config-refused");
     std::fs::write(home::dir(&m.ctx).join("backups"), "").expect("in the way");
@@ -436,10 +427,6 @@ fn a_switch_whose_config_could_not_be_written_is_said_to_name_another() {
 /// recorded as `use`. Pressed once another account is in use, as after a switch that landed
 /// before the press, it writes nothing and moves no login, where `use` would switch back.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_config_is_written_only_while_the_account_is_in_use() {
     let m = machine("name-again");
     harness::config_names(&m, "there");

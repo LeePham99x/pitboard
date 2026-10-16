@@ -68,6 +68,8 @@ use windows as os;
 
 pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
+#[cfg(all(windows, feature = "test-support"))]
+pub(crate) use windows::credman as windows_credman;
 #[cfg(all(windows, test))]
 pub(crate) use windows::seal::Dpapi;
 
@@ -682,8 +684,8 @@ pub struct Ran {
 /// machine: which item or file a tool keeps its login in is the tool's to say.
 pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// Secrets another program keeps in the system's own store of them, under `account`:
-    /// the login keychain on macOS. `None` where the system has no such store, and a tool
-    /// keeps its login in a file instead.
+    /// the login keychain on macOS, Credential Manager's generic items on Windows. `None`
+    /// where the system has no such store, and a tool keeps its login in a file instead.
     ///
     /// Which items and which account is the other program's business, so both are handed
     /// in. Deriving them here is how Claude Code's slot hashing came to live inside what
@@ -904,8 +906,7 @@ mod tests {
             match OS {
                 Os::MacOs => Some(crate::store::Backend::Keychain),
                 Os::Linux => None,
-                // Credential Manager, which W23a offers.
-                Os::Windows => None,
+                Os::Windows => Some(crate::store::Backend::CredentialManager),
             }
         );
         assert_eq!(

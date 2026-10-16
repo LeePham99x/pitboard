@@ -61,6 +61,8 @@ pub(crate) struct Facts {
     pub(crate) credential: Result<Option<Value>, store::Error>,
     /// What the live login costs against the store's ceiling, where there is one.
     pub(crate) credential_cost: Option<store::Cost>,
+    // `PITBOARD_NO_ARGV=1`, which nothing on Windows has an argument line to refuse.
+    pub(crate) no_argv: bool,
     /// What is taking up the room, largest first: (what it is, bytes).
     pub(crate) credential_parts: Vec<(String, usize)>,
     pub(crate) home: PathBuf,
@@ -459,6 +461,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
             .ok()
             .flatten()
             .and_then(|raw| store::cost(&claude_live::chain(ctx), &service, &raw)),
+        no_argv: !ctx.argv_fallback(),
         credential_parts: store::read(&claude_live::chain(ctx), &service)
             .ok()
             .flatten()
@@ -1023,7 +1026,11 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
 
     // A login that grows past the ceiling cannot be switched at all, and it grows by things
     // done elsewhere, so it is worth saying before the day it refuses.
-    if let Some(price) = facts.credential_cost {
+    if let (Some(price), Ok(store::Backend::CredentialManager)) =
+        (facts.credential_cost, &facts.backend)
+    {
+        checks.push(judge_pieces(price, &facts.credential_parts));
+    } else if let Some(price) = facts.credential_cost {
         let (bytes, limit) = (price.needs, price.limit);
         checks.push(if price.refused() {
             // The refusal was asked for. Say what it will cost when the day comes rather
@@ -1064,8 +1071,36 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         });
     }
 
+    if facts.no_argv && facts.os == Os::Windows {
+        checks.push(warn(
+            "no_argv",
+            "PITBOARD_NO_ARGV",
+            "set, and it changes nothing on Windows",
+            "Claude Code's Credential Manager store takes a login of any size it writes in \
+             pieces, never on an argument line. Unset it.",
+        ));
+    }
+
     checks.push(match &facts.backend {
         Ok(store::Backend::Keychain) => ok("credential_store", "credential store", "keychain"),
+        // Enterprise persistence (`credman_attributes`).
+        Ok(store::Backend::CredentialManager) => {
+            let detail = format!(
+                "Credential Manager  ·  {}/{}  ·  every logon of yours on this PC reads it",
+                facts.service, facts.account
+            );
+            if facts.windows.as_ref().is_some_and(|homes| homes.roams) {
+                warn(
+                    "credential_store",
+                    "credential store",
+                    detail,
+                    "Your profile roams, and Credential Manager takes Claude Code's login with it \
+                     to every PC you sign in to, so a switch here changes the login there too.",
+                )
+            } else {
+                ok("credential_store", "credential store", detail)
+            }
+        }
         Ok(store::Backend::File) => {
             let detail = format!("plaintext file  ·  {}", facts.credential_file.display());
             match facts.os {
@@ -1115,7 +1150,14 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "credential_store",
             "credential store",
             e.to_string(),
-            "Treat this as unknown, never as empty.",
+            match facts.os {
+                Os::MacOs | Os::Linux => "Treat this as unknown, never as empty.",
+                Os::Windows => {
+                    "Treat this as unknown, never as empty. While nothing turns Claude Code's \
+                     Credential Manager store on, its sessions read only .credentials.json, so a \
+                     login left only in Credential Manager is signed out to them."
+                }
+            },
         ),
     });
 
@@ -1582,6 +1624,17 @@ fn judge_credential(facts: &Facts) -> Check {
         // Read in 2.1.294 (the register's `locked_keychain_keeps_last_login`): a session
         // keeps serving the login it last read while the keychain is locked, and one that
         // read none reads the keychain as empty and falls through to the file.
+        Err(store::Error::Locked) if facts.os == Os::Windows => fail(
+            "credential",
+            "credential",
+            "Credential Manager cannot be reached from this logon",
+            format!(
+                "A network logon, as a sign-in over SSH with a key, has no Credential Manager. \
+                 Run Pitboard from a desktop session. A Claude Code session started from this \
+                 logon reads only {}.",
+                facts.credential_file.display()
+            ),
+        ),
         Err(store::Error::Locked) => fail(
             "credential",
             "credential",
@@ -1851,6 +1904,33 @@ fn judge_storage_v5(facts: &Facts) -> Check {
             "storage_v5",
             "storage v5",
             "switched on; the keychain is still where the login is",
+        ),
+    }
+}
+
+// On Windows: one item to 2400 bytes, 2400-character pieces of base64 to 256 (`credman_chunking`).
+fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
+    let (bytes, limit) = (price.needs, price.limit);
+    match crate::provider::claude::pieces::pieces_for(bytes) {
+        None => fail(
+            "credential_size",
+            "login size",
+            format!(
+                "{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager{}",
+                biggest(parts)
+            ),
+            "Neither Pitboard nor Claude Code can write a login this size there. Sign out of \
+             MCP servers you no longer use to make it smaller.",
+        ),
+        Some(0) => ok(
+            "credential_size",
+            "login size",
+            format!("{bytes} bytes, in one item"),
+        ),
+        Some(pieces) => ok(
+            "credential_size",
+            "login size",
+            format!("{bytes} bytes, in {pieces} pieces of 2400 characters"),
         ),
     }
 }
@@ -3952,6 +4032,7 @@ mod tests {
                 limit: 4032,
                 second_route: true,
             }),
+            no_argv: false,
             service: "Claude Code-credentials".into(),
             account: "someone".into(),
             default_slot: true,
@@ -4356,6 +4437,7 @@ mod tests {
     #[test]
     fn a_locked_keychain_is_one_failure_and_sends_nobody_to_sign_in_again() {
         let mut f = facts();
+        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let mut behind = parked("work", Some(NOW + 20 * 86_400));
         behind.unreadable = Some(Unreadable::Locked);
@@ -4466,6 +4548,7 @@ mod tests {
             check(&checks, "auth_source").detail
         );
 
+        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let advice = check(&evaluate(&f), "credential").advice.clone();
         assert!(
@@ -4506,6 +4589,7 @@ mod tests {
         );
         assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
 
+        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let advice = check(&evaluate(&f), "credential").advice.clone();
         assert!(
@@ -4710,6 +4794,129 @@ mod tests {
         let store = check(&checks, "credential_store");
         assert_eq!(store.level, Level::Warn);
         assert!(store.advice.contains("Nothing is signed in"));
+    }
+
+    // Enterprise persistence (`credman_attributes`): the login roams with a roaming profile.
+    #[test]
+    fn credential_manager_is_named_by_its_item_and_a_roaming_profile_is_warned_of() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Ok(store::Backend::CredentialManager);
+        f.account = "claude-code-user".into();
+        f.windows = Some(WindowsHomes {
+            home: PathBuf::from(r"C:\Users\dana"),
+            default_pitboard_home: PathBuf::from(r"C:\Users\dana\AppData\Local\Pitboard"),
+            local_app_data: None,
+            profile: None,
+            codex_home_set: false,
+            roams: false,
+        });
+        let checks = evaluate(&f);
+        let store = check(&checks, "credential_store");
+        assert_eq!(store.level, Level::Ok);
+        assert_eq!(
+            store.detail,
+            "Credential Manager  ·  Claude Code-credentials/claude-code-user  ·  every logon of \
+             yours on this PC reads it"
+        );
+        if let Some(homes) = f.windows.as_mut() {
+            homes.roams = true;
+        }
+        let checks = evaluate(&f);
+        let store = check(&checks, "credential_store");
+        assert_eq!(store.level, Level::Warn);
+        assert!(
+            store.advice.starts_with("Your profile roams"),
+            "{}",
+            store.advice
+        );
+    }
+
+    #[test]
+    fn a_login_in_credential_manager_is_counted_in_pieces_and_257_fail() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Ok(store::Backend::CredentialManager);
+        let size = |f: &Facts, needs: usize| {
+            let mut f_cost = f.credential_cost.expect("a cost");
+            f_cost.needs = needs;
+            judge_pieces(f_cost, &f.credential_parts)
+        };
+        f.credential_cost = Some(store::Cost {
+            needs: 900,
+            limit: 460_800,
+            second_route: false,
+        });
+        assert_eq!(
+            check(&evaluate(&f), "credential_size").detail,
+            "900 bytes, in one item"
+        );
+        let pieces = size(&f, 2401);
+        assert_eq!(pieces.level, Level::Ok);
+        assert_eq!(pieces.detail, "2401 bytes, in 2 pieces of 2400 characters");
+        let past = size(&f, 460_801);
+        assert_eq!(past.level, Level::Fail);
+        assert_eq!(
+            past.detail,
+            "460801 bytes, past the 460800 Claude Code keeps in Credential Manager"
+        );
+    }
+
+    #[test]
+    fn pitboard_no_argv_is_said_to_change_nothing_on_windows() {
+        let mut f = facts();
+        f.no_argv = true;
+        f.os = Os::MacOs;
+        assert!(evaluate(&f).iter().all(|c| c.code != "no_argv"));
+        f.os = Os::Windows;
+        let checks = evaluate(&f);
+        let said = check(&checks, "no_argv");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(said.detail, "set, and it changes nothing on Windows");
+    }
+
+    // A network logon, as over sshd with a key, has no credential set: 1312 (MC-net).
+    #[test]
+    fn credential_manager_out_of_this_logons_reach_is_said_in_its_own_words() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.credential_file = PathBuf::from(r"C:\Users\dana\.claude\.credentials.json");
+        f.credential = Err(store::Error::Locked);
+        let checks = evaluate(&f);
+        let said = check(&checks, "credential");
+        assert_eq!(said.level, Level::Fail);
+        assert_eq!(
+            said.detail,
+            "Credential Manager cannot be reached from this logon"
+        );
+        assert!(
+            said.advice.ends_with(
+                r"A Claude Code session started from this logon reads only C:\Users\dana\.claude\.credentials.json."
+            ),
+            "{}",
+            said.advice
+        );
+        assert!(!said.advice.contains("keychain"));
+    }
+
+    #[test]
+    fn a_login_credential_manager_holds_that_nothing_turns_on_is_said_to_sign_sessions_out() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Err(store::Error::Unreadable(
+            "Credential Manager holds a login".into(),
+        ));
+        let checks = evaluate(&f);
+        let said = check(&checks, "credential_store");
+        assert_eq!(said.level, Level::Fail);
+        assert!(
+            said.advice.ends_with(
+                "its sessions read only .credentials.json, so a login left only in Credential \
+                 Manager is signed out to them."
+            ),
+            "{}",
+            said.advice
+        );
     }
 
     #[test]
@@ -5919,10 +6126,6 @@ mod tests {
     /// naming another, once a read has found the login is still the one named, is said, and
     /// moves nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_is_the_one_anthropic_named() {
         use crate::switch::harness::{NOW, config_names, machine};
         let m = machine("doctor-in-use");
@@ -5959,10 +6162,6 @@ mod tests {
     /// That is what happens every few hours, so it is no warning: the next read asks whose it
     /// is. Doctor asks nobody.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewed_login_is_not_a_warning() {
         use crate::switch::harness::{NOW, document, machine};
         let m = machine("doctor-renewed");
@@ -5988,10 +6187,6 @@ mod tests {
     /// login can. Something may have signed in, and only Anthropic can say whose the login is
     /// now.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_config_that_moved_since_is_a_warning() {
         use crate::switch::harness::{NOW, config_names, machine};
         let m = machine("doctor-config-moved");
