@@ -80,6 +80,8 @@ internal static class Views
     public static string[] Texts(DependencyObject root) =>
         [.. Visible<TextBlock>(root).Select(text => text.Text).Where(text => text.Length > 0)];
 
+    public static string? Description(TextBox field) => (field.Description as TextBlock)?.Text;
+
     public static Button Button(DependencyObject root, string content) =>
         Visible<Button>(root).FirstOrDefault(button => button.Content as string == content)
         ?? throw new AssertFailedException($"no button '{content}' among: {string.Join(", ", Texts(root))}");

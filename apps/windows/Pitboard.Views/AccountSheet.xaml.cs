@@ -172,7 +172,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
         WorkingText.Text = text.Progress ?? "";
-        NameField.Description = form.Problem(NameField.Text);
+        Describe(NameField, form.Problem(NameField.Text));
         ShowMissing(form.NotFound(_tool));
         Message.Text = form.Message(_tool);
         PrimaryButtonText = form.Confirm(_tool);
@@ -192,7 +192,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Message.Text = text.Message;
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
-        NameField.Description = naming.Problem(NameField.Text);
+        Describe(NameField, naming.Problem(NameField.Text));
         PrimaryButtonText = text.Confirm;
         SecondaryButtonText = "";
         DefaultButton = ContentDialogButton.Primary;
@@ -212,7 +212,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         RefusedBar.Message = text.Refused ?? "";
         RefusedBar.Margin = new Thickness(0, text.Refused is null ? 0 : 8, 0, 0);
         RefusedBar.IsOpen = text.Refused is not null;
-        CodeField.Description = text.CodeNote;
+        Describe(CodeField, text.CodeNote);
         PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
         DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
@@ -334,14 +334,31 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         }
     }
 
+    // TextBox's template shows a string description on one line; a TextBlock of its own wraps under the field.
+    private static void Describe(TextBox field, string? text)
+    {
+        if (text is null)
+        {
+            field.Description = null;
+        }
+        else if (field.Description is TextBlock note)
+        {
+            note.Text = text;
+        }
+        else
+        {
+            field.Description = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+        }
+    }
+
     private void OnNameChanged(object sender, TextChangedEventArgs args)
     {
-        NameField.Description = _page switch
+        Describe(NameField, _page switch
         {
             SheetPage.Form form => form.Problem(NameField.Text),
             SheetPage.Naming naming => naming.Problem(NameField.Text),
             _ => null,
-        };
+        });
         Edited();
         Enable();
     }

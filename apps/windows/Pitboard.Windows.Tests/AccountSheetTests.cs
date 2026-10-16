@@ -262,7 +262,26 @@ public sealed class AccountSheetTests
         Assert.IsFalse(field.IsSpellCheckEnabled);
         Assert.IsFalse(field.IsTextPredictionEnabled);
         Assert.AreEqual(
-            "Claude Code takes the code shown after you sign in, whether or not your browser came back to it.", field.Description);
+            "Claude Code takes the code shown after you sign in, whether or not your browser came back to it.", Views.Description(field));
+    }
+
+    // TextBox's template shows a string description on one line, which ran past the dialog's edge (after-shot 17).
+    [UITestMethod]
+    public async Task ACodeNoteLongerThanItsFieldWrapsUnderIt()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        });
+        var field = up.Element<TextBox>("sheet.code");
+        var note = Assert.IsInstanceOfType<TextBlock>(field.Description);
+        await Views.Until(() => note.ActualWidth > 0, "the note was not laid out");
+
+        Assert.AreEqual(TextWrapping.Wrap, note.TextWrapping);
+        Assert.IsTrue(note.ActualWidth <= field.ActualWidth, $"the note is {note.ActualWidth} wide under a field {field.ActualWidth} wide");
     }
 
     // The name field says under itself why what is typed cannot be a name, and a failure goes once it changes.
@@ -274,7 +293,7 @@ public sealed class AccountSheetTests
         var field = up.Element<TextBox>("sheet.name");
 
         await up.Type("sheet.name", "a/b");
-        Assert.AreEqual("A name can’t contain “/”.", field.Description);
+        Assert.AreEqual("A name can’t contain “/”.", Views.Description(field));
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled);
 
         var failure = new Failure(7, "Couldn’t rename personal", "work is already the name of another account.", "name_taken", []);
@@ -282,7 +301,7 @@ public sealed class AccountSheetTests
         await Views.Until(() => up.Element<InfoBar>("sheet.failure").IsOpen, "the failure was not said");
         await up.Type("sheet.name", "home");
 
-        Assert.IsNull(field.Description);
+        Assert.IsNull(Views.Description(field));
         await Views.Until(() => up.Model.Sent.Contains(new Intent.DismissSheetFailure()), "the failure stayed with the name");
     }
 
