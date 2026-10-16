@@ -690,8 +690,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     step A2.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
-    AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
-    package. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
+    AppUserModelID of its own, waits for its Switch, unregisters, names a process's
+    package, and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
