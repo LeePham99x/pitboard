@@ -17,8 +17,8 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-  # The SDK in global.json. MSTest.Sdk beside it is raised by hand: Dependabot does not read
-  # msbuild-sdks.
+  # The SDK in global.json. MSTest.Sdk and WixToolset.Sdk beside it are raised by hand:
+  # Dependabot does not read msbuild-sdks.
   - package-ecosystem: dotnet-sdk
     directory: /apps/windows
     schedule:

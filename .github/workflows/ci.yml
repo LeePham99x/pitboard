@@ -418,6 +418,8 @@ jobs:
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
           -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_share_ffi.so"
+      # The version the MSI carries for each version Cargo.toml may name, through MSBuild alone.
+      - run: sh .github/scripts/test-msi-version.sh
       # The same library with its fixtures, which a debug build of either app launches into.
       # Its bindings must be the very ones generated without them, which is what lets one
       # set serve both, and the library without them must hold none of a fixture's text.
@@ -540,8 +542,9 @@ jobs:
   # The Windows app on each image the windows job names: a Debug build over pitboard_ffi.dll
   # opened with its fixtures, and a Release build over the library as a 0.x release builds it,
   # with PitboardShare.exe and its package, signed with a throwaway certificate and registered
-  # nowhere. Its tests run as a fresh standard user, and an elevated launch as the job's user.
-  # Nothing is uploaded, so no runnable build of a pull request leaves the runner.
+  # nowhere, and the MSI of that build, extracted and never installed. Its tests run as a fresh
+  # standard user, and an elevated launch as the job's user. Nothing is uploaded, so no runnable
+  # build of a pull request leaves the runner.
   windows-app:
     strategy:
       fail-fast: false
@@ -551,10 +554,12 @@ jobs:
             triple: x86_64-pc-windows-msvc
             runtime: win-x64
             platform: x64
+            installer: x64
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
             runtime: win-arm64
             platform: ARM64
+            installer: arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -588,13 +593,15 @@ jobs:
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: pitboard_ffi.dll and pitboard_share_ffi.dll as a 0.x release builds them
+      # pitboard.exe for the MSI's bin folder.
+      - name: pitboard_ffi.dll, pitboard_share_ffi.dll and pitboard.exe as a 0.x release builds them
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
           CARGO_TARGET_DIR: target/gated
         run: |
           cargo build --locked --release -p pitboard-ffi
           cargo build --locked --release -p pitboard-share-ffi
+          cargo build --locked --release -p pitboard
       - name: pitboard_ffi.dll opened, with its fixtures
         run: cargo build --locked --release -p pitboard-ffi --features fixture
       # csharp-windows checks that both libraries give the core's bindings, byte for byte.
@@ -642,8 +649,6 @@ jobs:
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
           dotnet build Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
-          dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
-            -p:PitboardAppDebug="$GITHUB_WORKSPACE/apps/windows/Pitboard.App/$BUILT/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
           dotnet publish Pitboard.Probe -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/probe"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.App/$BUILT/pitboard_ffi.dll"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.Windows.Tests/$BUILT/pitboard_ffi.dll"
@@ -678,6 +683,59 @@ jobs:
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION
+      # ICE validates the MSI as it builds. CI never installs one: msiexec /a extracts its files
+      # and registers nothing. The image is Pitboard as an install lays it out, which the UI
+      # tests start in place of the Release folder (CF10).
+      - name: The MSI and its administrative image
+        id: msi
+        shell: pwsh
+        working-directory: apps/windows
+        env:
+          INSTALLER: ${{ matrix.installer }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'target\windows-app'
+          $app = Join-Path $out 'release'
+          $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
+          dotnet build Pitboard.Installer -c Release -o (Join-Path $out 'msi') "-p:InstallerPlatform=$env:INSTALLER" `
+            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
+          $msi = Join-Path $out 'msi\Pitboard.msi'
+          $image = Join-Path $out 'msi-image'
+          $log = Join-Path $env:RUNNER_TEMP 'msi-admin.log'
+          $extract = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/a', "`"$msi`"", '/qn', "TARGETDIR=`"$image`"", '/l*v', "`"$log`""
+          if ($extract.ExitCode -ne 0) {
+            Get-Content -LiteralPath $log -Tail 40
+            throw "msiexec /a exited $($extract.ExitCode)"
+          }
+          $found = @(Get-ChildItem -LiteralPath $image -Recurse -File | Where-Object Name -CEQ 'Pitboard.exe')
+          if ($found.Count -ne 1) { throw "the administrative image holds $($found.Count) Pitboard.exe" }
+          Write-Output "Extracted $msi into $($found[0].DirectoryName)."
+          "folder=$($found[0].DirectoryName)" >> $env:GITHUB_OUTPUT
+      - name: "The MSI's files: the checks of the Release build"
+        shell: pwsh
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: >
+          ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
+          -Version $env:VERSION
+      - name: The UI tests over the MSI's Pitboard.exe, and the MSI's own tests
+        working-directory: apps/windows
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: |
+          out="$GITHUB_WORKSPACE/target/windows-app"
+          dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
+            -p:PitboardAppDebug="$GITHUB_WORKSPACE/apps/windows/Pitboard.App/$BUILT/Pitboard.exe" -p:PitboardAppRelease="$IMAGE/Pitboard.exe"
+          dotnet publish Pitboard.Installer.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/installer-tests" \
+            -p:PitboardMsi="$out/msi/Pitboard.msi" -p:PitboardMsiImage="$IMAGE"
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh
@@ -700,7 +758,8 @@ jobs:
           if ([version]$found -lt [version]$minimum) {
             throw "This image's WebView2 Runtime, $found, is older than the $minimum the account windows need."
           }
-      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2). The
+      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2), the
+      # Release build's the one in the MSI's image, which refuses until Windows is released (CF10). The
       # job user's Explorer takes no icon of that user's (CF3), so no UI test clicks the icon. The WebView2
       # tests (CF7) run the account windows' glue against a stand-in site on the loopback, and WindowsAppsTests
       # ask Restart Manager to end Pitboard.StandInApp.exe, never forced (CF9).
@@ -709,7 +768,7 @@ jobs:
         run: >
           ./.github/scripts/test-as-standard-user.ps1
           -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe,
-          target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe
+          target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe, target/windows-app/installer-tests/Pitboard.Installer.Tests.exe
           -Probe target/debug/pitboard-probe.exe
       # The job's user is elevated, so of the UI tests only the elevated launch's runs.
       - name: An elevated launch refuses and writes nothing, as the job user

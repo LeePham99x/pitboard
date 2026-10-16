@@ -380,6 +380,17 @@ measure the app's notifications, and checks that it refuses an account without
 `pitboard-probe`'s throwaway marker. The WinUI projects and `PitboardShare.exe` build only
 there.
 
+The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
+build and the `pitboard.exe` a 0.x release builds, and ICE validates it as it builds. CI never
+installs an MSI: `msiexec /a` extracts it, `check-windows-app.ps1` checks the files it holds,
+the UI test of the release gate starts its `Pitboard.exe`, and `Pitboard.Installer.Tests`
+reads its tables. WiX builds only on Windows. For a change to the version the MSI carries,
+which needs only the .NET SDK:
+
+```sh
+sh .github/scripts/test-msi-version.sh
+```
+
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
 `pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1`,

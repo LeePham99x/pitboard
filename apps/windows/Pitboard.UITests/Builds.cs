@@ -8,6 +8,7 @@ internal static partial class Builds
 {
     public static string Debug => Built("PitboardAppDebug");
 
+    // As the MSI lays it out: CI passes the Pitboard.exe of its administrative image.
     public static string Release => Built("PitboardAppRelease");
 
     // The version the release gate reads, from Cargo.toml rather than the build under test.

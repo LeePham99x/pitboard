@@ -714,6 +714,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
     operation through `SystemShareOperation`. For the MSI, `--register` adds the package
     beside it with its own folder as the external location, and `--unregister` removes it.
     It loads `pitboard_share_ffi.dll` and none of the core.
+  - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
+    Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
+    otherwise, as single package authoring has it, and its launch condition refuses a
+    per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
+    every registry row's HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and
+    `pitboard_ffi.dll`, and the command line in `Pitboard\bin\`, never beside `Pitboard.exe`;
+    `bin` appended to the user `PATH` and taken off on uninstall; the Start menu shortcut with
+    the AppUserModelID `Pitboard.Pitboard`; and `pitboard://`. `Manufacturer` is `Pitboard`
+    and the x64 and ARM64 MSIs share one `UpgradeCode`, so either replaces the other.
+    `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a final
+    and `X.Y.Z.N` for beta N and Windows Installer compares three fields. Only a full
+    uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
+    `%LOCALAPPDATA%\Pitboard App` through WiX's `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is
+    the command line's and stays. `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes,
+    starts `Pitboard.exe --updated` once the install ends. `Pitboard.Installer.Tests` reads the
+    built MSI's tables with WiX's DTF and the administrative image `msiexec /a` extracts.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, names a process's
@@ -796,7 +812,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `pitboard-core` that changed under a version crates.io already has,
     `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`,
     `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
-    signatures, and `test-release.py` tests the four, the app's `build-number.sh` and the
+    signatures, `test-msi-version.sh` tests the version the MSI carries for each version
+    `Cargo.toml` may name, and `test-release.py` tests the four, the app's `build-number.sh` and the
     cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
@@ -2602,7 +2619,7 @@ The images:
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 October 2026. W27 reviews the list.
+on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 
 | Fact | Source | Why not measured |
 |---|---|---|
@@ -2650,6 +2667,11 @@ on 15 October 2026. W27 reviews the list.
 | The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
 | A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | No runner registers Pitboard's package: CI signs it with a certificate nothing trusts. P1 registers the signed release's. |
 | `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
+| A dual-purpose package installs per user with no UAC prompt when `ALLUSERS` is 2 and `MSIINSTALLPERUSER` 1; per user, `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs`, HKMU is HKCU, and Windows Installer empties `ALLUSERS` | [Single package authoring](https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring), [Installation context](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) | CI only extracts the MSI; the session's steps A1, A7 and A8 install, upgrade and remove it. |
+| An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | CI only extracts the MSI; the session's step A1 runs `where.exe pitboard` in a new terminal and an open one, and A8 removes it. |
+| Windows Installer closes a running program through Restart Manager in an upgrade, and starts again after it one that called `RegisterApplicationRestart` | [Using Windows Installer with Restart Manager](https://learn.microsoft.com/en-us/windows/win32/msi/using-windows-installer-with-restart-manager) | No runner installs over a running Pitboard; the session's step A7 does, with `statusline` running from `bin`. |
+| The RemoveRegistry table deletes values when its component is installed, never when it is removed | [RemoveRegistry table](https://learn.microsoft.com/en-us/windows/win32/msi/removeregistry-table) | The session's step A8 removes Pitboard with start at sign-in on, and finds the `Run` value gone through `--unregister`. |
+| An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
 
 ### One sign-in at a time

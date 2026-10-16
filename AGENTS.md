@@ -118,6 +118,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   registers, and `Pitboard.Probe` on the session machine.
 - Never give `Pitboard.exe`, `pitboard.exe` or a process they start a package identity. Only
   `PitboardShare.exe` carries an `<msix>` manifest element.
+- Never install an MSI built from a branch on an account that holds real logins, or on a CI
+  runner, which only extracts one with `msiexec /a`. Install it only in the session machine's
+  throwaway accounts, and remove it before the session ends.
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
   whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,

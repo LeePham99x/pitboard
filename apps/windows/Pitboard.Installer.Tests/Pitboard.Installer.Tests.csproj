@@ -1,0 +1,14 @@
+<Project Sdk="MSTest.Sdk">
+  <!-- Reads the MSI CI built and the administrative image it extracted, through msi.dll: Windows only, and nothing is installed. -->
+  <PropertyGroup>
+    <!-- The owner accepted WiX v7's Open Source Maintenance Fee EULA on 2026-10-15. -->
+    <AcceptEula>wix7</AcceptEula>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="PitboardMsi" Value="$(PitboardMsi)" />
+    <AssemblyMetadata Include="PitboardMsiImage" Value="$(PitboardMsiImage)" />
+  </ItemGroup>
+</Project>
