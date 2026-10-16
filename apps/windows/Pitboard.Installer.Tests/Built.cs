@@ -17,7 +17,7 @@ internal static partial class Built
         typeof(Built).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .Any(metadata => metadata.Key == "PitboardShareSigned" && metadata.Value == "true");
 
-    // The version Cargo.toml names, as the MSI was given it.
+    // The version Cargo.toml names, whose major the release gate reads.
     public static string CargoVersion()
     {
         for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
