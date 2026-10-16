@@ -415,6 +415,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     are not in it.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
+  `build.rs` gives a Windows build its manifest, which the linker embeds, and its version
+  resource, which `rc.exe` or `llvm-rc` compiles. Both are in `build/`, the resource's writer
+  in `resources.rs`, one file so `pitboard-ffi`'s build script can include it too.
   `json.rs` is the one writer of that JSON, for every command and every error. Its example
   `stand-in` is the program every test starts in place of a tool: `claude`, `codex` and
   Claude's own program under a test's scratch `Claude.app`, which `ps` lists as Claude.

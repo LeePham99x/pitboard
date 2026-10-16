@@ -154,6 +154,30 @@ pub mod testing {
         crate::host::proc::may_be_running(pid)
     }
 
+    // Every process's id, its parent's and its program's name, from one snapshot.
+    #[cfg(windows)]
+    pub fn processes() -> std::io::Result<Vec<(u32, u32, String)>> {
+        crate::host::proc::snapshot()
+    }
+
+    // A program's version resource, read as Claude Code's is (W17).
+    #[cfg(windows)]
+    pub mod version_resource {
+        use std::path::Path;
+
+        pub fn file_version(program: &Path) -> Option<[u16; 4]> {
+            crate::host::proc::file_version(program)
+        }
+
+        pub fn product_version(program: &Path) -> Option<[u16; 4]> {
+            crate::host::proc::product_version(program)
+        }
+
+        pub fn string(program: &Path, name: &str) -> Option<String> {
+            crate::host::proc::version_string(program, name)
+        }
+    }
+
     /// Claude Code's login in Credential Manager as Pitboard writes, reads and deletes it, under
     /// a test's own service, and each item as Windows keeps it, its blob by length alone.
     #[cfg(windows)]

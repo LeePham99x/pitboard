@@ -281,6 +281,11 @@ cargo nextest run --locked -p pitboard-ffi --features fixture
 `RUSTFLAGS` replaces each target's own rustflags, so it names the static C runtime releases
 are built with.
 
+A Windows build of `pitboard` carries a manifest and a version resource. `rc.exe` from the
+newest Windows SDK compiles the resource, or `llvm-rc` on `PATH` from a Mac or Linux. Without
+either the build warns and goes on. With `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI and the
+release set, it fails.
+
 The whole suite runs on Windows. A Rust test that cannot pass there until a later Windows
 pull request says so with `#[cfg_attr(windows, ignore = "W<id>: <what it waits on>")]`, the id
 `W14` to `W27`, `W23a`, `W23b` or `W-warm`, and in no other way: no filter and no `--skip`.
