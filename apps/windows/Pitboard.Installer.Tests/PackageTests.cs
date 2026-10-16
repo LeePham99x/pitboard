@@ -12,6 +12,7 @@ public sealed class PackageTests
     private const string FullUninstall = "REMOVE = \"ALL\" AND NOT UPGRADINGPRODUCTCODE";
 
     private const int Deferred = 0x400;
+    private const int Rollback = 0x500;
     private const int IgnoreExitCode = 0x40;
     private const int AsyncNoWait = 0xC0;
     private const int ExeFromInstalledFile = 18;
@@ -158,32 +159,46 @@ public sealed class PackageTests
         Assert.IsGreaterThan(Sequence(database, "InstallFinalize"), Sequence(database, "LaunchAfterInstall"));
     }
 
-    // Each ignored on failure: the install goes on without the share target.
+    // Each ignored on failure: the install goes on without the share target. Pitboard.exe removes the package, since
+    // RemovePackageAsync ends every process of the package it removes, and a rollback after the registration removes it too.
     [TestMethod]
-    public void PitboardShareRegistersOnEachInstallAndUnregistersOnEachRemoval()
+    public void PitboardShareRegistersOnEachInstallAndUnregistersOnEachRemovalAndRollback()
     {
         using var database = Open();
         var actions = Rows(database, "SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`", 4)
-            .Where(row => row[0] is "RegisterShare" or "UnregisterShare")
+            .Where(row => row[0] is "RegisterShare" or "UnregisterShare" or "RegisterShareRollback")
             .ToDictionary(row => row[0]!);
 
-        Assert.AreEqual(Built.ShareSigned ? 2 : 0, actions.Count);
+        Assert.AreEqual(Built.ShareSigned ? 3 : 0, actions.Count);
         if (!Built.ShareSigned)
         {
             return;
         }
 
-        foreach (var (action, target, condition) in new[]
+        foreach (var (action, command, when, condition) in new[]
         {
-            ("RegisterShare", "--register", "NOT REMOVE"),
-            ("UnregisterShare", "--unregister", "REMOVE = \"ALL\""),
+            ("RegisterShare", "PitboardShareExe --register", Deferred, "NOT REMOVE"),
+            ("UnregisterShare", "PitboardExe --unregister-share", Deferred, "REMOVE = \"ALL\""),
+            ("RegisterShareRollback", "PitboardExe --unregister-share", Rollback, "NOT REMOVE"),
         })
         {
             var type = int.Parse(actions[action][1]!, CultureInfo.InvariantCulture);
-            Assert.AreEqual(ExeFromInstalledFile | Deferred | IgnoreExitCode, type & (0x3F | Deferred | IgnoreExitCode), action);
-            Assert.AreEqual($"PitboardShareExe {target}", string.Join(' ', actions[action][2..]));
-            Assert.AreEqual(condition, Condition(database, action));
+            Assert.AreEqual(ExeFromInstalledFile | when | IgnoreExitCode, type & (0x3F | Rollback | IgnoreExitCode), action);
+            Assert.AreEqual(command, string.Join(' ', actions[action][2..]), action);
+            Assert.AreEqual(condition, Condition(database, action), action);
         }
+
+        Assert.IsLessThan(Sequence(database, "RegisterShare"), Sequence(database, "RegisterShareRollback"));
+        Assert.IsGreaterThan(Sequence(database, "InstallFiles"), Sequence(database, "RegisterShareRollback"));
+    }
+
+    // One feature and no UI, so Modify would only run the install again.
+    [TestMethod]
+    public void SettingsOffersNoModify()
+    {
+        using var database = Open();
+
+        Assert.AreEqual("1", Property(database, "ARPNOMODIFY"));
     }
 
     // A RemoveRegistry row acts on an install, so the Run value goes through --unregister instead.

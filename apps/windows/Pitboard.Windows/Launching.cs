@@ -12,11 +12,14 @@ public enum Start
     Refused,
     LinkRefused,
     Unregister,
+    UnregisterShare,
 }
 
 public static class Launching
 {
     public const string Unregister = "--unregister";
+
+    public const string UnregisterShare = "--unregister-share";
 
     public const string Updated = "--updated";
 
@@ -39,6 +42,11 @@ public static class Launching
         if (given.Contains(Unregister))
         {
             return Start.Unregister;
+        }
+
+        if (given.Contains(UnregisterShare))
+        {
+            return Start.UnregisterShare;
         }
 
         if (refusal() is not null)

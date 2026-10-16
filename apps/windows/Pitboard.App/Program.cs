@@ -72,6 +72,8 @@ public static class Program
                     new SystemAppNotifications(),
                     () => SystemAppNotifications.Registered(Running.Aumid));
                 return 0;
+            case Start.UnregisterShare:
+                return SharePackage.Unregister(new SystemSharePackages(), AppContext.BaseDirectory) == 0 ? 0 : 1;
             case Start.Dropped:
                 return 0;
         }

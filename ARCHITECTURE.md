@@ -703,7 +703,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
     the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
-    exits with no window and no single-instance key. `App` makes the model, over this PC or
+    exits with no window and no single-instance key. On `--unregister-share`, which the
+    MSI's removal and rollback run, `SharePackage` removes `PitboardShare`'s package
+    registered for this folder, the same way. `App` makes the model, over this PC or
     in a Debug build started with `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers
     for notifications, opens the main window when the model asks, and asks for it on a
     launch from Start or a shortcut, since Windows puts a new icon in the overflow; a start
@@ -728,28 +730,31 @@ window loads its site, and whatever the site's pages load, as a browser would.
     element names the sparse package in `Package/`, the publisher written in at build time
     from `WINDOWS_SIGNER_SUBJECT`. Started by the share sheet, it hands `Sharing` the share
     operation through `SystemShareOperation`. For the MSI, `--register` adds the package
-    beside it with its own folder as the external location, and `--unregister` removes it.
-    It loads `pitboard_share_ffi.dll` and none of the core.
+    beside it with its own folder as the external location. `Pitboard.exe --unregister-share`
+    removes the package registered for its folder, since removing a package ends the
+    package's own processes. It loads `pitboard_share_ffi.dll` and none of the core.
   - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
     Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
     otherwise, as single package authoring has it, and its launch condition refuses a
     per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
-    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and the
-    command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the user
-    `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
+    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and
+    the command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the
+    user `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
     `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and `pitboard://`.
-    `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so either
-    replaces the other.
-    `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a final
-    and `X.Y.Z.N` for beta N and Windows Installer compares three fields. Only a full
-    uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
-    `%LOCALAPPDATA%\Pitboard App` through WiX's `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is
-    the command line's and stays. `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes,
-    starts `Pitboard.exe --updated` once the install ends. Built with `PitboardShareSigned`,
-    for a signed `PitboardShare.msix`, it also carries `PitboardShare.exe`, its package and
-    logos, and runs `PitboardShare.exe --register` on each install and `--unregister` on each
-    removal, either ignored on failure. `Pitboard.Installer.Tests` reads the
-    built MSI's tables with WiX's DTF and the administrative image `msiexec /a` extracts.
+    `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so
+    either replaces the other. Settings offers no Modify, since there is one feature and no
+    UI. `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a
+    final and `X.Y.Z.N` for beta N, as `windows-versions.sh` gives it, and Windows Installer
+    compares three fields. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
+    `Pitboard.exe --unregister` and removes `%LOCALAPPDATA%\Pitboard App` through WiX's
+    `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is the command line's and stays.
+    `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes, starts `Pitboard.exe --updated`
+    once the install ends. Built with `PitboardShareSigned`, for a signed `PitboardShare.msix`,
+    it also carries `PitboardShare.exe`, its package and logos. It runs
+    `PitboardShare.exe --register` on each install, and `Pitboard.exe --unregister-share` on
+    each removal and on the rollback of an install that registered, each ignored on failure.
+    `Pitboard.Installer.Tests` reads the built MSI's tables with WiX's DTF, and asks the
+    `pitboard_ffi.dll` of the administrative image `msiexec /a` extracts whether it opens.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, names a process's
@@ -1427,8 +1432,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   for Windows is released, a Windows build below the floor, an elevated process and a home
   that is not a full path. It asks before it judges a link or takes the single-instance key,
   and a refused launch shows the core's sentence and exits with nothing written
-  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister`, which the MSI's
-  full uninstall runs, is read first, and it asks neither the core nor a running copy.
+  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister` and
+  `--unregister-share`, which the MSI runs, are read first, and they ask neither the core nor
+  a running copy.
 - The Windows app's own data folder is never in Pitboard's directory. It is `Pitboard App`,
   or `Pitboard App Debug` for a Debug build, beside `Pitboard` in the known folder Local
   AppData, which `Shell.LocalAppData` asks `SHGetKnownFolderPath` for. So neither
@@ -1441,7 +1447,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `FixtureStartupItem`, register for no notifications (`WindowsNotifications`) and claim no
   link scheme ([On Windows](#on-windows) under Account windows). The MSI alone writes
   `pitboard` and the user `PATH` entry, and registers `PitboardShare.exe`'s package when it
-  is signed; `Pitboard.exe --unregister` takes back what the app registered itself. CI's
+  is signed; `Pitboard.exe --unregister` takes back what the app registered itself, and
+  `--unregister-share` the package. CI's
   Windows legs fail a run that leaves a link scheme, a notification registration, a start at
   sign-in, a `PATH` entry or a package behind.
 - Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
