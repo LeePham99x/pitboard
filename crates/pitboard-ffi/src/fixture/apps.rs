@@ -2,6 +2,7 @@
 //! apps on its machine, and notifications, which it posts none of.
 
 use crate::model::{AppControl, Notifications, PlatformError, RunOutNotice};
+use pitboard_core::host::{OS, Os};
 use pitboard_core::testing::MemoryHost;
 use pitboard_core::testing::desktop::FakeClaude;
 use std::collections::BTreeSet;
@@ -9,16 +10,49 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// ChatGPT, as the core's holder detection names it: its bundle id.
-pub(crate) const CHATGPT: &str = "com.openai.codex";
+/// ChatGPT on this system, as the core's holder detection names it.
+pub(crate) const CHATGPT: &str = chatgpt(OS).app;
 
 pub(crate) const CLAUDE: &str = "com.anthropic.claudefordesktop";
 
-/// Where ChatGPT runs its own `codex`, as the process list of a Mac running ChatGPT
-/// 26.928.31416 gave it, recorded in pitboard-core's `provider::codex::holders`: what tells
-/// the core the app is open. Two of them, as there were.
-const CHATGPT_CODEX: &str =
-    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
+/// ChatGPT on one system, as pitboard-core's `provider::codex::holders` tells it from the
+/// process list: what tells the core the app is open.
+pub(crate) struct ChatGpt {
+    /// As `AppControl` takes it: on macOS its bundle id, on Windows its AUMID.
+    pub(crate) app: &'static str,
+    /// Where it runs its own `codex`, two of them, as there were on the Mac.
+    codex: &'static str,
+    /// The Windows package's family it runs in.
+    package: Option<&'static str>,
+}
+
+pub(crate) const fn chatgpt(os: Os) -> ChatGpt {
+    match os {
+        // W18's family and app id, which the session's step 10 measures. Where in the package
+        // its codex runs waits on that step too; the core tells it by the family alone.
+        Os::Windows => ChatGpt {
+            app: "OpenAI.Codex_2p2nqsd0c76g0!App",
+            codex: "C:/Program Files/WindowsApps/OpenAI.Codex_1.0.0.0_x64__2p2nqsd0c76g0/codex.exe",
+            package: Some("OpenAI.Codex_2p2nqsd0c76g0"),
+        },
+        // As the process list of a Mac running ChatGPT 26.928.31416 gave it.
+        Os::MacOs | Os::Linux => ChatGpt {
+            app: "com.openai.codex",
+            codex: "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+            package: None,
+        },
+    }
+}
+
+impl ChatGpt {
+    pub(crate) fn opens(&self, host: &MemoryHost) {
+        let codex = [self.codex, self.codex];
+        match self.package {
+            Some(family) => host.runs_in_package("codex", family, &codex),
+            None => host.runs_at("codex", &codex),
+        }
+    }
+}
 
 // Long enough for a UI test to see the waiting page under CI's load.
 const SIGNS_IN_AFTER: Duration = Duration::from_secs(5);
@@ -107,7 +141,7 @@ impl FixtureApps {
         drop(now);
         self.held.1.notify_all();
         match app {
-            CHATGPT => self.host.runs_at("codex", &[CHATGPT_CODEX, CHATGPT_CODEX]),
+            CHATGPT => chatgpt(OS).opens(&self.host),
             CLAUDE => self.claude.opens(),
             _ => {}
         }

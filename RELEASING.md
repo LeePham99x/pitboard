@@ -11,7 +11,7 @@ tag with `version` under `[workspace.package]` in `Cargo.toml`, as
 | `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No | Signed once a signer is set |
 
 An rc's number starts at 1, a beta's runs from 1 to 98, and a beta's major version is 1 or
-more. `usepitboard.com/install.sh` and the app's feed lead to GitHub's latest release, so a
+more. `usepitboard.com/install.sh` and the apps' feeds lead to GitHub's latest release, so a
 0.x release made after 1.0.0 never moves them back. A release ships Windows files from major
 version 1, and the guard refuses an rc or a full release while no signer is set
 ([Windows signing](#windows-signing)).
@@ -52,8 +52,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    A release candidate builds, signs and attests everything, and runs its own install script
    on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
-   release notes or update feed, and skips the `feed`, `tap`, `brew`, `scoop` and `winget`
-   jobs.
+   release notes or update feeds, and skips the `feed`, `windows-update-sign`,
+   `windows-feed`, `tap`, `brew`, `scoop` and `winget` jobs.
 
 8. Tag the same commit `v<version>` and push the tag.
 
@@ -67,11 +67,13 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes six failures:
+10. Watch the run to the end. A re-run fixes eight failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
 | `windows-sign` | Anywhere | Re-run it. SignPath evaluates at most three re-runs of a run, and fails the fourth |
+| `windows-sign-msi` | Anywhere | Re-run it, as `windows-sign` |
+| `windows-update-sign` | Anywhere | Re-run it. It signs the MSIs `windows-msi` checked again and replaces the feed it handed on |
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
@@ -107,6 +109,37 @@ runs its command line as a fresh standard user. For a full release or a beta it 
 the zip with cargo-binstall from crates.io, with `compile` disabled, so a `pkg-url` in
 `crates/pitboard/Cargo.toml` that names no zip fails the job instead of building from source.
 
+From major version 1, each release also has the app for Windows, an MSI for x64 and one for
+ARM64, `Pitboard-v<version>-windows-<arch>.msi`, each with a bill of materials. `app-windows-build`
+builds the app on each machine, `windows-sign` signs Pitboard's own programs in it with the zips,
+and `app-windows-package` builds the MSI from them with the signed zip's `pitboard.exe` in `bin`,
+so the zip and the MSI carry one build. CI builds and checks an MSI the same way on every pull
+request. `windows-sign-msi` signs both MSIs, and `windows-msi` checks each on its own machine.
+The latest full release also has `appcast-windows.xml`, the feed the Windows app updates from,
+which `windows-update-sign` signs with [the Windows update key](#the-windows-update-key). The
+`windows-install` job downloads each MSI, checks it against `SHA256SUMS`, its attestation and its
+signatures, and extracts it with `msiexec /a`. No job installs an MSI. `windows-feed-key` and
+`windows-feed` fetch the Windows feed as an installed copy does and check each MSI in it against
+the key in the published MSIs. `publish` has 15 minutes, for the MSIs' upload, a limit
+1.0.0-beta.1 is the first release to try.
+
+The MSIs and their numbers follow the version in `Cargo.toml`, as
+`.github/scripts/windows-versions.sh` prints them:
+
+| `Cargo.toml` | MSI | Version resource and package | Windows feed |
+| --- | --- | --- | --- |
+| `1.0.0-beta.1` | `1.0.0.1` | `1.0.0.1` | None |
+| `1.0.0` | `1.0.0` | `1.0.0.1000` | `1.0.0` |
+| `1.1.0-beta.2` | `1.1.0.2` | `1.1.0.2` | None |
+
+Windows Installer compares three fields, so a beta and its final are one version there, and
+each MSI replaces the other. Settings > Apps shows the MSI's version.
+
+The MSI is built with WiX v7. The owner accepted its Open Source Maintenance Fee EULA on
+15 October 2026 (`AcceptEula` in `apps/windows/Pitboard.Installer/Pitboard.Installer.wixproj`).
+Nothing is owed while Pitboard's revenue stays under US$10,000 a year and sponsorships stay
+donations: WiX v7.0.0's `OSMFEULA.txt`, lines 12 to 23, and `.github/FUNDING.yml`.
+
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
 mistake in a published file. A deleted release's tag name cannot be used again.
@@ -125,14 +158,22 @@ unset, and any release that sets it without `WINDOWS_SIGNER_SUBJECT`. A beta wit
 ships its Windows files unsigned. Once a signer is set, every Windows release is signed,
 betas included: never unset it to ship one unsigned.
 
-The `windows-sign` job takes the zips `build-windows` made and hands them to `publish`. It
-runs in the `windows-signing` environment, which takes deployments from `v*` tags only and
-holds the signer's credentials. Make it before the first 1.x tag: a job that names a missing
-environment makes one with no rule. Before it hands the zips on,
-`.github/scripts/verify-windows-signatures.ps1` checks every program in them: signed by
-`WINDOWS_SIGNER_SUBJECT`, valid and timestamped, or, with no signer, not signed at all. No
-signer has a signing step yet, so a set `WINDOWS_SIGNER` fails the job. Once one has, a
-signed release waits for one approval at the signer, then one at `release`.
+The `windows-sign` job takes the zips `build-windows` made and the app's own programs and
+sparse package from `app-windows-build`, in one request, and hands the zips to `publish` and the
+app to `app-windows-package`. `windows-sign-msi` signs both MSIs in a second request. Both run
+in the `windows-signing` environment, which takes deployments from `v*` tags only and holds the
+signer's credentials. Make it before the first 1.x tag: a job that names a missing environment
+makes one with no rule. `.github/scripts/verify-windows-signatures.ps1` checks every program in
+the zips, the app's programs and package, and each MSI and the programs named for Pitboard in
+it: signed by `WINDOWS_SIGNER_SUBJECT`, valid and timestamped, or, with no signer, not signed at
+all. The .NET runtime, the Windows App SDK and WinSparkle ship as their makers signed them. An
+MSI is checked on its own machine, `windows-msi`, since `msiexec /a` extracts one only where it
+could install it. No signer has a signing step yet, so a set `WINDOWS_SIGNER` fails the job.
+Once one has, a signed release waits for two approvals at the signer, then one at `release`.
+
+A release with no signer builds no sparse package, so its MSI carries no share target: only a
+signature the machine trusts registers one, and Pitboard never asks anyone to trust a test
+certificate.
 
 Keep the signer's account apart from the update key and the Developer ID certificate.
 
@@ -147,6 +188,7 @@ Keep the signer's account apart from the update key and the Developer ID certifi
 | `SPARKLE_PUBLIC_KEY`, `SPARKLE_PRIVATE_KEY` | `bin/generate_keys --account pitboard`, from Sparkle's release archive at the version `apps/macos/project.yml` pins, prints the public key. With `-x <file>` it writes the private key to `<file>`, whose contents are the secret. Delete the file afterwards |
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
 | `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
+| `WINDOWS_UPDATE_PUBLIC_KEY`, `WINDOWS_UPDATE_PRIVATE_KEY` | As [the Windows update key](#the-windows-update-key) says. The private key is a secret of the `windows-update` environment alone |
 | `WINGET_TOKEN` | A classic token with the `public_repo` scope, of a GitHub account kept for it alone, which holds the fork of `microsoft/winget-pkgs` and can write to no `datlechin` repository. A classic token writes to every public repository its account can, the tap and the bucket among them. komac 2.16.0's README says a fine-grained token fails to open the pull request |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
@@ -163,14 +205,15 @@ API token, then its own registration under **Settings** > **Trusted Publishing**
 
 The `release` environment has required reviewers, and the `publish` job waits in it.
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
-`HOMEBREW_TAP_TOKEN`, `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and `winget` holds
-`WINGET_TOKEN`. Give `release`, `homebrew-tap`, `scoop-bucket`, `winget` and
-`windows-signing` each a deployment rule for `v*` tags, under **Settings** >
-**Environments** > **Deployment branches and tags**, so a job run from a branch never
-reaches them.
+`HOMEBREW_TAP_TOKEN`, `scoop-bucket` holds `SCOOP_BUCKET_TOKEN`, `winget` holds
+`WINGET_TOKEN` and `windows-update` holds `WINDOWS_UPDATE_PRIVATE_KEY`. Give `release`,
+`homebrew-tap`, `scoop-bucket`, `winget`, `windows-signing` and `windows-update` each a
+deployment rule for `v*` tags, under **Settings** > **Environments** > **Deployment branches
+and tags**, so a job run from a branch never reaches them.
 
 [Rotate the update key](#rotate-the-update-key) covers the repository variable
-`SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
+`SPARKLE_KEY_ROTATION`, [the Windows update key](#the-windows-update-key)
+`WINDOWS_UPDATE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
 `WINDOWS_SIGNER_SUBJECT` and the `windows-signing` environment.
 
 ## The Homebrew tap
@@ -326,3 +369,52 @@ mistaken key would then pass.
 
 Keep the update key and the certificate in different places. If both are lost, no update
 reaches an installed copy, and every copy has to be installed again.
+
+## The Windows update key
+
+The Windows app updates itself through WinSparkle from `appcast-windows.xml`, which lists full
+releases only: a beta updates itself into the next full release, never into another beta. Each
+Release build carries the Windows update public key in `Pitboard.dll`, and WinSparkle installs
+an MSI only when that key verifies it. WinSparkle checks no Authenticode signature, so there is
+no second route: with the key lost, every Windows copy has to be installed again by hand. With
+no key, or one it does not take, WinSparkle installs updates nobody signed, so the release
+refuses to build one.
+
+| Name | Kind | Read by |
+| --- | --- | --- |
+| `WINDOWS_UPDATE_PUBLIC_KEY` | Repository secret | `app-windows-build`, `app-windows-package` and `windows-update-sign` |
+| `WINDOWS_UPDATE_PRIVATE_KEY` | Secret of the `windows-update` environment | `windows-update-sign` alone |
+| `WINDOWS_UPDATE_KEY_ROTATION` | Repository variable | `app-windows-package` |
+
+Before the first 1.x tag:
+
+1. On a macOS user account that holds neither macOS key, run `bin/generate_keys --account
+   pitboard-windows` from Sparkle's release archive at the version `apps/macos/project.yml`
+   pins. Put the public key it prints in `WINDOWS_UPDATE_PUBLIC_KEY`.
+2. `bin/generate_keys --account pitboard-windows -x <file>` writes the private key. Make the
+   `windows-update` environment with a deployment rule for `v*` tags, put the file's contents
+   in its `WINDOWS_UPDATE_PRIVATE_KEY`, and delete the file.
+3. Keep an offline copy of the private key apart from the signer's account, the macOS update
+   key and the Developer ID certificate.
+
+WinSparkle's keys and signatures are Sparkle's Ed25519 in base64. `windows-update-sign` signs
+each MSI with `sign_update` from that release archive, pinned by its SHA-256 in `release.yml`,
+checks each signature with `WINDOWS_UPDATE_PUBLIC_KEY`, and writes the feed with
+`.github/scripts/windows-appcast.py`.
+
+### Rotate the Windows update key
+
+Only the EdDSA route exists. Rung one carries the next public key and its MSIs are signed with
+the current key; rung two is signed with the next key. The feed offers only the latest release,
+so a copy that has not taken rung one when rung two ships stays on its version until it is
+installed again.
+
+`app-windows-package` compares the key the MSI carries with the one the newest earlier release
+with an MSI shipped, betas included. It lets a change through only when
+`WINDOWS_UPDATE_KEY_ROTATION` names this version, the tag without its `v`: set it before you push
+each tag of the release that changes the key. Rung two ships rung one's key, so never set the
+variable to its version.
+
+The release workflow cannot make rung one: `windows-update-sign` checks each signature with the
+key the release carries, and `windows-feed` with the key in the published MSIs, which rung one
+has moved on from.

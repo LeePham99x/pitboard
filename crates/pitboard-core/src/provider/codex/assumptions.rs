@@ -107,7 +107,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
             "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
         ),
         linux: NotRead("OpenAI makes no desktop app for Linux"),
-        windows: Read("0.162.1"),
+        windows: Read("0.163.0"),
     },
     PerSystem {
         name: "codex_home_isolates_a_sign_in",
@@ -422,11 +422,13 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                `GetPackageFamilyName`",
         read_from: "installed_windows_app and process_package_family in \
                     codex-rs/cli/src/doctor/desktop/platform.rs, and codex_app_is_installed in \
-                    codex-rs/cli/src/desktop_app/windows.rs, at tag rust-v0.162.1, read on \
-                    2026-10-16; the win32-x64 and win32-arm64 builds hold both",
-        verified_against: "0.162.1",
-        depends: "provider::codex::holders's chatgpt_app on Windows, and the app id it hands \
-                  an app to quit ChatGPT with",
+                    codex-rs/cli/src/desktop_app/windows.rs, at tags rust-v0.162.1 and \
+                    rust-v0.163.0, read on 2026-10-16; the win32-x64 and win32-arm64 builds of \
+                    both hold both",
+        verified_against: "0.163.0",
+        depends: "provider::codex::holders's chatgpt_app on Windows, the app id it hands an \
+                  app to quit ChatGPT with, and the Windows app's WindowsApps, which finds \
+                  ChatGPT's running process by that family",
         probe: &[
             "OpenAI.Codex_2p2nqsd0c76g0",
             "Get-StartApps | Where-Object AppID -Like 'OpenAI.Codex_*!App'",

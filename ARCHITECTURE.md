@@ -442,7 +442,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   (`Pitboard::warm_up`, which looks at the files first), with a refusal row of its own, and
   says each warm-up, each reason an account is held back once until it warms up, and why
   nothing is warmed up here once until that ends. No warm-up error ends it. `warm.rs` is
-  `pitboard warm`.
+  `pitboard warm`. `build/versioninfo.rs` is the Windows version resource SignPath asks of
+  what it signs: ProductName `Pitboard` and the crate's version. The build scripts of
+  `pitboard-ffi` and `pitboard-share-ffi` include it by `#[path]` and link it into their
+  DLLs, compiled by the Windows SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is
+  `X.Y.Z.N` for beta N and `X.Y.Z.1000` otherwise, so each version numbers above the one
+  before. A build without a resource compiler warns and goes on, unless
+  `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows-app` job sets.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
@@ -565,7 +571,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     asks every 10 milliseconds. `tools.rs` plays Claude Code's and Codex's sign-in through
     the core's `SignInScript`, with the person at the browser. `apps.rs` is the fixture's
     other apps and its notifications, which post nothing. Its ChatGPT runs Codex's login and
-    quits when asked. Its Claude is `testing::desktop::FakeClaude` over the fixture's
+    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude is `testing::desktop::FakeClaude` over the fixture's
     machine, which writes the data folder as 2.7032.0 does as it quits. It quits when asked,
     and in `claudeDesktopOpen`, opened in front for a sign-in, it signs in to a third
     account after 5 seconds and quits 2 seconds later. `pages.rs` is the stand-in pages an
@@ -595,17 +601,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `web.rs` reads a page's address, for an account window's rules, as Foundation's `URL`
     does: its scheme, and the host, port and user it names, with the host a request goes
     to, and its path, which a fixture's stand-in page says.
-- `crates/pitboard-share-ffi`: `pitboard-sites` as UniFFI bindings for the macOS Share
-  extension alone, a static library with one function, `share_link`. It checks a shared
-  page and writes the Pitboard link that hands it to the app, or says why not in the
-  sentence the app shows. It holds nothing of the core.
+- `crates/pitboard-share-ffi`: `pitboard-sites` as UniFFI bindings with one function,
+  `share_link`, a static library for the macOS Share extension and a dynamic one for the
+  Windows app's `PitboardShare.exe`. It checks a shared page and writes the Pitboard link
+  that hands it to the app, or says why not in the sentence the app shows. It holds nothing
+  of the core.
 - `crates/uniffi-bindgen-swift` and `crates/uniffi-bindgen-csharp`: generate the Swift and
   the C# bindings with exactly the UniFFI version the library uses. The bindings check
   method checksums when they load. The C# generator is NordSecurity's, pinned to a release
   built against that UniFFI; it is a build tool, so `deny.toml` leaves it out of the graph.
   Every type the core's bindings export is declared in `pitboard-ffi`, because the C#
-  generator cannot use a type from another crate. `pitboard-share-ffi`, which only Swift
-  reads, declares its own.
+  generator cannot use a type from another crate. `pitboard-share-ffi`, which Swift and C#
+  both read, declares its own.
 - `crates/pitboard-conformance`: checks a tool's register against a build of that tool: a
   program for macOS, Linux or Windows, or an Electron app's `app.asar`.
 - `crates/pitboard-probe`: the Windows measurement probe. It is `publish = false`, never
@@ -624,12 +631,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account name replaced, and never hold two keys that differ only in case, which
   PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
   runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
-  the owner runs in the VM.
+  the owner runs in the VM, which the runner facts' CF8 rows register on a runner too.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
-  `Pitboard.Core.Tests` calls the core through them; `Pitboard.slnx` holds the two, which
-  build on every system. `Pitboard.Windows.slnx` adds the app, which builds on Windows only:
+  `Pitboard.Core.Tests` calls the core through them. `Pitboard.Share.Core` is
+  `pitboard-share-ffi`'s, generated the same way, beside `Sharing`, what `PitboardShare.exe`
+  answers a share with, over an `IShareOperation` that `Pitboard.Share.Core.Tests` replaces.
+  `Pitboard.slnx` holds the four, which build on every system. `Pitboard.Windows.slnx` adds
+  the app, which builds on Windows only:
   - `Pitboard.Windows` is the glue, with no XAML. `AppModel` holds the `PitboardModel` and
     its newest snapshot, a property for each part, by the macOS `AppModel`'s rules; it
     compares a part's arrays by what they hold (`Structural`), and `ModelListening` hands it
@@ -645,7 +655,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     posts the model's notifications through `IAppNotifications`, which
     `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
     Release build registers, and a click comes back as the intent the Switch button or the
-    notification itself asks for. `NoUpdates` is the updater of a build that cannot update.
+    notification itself asks for. `WindowsApps` is the model's `AppControl`: through
+    `PackagedApps` it finds the process of a Store app's package that owns a top-level
+    window, asks Restart Manager to end it, never forced, and opens the app by its AUMID
+    through the activation manager. `SparkleUpdates` is a Release build's updater: WinSparkle,
+    through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests replace, over
+    the feed of full releases, with WinSparkle's settings in `UpdateSettings`'s file in the
+    app's data folder and the version of an update it finds read from the feed by
+    `UpdateFeed`. `NoUpdates` is the updater of a build that cannot update, and says why.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
@@ -669,24 +686,58 @@ window loads its site, and whatever the site's pages load, as a browser would.
     a `WarmRow`. `AccountWindow` and `SignInWindow` are the account windows.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
-    launch, and `App` makes the model, over this PC or in a Debug build started with
-    `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
-    main window when the model asks, and asks for it on a launch from Start or a shortcut,
-    since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
-    a notification opens none. It opens the account windows through `AccountWindows`. It stops
-    the model and unregisters on Exit, and as the session ends stops the model, or ends where
-    Restart Manager asks. `MenuHost` is the pixel of a window the icon's menu opens from.
-    `MainWindow` shows a pane for each of the model's `Pane`s and its settings page, and takes
-    Ctrl+N and Ctrl+comma from any of them.
+    launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
+    the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
+    exits with no window and no single-instance key. `App` makes the model, over this PC or
+    in a Debug build started with `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers
+    for notifications, opens the main window when the model asks, and asks for it on a
+    launch from Start or a shortcut, since Windows puts a new icon in the overflow; a start
+    at sign-in, after an update or from a notification opens none. A Release build asks,
+    through `RegisterApplicationRestart`, to be started with `--updated` after an update
+    Restart Manager closed it for, and never after a crash, a hang or a reboot. It opens the
+    account windows through `AccountWindows`. It stops the model and unregisters on Exit,
+    and as the session ends stops the model, or ends where Restart Manager asks. `MenuHost`
+    is the pixel of a window the icon's menu opens from. `MainWindow` shows a pane for each
+    of the model's `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any
+    of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
+    `Pitboard.StandInApp`, never shipped, is the app `WindowsAppsTests` ask Restart Manager
+    to end in place of ChatGPT, copied beside the tests.
     Neither registers anything with Windows. The icon's menu is held by the view tests,
     `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
-    step A2.
+    step A2. `ScreenshotTests` takes the docs' pictures of the window and of the menu, which
+    it opens with the message Explorer sends on a right click.
+  - `Pitboard.Share` is `PitboardShare.exe`, the share target: Native AOT, with no window,
+    and the only program of Pitboard's with a package identity. Its manifest's `<msix>`
+    element names the sparse package in `Package/`, the publisher written in at build time
+    from `WINDOWS_SIGNER_SUBJECT`. Started by the share sheet, it hands `Sharing` the share
+    operation through `SystemShareOperation`. For the MSI, `--register` adds the package
+    beside it with its own folder as the external location, and `--unregister` removes it.
+    It loads `pitboard_share_ffi.dll` and none of the core.
+  - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
+    Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
+    otherwise, as single package authoring has it, and its launch condition refuses a
+    per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
+    every registry row's HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and
+    `pitboard_ffi.dll`, and the command line in `Pitboard\bin\`, never beside `Pitboard.exe`;
+    `bin` appended to the user `PATH` and taken off on uninstall; the Start menu shortcut with
+    the AppUserModelID `Pitboard.Pitboard`; and `pitboard://`. `Manufacturer` is `Pitboard`
+    and the x64 and ARM64 MSIs share one `UpgradeCode`, so either replaces the other.
+    `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a final
+    and `X.Y.Z.N` for beta N and Windows Installer compares three fields. Only a full
+    uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
+    `%LOCALAPPDATA%\Pitboard App` through WiX's `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is
+    the command line's and stays. `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes,
+    starts `Pitboard.exe --updated` once the install ends. Built with `PitboardShareSigned`,
+    for a signed `PitboardShare.msix`, it also carries `PitboardShare.exe`, its package and
+    logos, and runs `PitboardShare.exe --register` on each install and `--unregister` on each
+    removal, either ignored on failure. `Pitboard.Installer.Tests` reads the
+    built MSI's tables with WiX's DTF and the administrative image `msiexec /a` extracts.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
-    AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
-    package. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
+    AppUserModelID of its own, waits for its Switch, unregisters, names a process's
+    package, and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -763,13 +814,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
     template, and `test-install.py` tests it and the install script. `release-kind.sh`
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
     `pitboard-core` that changed under a version crates.io already has,
-    `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`, and
-    `test-release.py` tests the three, the app's `build-number.sh` and the cargo-binstall
-    metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
-    a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
-    checks the signature of every program a Windows release hands on, and
-    `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
-    Release build.
+    `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`,
+    `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
+    signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
+    `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
+    unless a rotation names the release, `test-msi-version.sh` tests the version the MSI
+    carries for each version `Cargo.toml` may name, and `test-release.py` tests the six, the
+    app's `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
+    `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
+    `verify-windows-signatures.ps1` checks the signature of every program a Windows release
+    hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
+    tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
+    `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
+    checks one, `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests both checks and the signature check on the MSI and the
+    package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -874,6 +934,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` compile (`lib.rs`). The switch
   that opens a Windows build early is a `cfg` set in `RUSTFLAGS`, never a Cargo feature,
   since crates.io offers a published crate's features to anybody.
+- The Windows app a release ships updates only through the Windows update key. Each Release
+  build carries a key WinSparkle takes and the feed of full releases (`check-windows-app.ps1`),
+  and the key the newest earlier MSI shipped unless `WINDOWS_UPDATE_KEY_ROTATION` names the
+  release (`windows-update-key.sh`). WinSparkle checks no Authenticode signature, so there is
+  no second route.
 - Outside a host's own face, a test or a fixture sets a file's mode, makes a file runnable
   or makes a link only through that face's `fs::testing` (`pitboard_core::testing::fs`),
   never through `std::os::unix`. A link to a directory is asked for as one, `link_dir`, apart
@@ -1026,18 +1091,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
   to stop, and the core, a tool's sign-in and the app's `AppControl`, `Notifications` and
   `LocalTime` are called on the model's own threads. The free functions block on nothing,
   and an app may make them where it likes: `check_name` and `downloads_quit_question`,
-  which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link`,
-  `read_pitboard_link`, `pitboard_link` and `link_refusal_reason`, which are
-  `pitboard-sites`' and read only what they are given too; the account windows' rules, such
-  as `store_id`, `window_accounts`, `decide_navigation` and `window_note`, which read only
-  what they are given as well, so a web view's delegate asks them as it is asked;
-  `download_destination`, which asks the file system whether each name it tries is taken;
-  `app_command_line`, which only joins paths; `can_run`, which asks the file system about
-  one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its profile
-  folder; `windows_records_key`, which reads only what it is given; `launch_refusal`, which
-  asks the system whether this process is elevated and which build it runs on; and
-  `fixture_names` and `fixture_page`, which read only what they are given.
+  which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link` and
+  `read_pitboard_link`, which are `pitboard-sites`' and read only what they are given too;
+  the account windows' rules, such as `store_id`, `window_accounts`, `decide_navigation` and
+  `window_note`, which read only what they are given as well, so a web view's delegate asks
+  them as it is asked; `download_destination`, which asks the file system whether each name
+  it tries is taken; `app_command_line`, which only joins paths; `can_run`, which asks the
+  file system about one path; `pitboard_directory`, which reads the environment it is given
+  and, without `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its
+  profile folder; `windows_records_key`, which reads only what it is given;
+  `launch_refusal`, which asks the system whether this process is elevated and which build
+  it runs on; and `fixture_names` and `fixture_page`, which read only what they are given.
   `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world in its
   folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
@@ -1324,6 +1388,34 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account windows' records, `webStores` and `windowPages`, the same way, in
   `WindowsLaunch::earlier`, and takes them out once `windows.json` is in the app's own
   folder.
+- The Windows app asks the core's gate before anything else a launch does. `Launching` asks
+  `launch_refusal`, which refuses where every change is refused: a release before Pitboard
+  for Windows is released, a Windows build below the floor, an elevated process and a home
+  that is not a full path. It asks before it judges a link or takes the single-instance key,
+  and a refused launch shows the core's sentence and exits with nothing written
+  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister`, which the MSI's
+  full uninstall runs, is read first, and it asks neither the core nor a running copy.
+- The Windows app's own data folder is never in Pitboard's directory. It is `Pitboard App`,
+  or `Pitboard App Debug` for a Debug build, beside `Pitboard` in the known folder Local
+  AppData, which `Shell.LocalAppData` asks `SHGetKnownFolderPath` for. So neither
+  `PITBOARD_HOME` nor `LOCALAPPDATA` moves it, and `pitboard uninstall` never deletes the
+  account windows' sign-ins. Under a fixture it is the fixture's own folder. A build for
+  tests refuses both folders as real login places, compared by component, so `Pitboard App`
+  never lies in `Pitboard` (`host::pitboard_app_on_windows`).
+- Only a Release build an MSI installed registers anything with Windows. A Debug build and a
+  fixture write no `Run` value, since `RunValue` refuses in a Debug build and a fixture gets
+  `FixtureStartupItem`, register for no notifications (`WindowsNotifications`) and claim no
+  link scheme ([On Windows](#on-windows) under Account windows). The MSI alone writes
+  `pitboard` and the user `PATH` entry, and registers `PitboardShare.exe`'s package when it
+  is signed; `Pitboard.exe --unregister` takes back what the app registered itself. CI's
+  Windows legs fail a run that leaves a link scheme, a notification registration, a start at
+  sign-in, a `PATH` entry or a package behind.
+- Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
+  holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
+  Release build where another program holds one, and it hands a shared page to
+  `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
+  a process it starts carries none of its identity is Microsoft's contract until CF8 and P2
+  measure it ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
@@ -2101,6 +2193,17 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   while one is under way. It brings the **Open link** window forward with each link that
   arrives, and withdraws it once none waits.
 
+The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
+with a package identity, which a share target needs. It takes a web link, else text, and
+launches the Pitboard link `share_link` writes, which `Pitboard.exe`, with no identity, checks
+again as any link; a refusal goes to `ReportError`, whose sentence Windows shows. Its sparse
+package asks for nothing beyond `runFullTrust` and declares no write virtualization, since it
+writes nothing. Only a signed build carries it: a sparse package registers only when signed
+by a certificate the machine trusts, and its Publisher is the signer's subject.
+`check-windows-app.ps1` fails a Release folder where another program carries an `<msix>`
+element, where `PitboardShare.exe`'s names another publisher, package or application than
+`PitboardShare.msix`, or where the package's Publisher is not the signer's.
+
 A Pitboard link reaches `Pitboard.exe` as its first argument, and a launch with one reads no
 flag after it: Microsoft's guide to URI schemes warns that a link's unencoded quotes or
 spaces split it into more arguments. Only an installer registers `pitboard`, nothing
@@ -2302,8 +2405,8 @@ Accounts and tokens:
   kept the browser process was still in progress five seconds later.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
-  So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step
-  A2 clicks it.
+  So no UI test clicks Pitboard's icon: the view tests hold its menu, `ScreenshotTests` opens
+  it with the message a right click sends, and the session's step A2 clicks it.
 - A window of that user's program comes to the front and takes a click on windows-2025. On
   windows-11-arm a full-screen `Microsoft account` window, a `Windows.UI.Core.CoreWindow` of
   `WWAHost` in the job user's session, holds the foreground, and Windows keeps it there for a
@@ -2557,7 +2660,7 @@ The images:
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 October 2026. W27 reviews the list.
+on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 
 | Fact | Source | Why not measured |
 |---|---|---|
@@ -2586,7 +2689,10 @@ on 15 October 2026. W27 reviews the list.
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | No runner installs over a running Pitboard; CF9 sends the message, and the session's step A7 upgrades a running copy. |
+| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not; without `RmForceShutdown`, one that answers `WM_QUERYENDSESSION` with `FALSE` runs on and `RmShutdown` gives `ERROR_FAIL_SHUTDOWN` | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications), [RmShutdown](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmshutdown) | No runner installs over a running Pitboard. CF9's `WindowsAppsTests` ask it to end a stand-in that agrees and one that declines; the session's step A7 upgrades a running copy. |
+| `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
+| `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
+| Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
 | A launch redirected to the running copy carries the second copy's arguments | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No `windows-app` run has passed `AccountPickerTests` yet: in run 38825074643 the running copy crashed on a theme brush as the link reached it. |
 | A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
@@ -2598,6 +2704,18 @@ on 15 October 2026. W27 reviews the list.
 | A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
 | A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
+| A program given identity by a package with an external location gets a share with `AppInstance.GetActivatedEventArgs`, from Windows 10 2004 on | [Get activation info for packaged apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/get-activation-info-for-packaged-apps) | No runner registers Pitboard's package or shares a page; the 1.0 session's P1 shares from Edge, Chrome and Firefox. |
+| The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
+| A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | No runner registers Pitboard's package: CI signs it with a certificate nothing trusts. P1 registers the signed release's. |
+| `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
+| A dual-purpose package installs per user with no UAC prompt when `ALLUSERS` is 2 and `MSIINSTALLPERUSER` 1; per user, `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs`, HKMU is HKCU, and Windows Installer empties `ALLUSERS` | [Single package authoring](https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring), [Installation context](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) | CI only extracts the MSI; the session's steps A1, A7 and A8 install, upgrade and remove it. |
+| An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | CI only extracts the MSI; the session's step A1 runs `where.exe pitboard` in a new terminal and an open one, and A8 removes it. |
+| Windows Installer closes a running program through Restart Manager in an upgrade, and starts again after it one that called `RegisterApplicationRestart` | [Using Windows Installer with Restart Manager](https://learn.microsoft.com/en-us/windows/win32/msi/using-windows-installer-with-restart-manager) | No runner installs over a running Pitboard; the session's step A7 does, with `statusline` running from `bin`. |
+| The RemoveRegistry table deletes values when its component is installed, never when it is removed | [RemoveRegistry table](https://learn.microsoft.com/en-us/windows/win32/msi/removeregistry-table) | The session's step A8 removes Pitboard with start at sign-in on, and finds the `Run` value gone through `--unregister`. |
+| An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
+| `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
+| Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
+| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
 
 ### One sign-in at a time
 
@@ -3160,7 +3278,8 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     `OpenAI.Codex_2p2nqsd0c76g0!App`, and Codex tells its process by that family. So
     Pitboard does too, wherever the package is installed. That the app runs its own
     `codex.exe` inside the package, and what closing its windows does, waits on the
-    session's step 10.
+    session's step 10. Read again the same day at `rust-v0.163.0` and in its win32 builds,
+    unchanged.
   - The Windows package holds `codex-command-runner.exe`, `codex-code-mode-host.exe`,
     `codex-windows-sandbox-setup.exe`, `codex-voice-host.exe` and `rg.exe` beside
     `codex.exe`. Only a program named `codex.exe`, in any case, is a running Codex.
@@ -3983,6 +4102,64 @@ Microsoft's documentation.
   `Pause` leave a download interrupted with `CanResume` true, and `Downloads` ends one in
   the model only once it cannot resume. The reference gives the reason as `UserCanceled`;
   the runners give `UserPaused` (CF7 under [Windows](#windows)).
+- Restart Manager's guidelines for applications (updated 11 March 2025) and the references
+  of `RmStartSession` and `RmShutdown` (updated 1 July 2025), read on 16 October 2026: it
+  asks a GUI app with `WM_QUERYENDSESSION`, then `WM_ENDSESSION`, both with
+  `ENDSESSION_CLOSEAPP`, then `WM_CLOSE` where it does not end. One `FALSE` cancels, and
+  only `RmForceShutdown` ends an app regardless. A console app gets `CTRL_C_EVENT`. Only the
+  process that started a session may shut down through it, a user session holds at most 64,
+  and the session lives in the registry. So `PackagedApps` registers a Store app's windowed
+  process alone, never its console `codex` children, ends the session once `RmShutdown`
+  returns, and calls it without flags on a thread of its own, since it returns only once the
+  app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
+  (updated 22 February 2024) offers no option that opens an app behind another window, so
+  `WindowsApps` brings Pitboard's window forward after it.
+
+- WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
+  package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
+  base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and
+  installs anyway (`dll_api.cpp`, `signatureverifier.cpp`, `updatedownloader.cpp`).
+  Versions compare by Sparkle's comparator, which sorts `1.0.0-beta.1` and `1.0.0+<commit>`
+  below `1.0.0`, against the build version where one is set (`updatechecker.cpp`,
+  `settings.h`). The feed's parser takes an enclosure whose `sparkle:os` is empty,
+  `windows` or the DLL's own `windows-x64` or `windows-arm64`, and `minimumSystemVersion`
+  only as an element of the item, checked with `VerifyVersionInfoW` (`appcast.cpp`). The
+  did-find-update callback names no version (`appcontroller.cpp`). A check that fails shows
+  nothing unless WinSparkle's window is already open (`ui.cpp`). `win_sparkle_init` asks
+  whether to check at the second launch unless `CheckForUpdates` is set, and starts the daily
+  checks only where it is on (`dll_api.cpp`, `updatechecker.cpp`). The can-shutdown callback
+  runs on WinSparkle's thread before the installer starts, and the shutdown request once it
+  has (`ui.cpp`). Settings go to `HKCU\Software\<company>\<app>\WinSparkle` unless the
+  app gives its own config methods (`settings.cpp`). The package's `runtimes/win-x64` and
+  `win-arm64` DLLs are AMD64 and ARM64, import only system DLLs and export the API by its C
+  names (llvm-readobj 22). So `SparkleUpdates` starts WinSparkle only with a key it takes and
+  the version without a commit, turns automatic checks on before the first start, reads the
+  version of an update found from the feed, asks the downloads question in the can-shutdown
+  callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
+  an uninstall removes with the folder. Turned on after a start with them off, automatic
+  checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
+  An update's MSI is checked whole with orlp's `ed25519_verify`, its signature the base64 of
+  64 bytes (`signatureverifier.cpp`). Sparkle 2.10.0's `sign_update` signs a file that is no
+  feed or release notes whole with the same library, reads the key's base64 seed from
+  standard input with `--ed-key-file -` and prints the signature alone with `-p`
+  (`sign_update/main.swift`, `common_cli/Secret.swift`, read the same day). A rehearsal on
+  16 October 2026 signed two files with a throwaway seed, and `eddsa-verify.swift` took each
+  signature under its public key and refused one another seed made. So `windows-update-sign`
+  signs each MSI with `sign_update` and checks it with `eddsa-verify.swift` before
+  `windows-appcast.py` writes the feed.
+- The .NET 8 SDK adds the commit to `InformationalVersion`, which
+  `IncludeSourceRevisionInInformationalVersion` turns off
+  ([Source Link included in the .NET SDK](https://learn.microsoft.com/dotnet/core/compatibility/sdk/8.0/source-link),
+  updated 26 July 2025), and a `Win32Resource` takes the place of the version information
+  the compiler writes and cannot be given with a `Win32Manifest`
+  ([Resource options](https://learn.microsoft.com/dotnet/csharp/language-reference/compiler-options/resources),
+  updated 28 May 2026). So `Pitboard.App` turns the commit off, and carries the update key as
+  `AssemblyMetadata("WindowsUpdatePublicKey")` from `WINDOWS_UPDATE_PUBLIC_KEY` rather than
+  WinSparkle's `EdDSAPub` resource. `check-windows-app.ps1` refuses a Release build whose
+  `Pitboard.exe` version carries a commit, whose `Pitboard.dll` carries another key than the
+  one it was given or a key WinSparkle keeps none of, which reads another feed than the latest
+  full release's, and a `WinSparkle.dll` for another machine. `read-assembly.ps1` reads the
+  key and the feed from the assemblies' metadata without loading them.
 
 ### The model's timers
 

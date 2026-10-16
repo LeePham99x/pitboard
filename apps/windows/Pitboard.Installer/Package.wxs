@@ -1,0 +1,103 @@
+<!-- Per user, as single package authoring has it, and never per machine: ProgramFiles64Folder is %LOCALAPPDATA%\Programs and HKMU is HKCU. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Pitboard" Manufacturer="Pitboard" Version="$(ProductVersion)" Language="1033"
+           UpgradeCode="9D967FF2-F54D-4D63-9B26-51D7E75F62FC" Scope="perUserOrMachine">
+    <!-- One UpgradeCode for the x64 and the ARM64 MSI, which install into the same folder, so either replaces the other. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer Pitboard is installed already." />
+    <!-- Windows Installer empties ALLUSERS for a per-user install; an administrative image has no context. -->
+    <Launch Condition="NOT ALLUSERS OR ACTION = &quot;ADMIN&quot;"
+            Message="Pitboard installs for your Windows account only, never for every account on this PC." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="Pitboard.ico" SourceFile="$(App)\Pitboard.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Pitboard.ico" />
+    <!-- WinSparkle installs an update with /passive LAUNCHAFTERINSTALL=1, after Pitboard quit itself for it. -->
+    <Property Id="LAUNCHAFTERINSTALL" Secure="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Pitboard">
+        <Directory Id="BinFolder" Name="bin" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Pitboard">
+      <Files Directory="INSTALLFOLDER" Include="$(App)\**">
+        <Exclude Files="$(App)\Pitboard.exe" />
+        <Exclude Files="$(App)\**\*.pdb" />
+        <Exclude Files="$(App)\PitboardShare.*" />
+        <Exclude Files="$(App)\pitboard_share_ffi.dll" />
+        <Exclude Files="$(App)\Assets\Square150x150Logo.png" />
+        <Exclude Files="$(App)\Assets\Square44x44Logo.png" />
+        <Exclude Files="$(App)\Assets\StoreLogo.png" />
+      </Files>
+      <?if $(ShareSigned) = "true" ?>
+      <ComponentGroupRef Id="Share" />
+      <?endif?>
+      <Component Directory="INSTALLFOLDER">
+        <File Id="PitboardExe" Source="$(App)\Pitboard.exe" />
+      </Component>
+      <!-- Never beside Pitboard.exe, which NTFS takes for the same name. -->
+      <Component Directory="BinFolder">
+        <File Id="CommandLineExe" Source="$(CommandLine)" Name="pitboard.exe" />
+      </Component>
+
+      <Component Id="CommandLineOnPath" Directory="INSTALLFOLDER">
+        <Environment Id="CommandLineOnPath" Name="PATH" Value="[INSTALLFOLDER]bin" Action="set" Part="last" System="no" Permanent="no" />
+        <RegistryValue Root="HKMU" Key="Software\Pitboard" Name="CommandLineOnPath" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+        <!-- [INSTALLFOLDER], not [#PitboardExe]: a file of another component is null where that component is left as it is (ICE69). -->
+        <Shortcut Id="StartMenuShortcut" Name="Pitboard" Target="[INSTALLFOLDER]Pitboard.exe" WorkingDirectory="INSTALLFOLDER">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Pitboard.Pitboard" />
+        </Shortcut>
+        <RegistryValue Root="HKMU" Key="Software\Pitboard" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="LinkScheme" Directory="INSTALLFOLDER">
+        <RegistryKey Root="HKMU" Key="Software\Classes\pitboard">
+          <RegistryValue Type="string" Value="URL:Pitboard" KeyPath="yes" />
+          <RegistryValue Name="URL Protocol" Type="string" Value="" />
+          <RegistryKey Key="shell\open\command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]Pitboard.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+
+      <!-- The account windows' sign-ins go on a full uninstall and stay through an upgrade. -->
+      <Component Id="AppData" Directory="INSTALLFOLDER">
+        <RegistryValue Root="HKMU" Key="Software\Pitboard" Name="AppData" Type="integer" Value="1" KeyPath="yes" />
+        <util:RemoveFolderEx On="uninstall" Property="PITBOARDAPPDATA" Condition="REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      </Component>
+    </Feature>
+
+    <SetProperty Id="PITBOARDAPPDATA" Value="[LocalAppDataFolder]Pitboard App" After="AppSearch" Sequence="execute" />
+
+    <!-- No RemoveRegistry row: that table acts on an install, never on a removal. -->
+    <CustomAction Id="Unregister" FileRef="PitboardExe" ExeCommand="--unregister" Execute="deferred" Return="ignore" />
+    <CustomAction Id="LaunchAfterInstall" FileRef="PitboardExe" ExeCommand="--updated" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="Unregister" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="LaunchAfterInstall" After="InstallFinalize" Condition="LAUNCHAFTERINSTALL = &quot;1&quot; AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
+    <?if $(ShareSigned) = "true" ?>
+    <!-- The sparse package's external location is the install folder, where Windows reads its logos. -->
+    <ComponentGroup Id="Share" Directory="INSTALLFOLDER">
+      <File Id="PitboardShareExe" Source="$(App)\PitboardShare.exe" />
+      <File Source="$(App)\PitboardShare.msix" />
+      <File Source="$(App)\pitboard_share_ffi.dll" />
+      <File Source="$(App)\Assets\Square150x150Logo.png" Subdirectory="Assets" />
+      <File Source="$(App)\Assets\Square44x44Logo.png" Subdirectory="Assets" />
+      <File Source="$(App)\Assets\StoreLogo.png" Subdirectory="Assets" />
+    </ComponentGroup>
+    <!-- Ignored on failure: an install goes on without the share target, and the same version registered twice fails. -->
+    <CustomAction Id="RegisterShare" FileRef="PitboardShareExe" ExeCommand="--register" Execute="deferred" Return="ignore" />
+    <CustomAction Id="UnregisterShare" FileRef="PitboardShareExe" ExeCommand="--unregister" Execute="deferred" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RegisterShare" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="UnregisterShare" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+    </InstallExecuteSequence>
+    <?endif?>
+  </Package>
+</Wix>

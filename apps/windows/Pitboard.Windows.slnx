@@ -5,7 +5,12 @@
   </Configurations>
   <Project Path="Pitboard.App/Pitboard.App.csproj" />
   <Project Path="Pitboard.Core/Pitboard.Core.csproj" />
+  <Project Path="Pitboard.Installer/Pitboard.Installer.wixproj" />
+  <Project Path="Pitboard.Installer.Tests/Pitboard.Installer.Tests.csproj" />
   <Project Path="Pitboard.Probe/Pitboard.Probe.csproj" />
+  <Project Path="Pitboard.Share/Pitboard.Share.csproj" />
+  <Project Path="Pitboard.Share.Core/Pitboard.Share.Core.csproj" />
+  <Project Path="Pitboard.StandInApp/Pitboard.StandInApp.csproj" />
   <Project Path="Pitboard.UITests/Pitboard.UITests.csproj" />
   <Project Path="Pitboard.Views/Pitboard.Views.csproj" />
   <Project Path="Pitboard.Windows.Tests/Pitboard.Windows.Tests.csproj" />

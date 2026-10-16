@@ -213,11 +213,174 @@ jobs:
           path: ${{ runner.temp }}/dist/*.zip
           if-no-files-found: error
 
-  # Every Windows zip reaches publish through here, checked: each program in it signed by the
-  # signer's subject when the guard says signed, and none signed when it does not. No cache here or
-  # in build-windows: SignPath's origin verification refuses a build that may take another's files.
+  # The Windows app from 1.0.0, each architecture built on its own machine as CI's windows-app job
+  # builds its Release: both libraries as a release ships them, their bindings, Pitboard.exe and,
+  # once a signer is set, PitboardShare.exe and its sparse package. An unsigned build ships no
+  # sparse package, since only a signature the machine trusts registers one. Pitboard's own
+  # programs and the package go to the signer; the .NET runtime's, the Windows App SDK's and
+  # WinSparkle.dll go on as their makers signed them. No cache here, as in build-windows.
+  app-windows-build:
+    needs: guard
+    if: needs.guard.outputs.windows == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+            platform: x64
+            installer: x64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+            platform: ARM64
+            installer: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      # The static C runtime and no cfg: the release gate is what the version's major makes it.
+      RUSTFLAGS: -C target-feature=+crt-static
+      PITBOARD_REQUIRE_VERSIONINFO: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust
+        with:
+          cache: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/windows/global.json
+      # An x64 Rust that the ARM64 image ran under emulation would build x64 libraries.
+      - name: Rust builds for this runner's machine
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "Rust's host is $host"
+          test "$host" = "$TRIPLE"
+      - id: numbers
+        env:
+          BASE: ${{ needs.guard.outputs.base }}
+        run: sh .github/scripts/windows-versions.sh "$BASE" >> "$GITHUB_OUTPUT"
+      - name: pitboard_ffi.dll and pitboard_share_ffi.dll, and their bindings
+        run: |
+          cargo build --locked --release -p pitboard-ffi
+          cargo build --locked --release -p pitboard-share-ffi
+          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/release/pitboard_ffi.dll \
+            --out-dir apps/windows/Pitboard.Core/Generated \
+            --config crates/pitboard-ffi/uniffi.toml --no-format
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/release/pitboard_share_ffi.dll \
+            --out-dir apps/windows/Pitboard.Share.Core/Generated \
+            --config crates/pitboard-share-ffi/uniffi.toml --no-format
+      # MSBuild reads WINDOWS_UPDATE_PUBLIC_KEY and WINDOWS_SIGNER_SUBJECT from the environment.
+      - name: Pitboard.exe, and PitboardShare.exe once a signer is set
+        working-directory: apps/windows
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PLATFORM: ${{ matrix.platform }}
+          BASE: ${{ needs.guard.outputs.base }}
+          FILE_VERSION: ${{ steps.numbers.outputs.file }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          WINDOWS_UPDATE_PUBLIC_KEY: ${{ secrets.WINDOWS_UPDATE_PUBLIC_KEY }}
+          WINDOWS_SIGNER_SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          out="$RUNNER_TEMP/app"
+          dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" \
+            -p:Version="$BASE" -p:FileVersion="$FILE_VERSION"
+          if [ "$SIGNED" = true ]; then
+            dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out" -p:Version="$BASE" \
+              -p:FileVersion="$FILE_VERSION" \
+              -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_share_ffi.dll"
+          fi
+          cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "$out/pitboard_ffi.dll"
+      - name: PitboardShare's sparse package, published by the signer's subject
+        if: needs.guard.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+          PACKAGE_VERSION: ${{ steps.numbers.outputs.package }}
+        run: >
+          ./.github/scripts/pack-windows-share.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'app')
+          -Publisher $env:SUBJECT -Version $env:PACKAGE_VERSION
+      # In the environment the libraries were built in.
+      - name: "The Release build: no fixture, no cfg and no feature for tests, identity on PitboardShare.exe alone, the signer's Publisher, the update key, the feed, one version"
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          BASE: ${{ needs.guard.outputs.base }}
+          FILE_VERSION: ${{ steps.numbers.outputs.file }}
+          KEY: ${{ secrets.WINDOWS_UPDATE_PUBLIC_KEY }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: >
+          ./.github/scripts/check-windows-app.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'app') -Triple $env:TRIPLE
+          -GatedLibrary target/release/pitboard_ffi.dll -Signer $env:SUBJECT -UpdateKey $env:KEY
+          -Version $env:BASE -FileVersion $env:FILE_VERSION
+      - name: Pitboard's own programs, and its package, for the signer
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'app'
+          $ours = Join-Path $env:RUNNER_TEMP 'ours'
+          $files = @(Get-ChildItem -LiteralPath $app -Recurse -File |
+            Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll', '.msix' })
+          foreach ($file in $files) {
+            $to = Join-Path $ours ([IO.Path]::GetRelativePath($app, $file.FullName))
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $to) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $to
+          }
+          Write-Output "For the signer: $($files.Name -join ', ')"
+      # Not dist-, so publish never takes them: only windows-sign hands Pitboard's programs on.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-app-${{ matrix.installer }}
+          path: ${{ runner.temp }}/ours
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: app-windows-${{ matrix.installer }}
+          path: ${{ runner.temp }}/app
+          if-no-files-found: error
+      # After the uploads, so the tool cannot touch what goes to the signer.
+      - name: The .NET packages' bill of materials
+        shell: pwsh
+        working-directory: apps/windows
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          BASE: ${{ needs.guard.outputs.base }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+        run: |
+          $tools = Join-Path $env:RUNNER_TEMP 'tools'
+          dotnet tool install --tool-path $tools CycloneDX --version 6.3.1
+          if ($LASTEXITCODE -ne 0) { throw "dotnet tool install exited $LASTEXITCODE" }
+          $projects = [ordered]@{ 'dotnet-app.cdx.json' = 'Pitboard.App/Pitboard.App.csproj', 'Pitboard' }
+          if ($env:SIGNED -eq 'true') { $projects['dotnet-share.cdx.json'] = 'Pitboard.Share/Pitboard.Share.csproj', 'PitboardShare' }
+          foreach ($name in $projects.Keys) {
+            $project, $component = $projects[$name]
+            & (Join-Path $tools 'dotnet-CycloneDX') $project -rs -dpr -tfm net10.0-windows10.0.26100.0 -rt $env:RUNTIME `
+              -o (Join-Path $env:RUNNER_TEMP 'bom') -fn $name -F Json -spv 1.5 -sn $component -sv $env:BASE
+            if ($LASTEXITCODE -ne 0) { throw "dotnet-CycloneDX $project exited $LASTEXITCODE" }
+          }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bom-windows-${{ matrix.installer }}
+          path: ${{ runner.temp }}/bom
+          if-no-files-found: error
+
+  # Every Windows zip and every program of the app reaches publish or the MSI through here, checked:
+  # each signed by the signer's subject when the guard says signed, and none signed when it does not,
+  # all in one request. No cache here or in the builds: SignPath's origin verification refuses a
+  # build that may take another's files.
   windows-sign:
-    needs: [guard, build-windows]
+    needs: [guard, build-windows, app-windows-build]
     if: needs.guard.outputs.windows == 'true'
     runs-on: windows-2025
     timeout-minutes: 120
@@ -229,9 +392,14 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: unsigned-*
+          pattern: unsigned-*-pc-windows-msvc
           path: ${{ runner.temp }}/unsigned
           merge-multiple: true
+      # A folder for each architecture's, whose files have the same names.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unsigned-app-*
+          path: ${{ runner.temp }}/unsigned-app
       - name: Sign
         shell: pwsh
         env:
@@ -242,7 +410,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dist | Out-Null
           if ($env:SIGNED -ne 'true') {
             Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'unsigned\*.zip') -Destination $dist
-            Write-Output 'No signer is set, so this beta ships its Windows zips unsigned.'
+            Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'unsigned-app') -Destination (Join-Path $env:RUNNER_TEMP 'signed-app') -Recurse
+            Write-Output 'No signer is set, so this beta ships its Windows zips and app unsigned.'
             exit 0
           }
           throw "no signing step for $env:SIGNER"
@@ -257,6 +426,13 @@ jobs:
           if ($zips.Count -ne 2) { throw "windows-sign has $($zips.Count) zips to hand on, not 2" }
           ./.github/scripts/verify-windows-signatures.ps1 -Path $zips -Mode $mode -Subject $env:SUBJECT `
             -Built (Join-Path $env:RUNNER_TEMP 'unsigned')
+          $before = Join-Path $env:RUNNER_TEMP 'unsigned-app'
+          $after = Join-Path $env:RUNNER_TEMP 'signed-app'
+          $relative = { param($Folder) @(Get-ChildItem -LiteralPath $Folder -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($Folder, $_.FullName) } | Sort-Object) }
+          $built = & $relative $before
+          $signed = & $relative $after
+          if (($signed -join ', ') -ne ($built -join ', ')) { throw "the signer handed back $($signed -join ', '), not $($built -join ', ')" }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path ($signed | ForEach-Object { Join-Path $after $_ }) -Mode $mode -Subject $env:SUBJECT
       # Overwritten, so a windows-sign job run again can hand both over again.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -268,6 +444,366 @@ jobs:
         with:
           name: dist-windows-aarch64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-app-x64
+          path: ${{ runner.temp }}/signed-app/unsigned-app-x64
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-app-arm64
+          path: ${{ runner.temp }}/signed-app/unsigned-app-arm64
+          if-no-files-found: error
+          overwrite: true
+
+  # Each architecture's MSI, from the files windows-sign signed and the pitboard.exe of its signed
+  # zip, so the zip and the MSI carry one build. WiX v7 builds it and runs ICE validation, msiexec /a
+  # extracts it without installing anything, and it is checked as CI checks the MSI it builds on
+  # every pull request. No runner installs a release's MSI.
+  app-windows-package:
+    needs: [guard, app-windows-build, windows-sign]
+    if: needs.guard.outputs.windows == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+            platform: x64
+            installer: x64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+            platform: ARM64
+            installer: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # check-windows-app.ps1 reads the libraries' features with cargo tree.
+      - uses: ./.github/actions/rust
+        with:
+          cache: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/windows/global.json
+      - id: numbers
+        shell: bash
+        env:
+          BASE: ${{ needs.guard.outputs.base }}
+        run: sh .github/scripts/windows-versions.sh "$BASE" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: app-windows-${{ matrix.installer }}
+          path: ${{ runner.temp }}/app
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-app-${{ matrix.installer }}
+          path: ${{ runner.temp }}/signed-app
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist-windows-${{ matrix.triple }}
+          path: ${{ runner.temp }}/cli
+      - name: The MSI, built from the signed files
+        id: msi
+        shell: pwsh
+        working-directory: apps/windows
+        env:
+          INSTALLER: ${{ matrix.installer }}
+          TRIPLE: ${{ matrix.triple }}
+          BASE: ${{ needs.guard.outputs.base }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'app'
+          Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'signed-app\*') -Destination $app -Recurse -Force
+          $top = "pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE"
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP "cli\$top.zip") -DestinationPath (Join-Path $env:RUNNER_TEMP 'zip')
+          $commandLine = Join-Path $env:RUNNER_TEMP "zip\$top\pitboard.exe"
+          $out = Join-Path $env:RUNNER_TEMP 'msi'
+          dotnet build Pitboard.Installer -c Release -o $out "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$app" `
+            "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:BASE" "-p:PitboardShareSigned=$env:SIGNED"
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
+          $dist = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'dist')
+          $msi = Join-Path $dist "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
+          Move-Item -LiteralPath (Join-Path $out 'Pitboard.msi') -Destination $msi
+          $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $env:RUNNER_TEMP 'image')
+          Write-Output "Built $msi and extracted it into $folder."
+          "msi=$msi" >> $env:GITHUB_OUTPUT
+          "folder=$folder" >> $env:GITHUB_OUTPUT
+          "command-line=$commandLine" >> $env:GITHUB_OUTPUT
+      - name: "The MSI's files: the checks of the Release build"
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          BASE: ${{ needs.guard.outputs.base }}
+          FILE_VERSION: ${{ steps.numbers.outputs.file }}
+          KEY: ${{ secrets.WINDOWS_UPDATE_PUBLIC_KEY }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: >
+          ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
+          -GatedLibrary (Join-Path $env:RUNNER_TEMP 'app\pitboard_ffi.dll') -Signer $env:SUBJECT -UpdateKey $env:KEY
+          -Version $env:BASE -FileVersion $env:FILE_VERSION
+      - name: "The MSI: its version, its layout, the zip's command line and the signed package"
+        shell: pwsh
+        env:
+          MSI: ${{ steps.msi.outputs.msi }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+          MSI_VERSION: ${{ steps.numbers.outputs.msi }}
+          COMMAND_LINE: ${{ steps.msi.outputs.command-line }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+        run: |
+          $given = @{ Msi = $env:MSI; Folder = $env:IMAGE; MsiVersion = $env:MSI_VERSION; CommandLine = $env:COMMAND_LINE }
+          if ($env:SIGNED -eq 'true') {
+            $given.Share = $true
+            $given.Package = Join-Path $env:RUNNER_TEMP 'signed-app\PitboardShare.msix'
+          }
+          ./.github/scripts/check-windows-msi.ps1 @given
+      - name: Every program of Pitboard's in it, and its package, as the signer left them
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          $ours = @(Get-ChildItem -LiteralPath $env:IMAGE -Recurse -File |
+            Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll', '.msix' } | ForEach-Object FullName)
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $ours -Mode $mode -Subject $env:SUBJECT
+      # Every Release build, betas included, reads the feed of full releases with the key it carries,
+      # and WinSparkle takes an update only when that key verifies it: there is no second route. So the
+      # key is compared with the newest earlier release that shipped an MSI, betas included.
+      - name: The update key the last MSI shipped
+        id: key
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ matrix.installer }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: |
+          $read = './.github/scripts/read-assembly.ps1'
+          "now=$(& $read -Assembly (Join-Path $env:IMAGE 'Pitboard.dll') -Metadata WindowsUpdatePublicKey)" >> $env:GITHUB_OUTPUT
+          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | [.tag_name, .assets[].name] | join(" ")'
+          if ($LASTEXITCODE -ne 0) { throw "gh api exited $LASTEXITCODE" }
+          $previous = $null
+          foreach ($release in $releases) {
+            $tag, $assets = $release -split ' '
+            if ($tag -ne $env:GITHUB_REF_NAME -and $assets -contains "Pitboard-$tag-windows-$env:INSTALLER.msi") {
+              $previous = $tag
+              break
+            }
+          }
+          if (-not $previous) { exit 0 }
+          $name = "Pitboard-$previous-windows-$env:INSTALLER.msi"
+          $dir = Join-Path $env:RUNNER_TEMP 'previous'
+          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern $name --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $folder = & ./.github/scripts/extract-msi.ps1 -Msi (Join-Path $dir $name) -Destination (Join-Path $env:RUNNER_TEMP 'previous-image')
+          "previous=$previous" >> $env:GITHUB_OUTPUT
+          "was=$(& $read -Assembly (Join-Path $folder 'Pitboard.dll') -Metadata WindowsUpdatePublicKey)" >> $env:GITHUB_OUTPUT
+      - name: The update key this release ships
+        shell: bash
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          NOW: ${{ steps.key.outputs.now }}
+          PREVIOUS: ${{ steps.key.outputs.previous }}
+          WAS: ${{ steps.key.outputs.was }}
+          ROTATION: ${{ vars.WINDOWS_UPDATE_KEY_ROTATION }}
+        run: sh .github/scripts/windows-update-key.sh "$VERSION" "$NOW" "$PREVIOUS" "$WAS" "$ROTATION"
+      # Not dist-: the MSI reaches publish only through windows-sign-msi and windows-msi.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-msi-${{ matrix.installer }}
+          path: ${{ runner.temp }}/dist/*.msi
+          if-no-files-found: error
+
+  # Stage two: both MSIs in one request, as windows-sign signs the zips and the app's programs. If the
+  # signer signs an MSI's files and the MSI in one request, this and windows-sign become one.
+  windows-sign-msi:
+    needs: [guard, app-windows-package]
+    if: needs.guard.outputs.windows == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    # Takes deployments from v* tags only, and holds the signer's credentials.
+    environment: windows-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unsigned-msi-*
+          path: ${{ runner.temp }}/unsigned-msi
+          merge-multiple: true
+      - name: Sign
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER }}
+        run: |
+          $signed = Join-Path $env:RUNNER_TEMP 'signed-msi'
+          New-Item -ItemType Directory -Force -Path $signed | Out-Null
+          if ($env:SIGNED -ne 'true') {
+            Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'unsigned-msi\*.msi') -Destination $signed
+            Write-Output 'No signer is set, so this beta ships its MSIs unsigned.'
+            exit 0
+          }
+          throw "no signing step for $env:SIGNER"
+      - name: Both MSIs, and no other file
+        shell: pwsh
+        run: |
+          $names = @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'signed-msi') -File | ForEach-Object Name | Sort-Object)
+          $expected = @('arm64', 'x64' | ForEach-Object { "Pitboard-$env:GITHUB_REF_NAME-windows-$_.msi" })
+          if (($names -join ', ') -ne ($expected -join ', ')) { throw "windows-sign-msi has $($names -join ', ') to hand on" }
+      # Not dist-: each MSI's programs are checked on the machine that can extract it, in windows-msi.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-msi-x64
+          path: ${{ runner.temp }}/signed-msi/*-windows-x64.msi
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-msi-arm64
+          path: ${{ runner.temp }}/signed-msi/*-windows-arm64.msi
+          if-no-files-found: error
+          overwrite: true
+
+  # Every MSI reaches publish through here, checked on its own machine, since msiexec /a extracts an
+  # MSI only where it could install it: its signature and each program of Pitboard's in it signed by
+  # the signer's subject when the guard says signed and none signed when it does not, and the same
+  # files the MSI was built with.
+  windows-msi:
+    needs: [guard, windows-sign-msi]
+    if: needs.guard.outputs.windows == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+            platform: x64
+            installer: x64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+            platform: ARM64
+            installer: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-msi-${{ matrix.installer }}
+          path: ${{ runner.temp }}/signed-msi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-msi-${{ matrix.installer }}
+          path: ${{ runner.temp }}/unsigned-msi
+      - name: Every signature
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+          INSTALLER: ${{ matrix.installer }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          $msi = Join-Path $env:RUNNER_TEMP "signed-msi\Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $msi -Mode $mode -Subject $env:SUBJECT `
+            -Built (Join-Path $env:RUNNER_TEMP 'unsigned-msi')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-msi-${{ matrix.installer }}
+          path: ${{ runner.temp }}/signed-msi/*.msi
+          if-no-files-found: error
+          overwrite: true
+
+  # appcast-windows.xml, for the latest release alone: each MSI as published, EdDSA-signed with the
+  # Windows update key by Sparkle's sign_update, which WinSparkle's signatures are. Only this job
+  # reads WINDOWS_UPDATE_PRIVATE_KEY, in the windows-update environment, which takes deployments
+  # from v* tags only.
+  windows-update-sign:
+    needs: [guard, windows-msi]
+    if: needs.guard.outputs.latest == 'true' && needs.guard.outputs.windows == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    environment: windows-update
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dist-windows-msi-*
+          path: ${{ runner.temp }}/msi
+          merge-multiple: true
+      # The release archive of the Sparkle apps/macos/project.yml pins, by its SHA-256 as GitHub
+      # lists it. A Sparkle raised there fails here until its archive's line below is raised too.
+      - name: sign_update
+        run: |
+          set -euo pipefail
+          version=$(sed -n '/^  Sparkle:$/,/^  [A-Za-z]/s/^    exactVersion: //p' apps/macos/project.yml)
+          case $version in
+            2.10.0) pinned=c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c ;;
+            *)
+              echo "apps/macos/project.yml pins Sparkle $version, and release.yml has no SHA-256 for its archive" >&2
+              exit 1
+              ;;
+          esac
+          archive=$RUNNER_TEMP/Sparkle-$version.tar.xz
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$archive" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/$version/Sparkle-$version.tar.xz"
+          echo "$pinned  $archive" | shasum -a 256 -c -
+          mkdir "$RUNNER_TEMP/sparkle"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/sparkle" ./bin/sign_update
+      # sign_update takes the key on standard input and signs an MSI's bytes as they are. A key
+      # that is not WINDOWS_UPDATE_PUBLIC_KEY's pair signs MSIs no installed copy takes, so each
+      # signature is checked with the public key before the feed is written.
+      - name: appcast-windows.xml
+        env:
+          PRIVATE_KEY: ${{ secrets.WINDOWS_UPDATE_PRIVATE_KEY }}
+          PUBLIC_KEY: ${{ secrets.WINDOWS_UPDATE_PUBLIC_KEY }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PRIVATE_KEY" ]; then
+            echo "WINDOWS_UPDATE_PRIVATE_KEY is not set in the windows-update environment: the feed cannot be signed" >&2
+            exit 1
+          fi
+          set --
+          for arch in x64 arm64; do
+            msi=$RUNNER_TEMP/msi/Pitboard-${GITHUB_REF_NAME}-windows-$arch.msi
+            signature=$(printf '%s\n' "$PRIVATE_KEY" |
+              "$RUNNER_TEMP/sparkle/bin/sign_update" --ed-key-file - -p "$msi")
+            swift .github/scripts/eddsa-verify.swift "$PUBLIC_KEY" "$signature" "$msi"
+            set -- "$@" "$signature"
+          done
+          mkdir -p "$RUNNER_TEMP/dist"
+          python3 .github/scripts/windows-appcast.py "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            "$RUNNER_TEMP/msi" "$@" > "$RUNNER_TEMP/dist/appcast-windows.xml"
+          if [ "$(grep -c 'sparkle:edSignature="' "$RUNNER_TEMP/dist/appcast-windows.xml")" != 2 ]; then
+            echo "appcast-windows.xml does not carry a signature for each MSI" >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-feed
+          path: ${{ runner.temp }}/dist/appcast-windows.xml
           if-no-files-found: error
           overwrite: true
 
@@ -410,16 +946,21 @@ jobs:
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/appcast.xml
 
-  # A skipped job skips every job after it in the chain unless their `if` says otherwise, and
-  # windows-sign is skipped below 1.0.0. So publish and the jobs after it name what they need.
+  # A skipped job skips every job after it in the chain unless their `if` says otherwise, the
+  # Windows jobs are skipped below 1.0.0, and windows-update-sign for any release that is not
+  # latest. So publish and the jobs after it name what they need.
   publish:
-    needs: [guard, build, app, windows-sign]
+    needs: [guard, build, app, windows-sign, windows-msi, windows-update-sign]
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
-      (needs.windows-sign.result == 'success' ||
-      (needs.windows-sign.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
+      ((needs.guard.outputs.windows == 'false' && needs.windows-sign.result == 'skipped' &&
+      needs.windows-msi.result == 'skipped') ||
+      (needs.windows-sign.result == 'success' && needs.windows-msi.result == 'success' &&
+      (needs.windows-update-sign.result == 'success' ||
+      (needs.windows-update-sign.result == 'skipped' && needs.guard.outputs.latest == 'false')))) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Uploading the MSIs takes most of it.
+    timeout-minutes: 15
     # Required reviewers on this environment are what stops an unexpected tag walking into
     # a crates.io upload, which is the one step of a release nobody can undo. crates.io
     # matches the environment name as well as the repository and the workflow, so a run
@@ -441,11 +982,24 @@ jobs:
           pattern: dist-*
           path: ${{ runner.temp }}/dist
           merge-multiple: true
+      # The .NET packages' bills of materials, a folder for each architecture's.
+      - if: needs.guard.outputs.windows == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bom-windows-*
+          path: ${{ runner.temp }}/bom-windows
 
       # A tampered download is a realistic threat for a tool that handles OAuth tokens.
       - name: Checksums
         working-directory: ${{ runner.temp }}/dist
-        run: sha256sum -- *.tar.gz *.zip > SHA256SUMS
+        run: |
+          set -- *.tar.gz *.zip
+          for file in *.msi appcast-windows.xml; do
+            if [ -e "$file" ]; then
+              set -- "$@" "$file"
+            fi
+          done
+          sha256sum -- "$@" > SHA256SUMS
       # install.sh carries the tarballs' checksums, so it is filled before its own line goes in.
       - name: Install script
         working-directory: ${{ runner.temp }}/dist
@@ -480,6 +1034,7 @@ jobs:
       - name: Bill of materials
         env:
           WINDOWS: ${{ needs.guard.outputs.windows }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
         run: |
           bom() {
             cargo cyclonedx --manifest-path "crates/$1/Cargo.toml" --target "$2" \
@@ -511,6 +1066,26 @@ jobs:
           python3 .github/scripts/sbom-add-crate.py "$app" "$RUNNER_TEMP/pitboard-share-ffi.cdx.json"
           python3 .github/scripts/sbom-add-sparkle.py "$app" \
             apps/macos/Pitboard.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          # Each MSI carries the core for its architecture, the command line of that zip, the .NET
+          # packages app-windows-build listed, WinSparkle among them, and, where a signed package
+          # brings the share target, pitboard-share-ffi and PitboardShare.exe's packages.
+          if [ "$WINDOWS" = true ]; then
+            for pair in x64:x86_64-pc-windows-msvc arm64:aarch64-pc-windows-msvc; do
+              arch=${pair%%:*}
+              target=${pair#*:}
+              msi=$RUNNER_TEMP/dist/Pitboard-${GITHUB_REF_NAME}-windows-$arch.msi.cdx.json
+              dotnet=$RUNNER_TEMP/bom-windows/bom-windows-$arch
+              bom pitboard-ffi "$target" "$msi"
+              python3 .github/scripts/sbom-add-crate.py "$msi" \
+                "$RUNNER_TEMP/dist/pitboard-${GITHUB_REF_NAME}-${target}.zip.cdx.json"
+              python3 .github/scripts/sbom-add-crate.py "$msi" "$dotnet/dotnet-app.cdx.json"
+              if [ "$SIGNED" = true ]; then
+                bom pitboard-share-ffi "$target" "$RUNNER_TEMP/pitboard-share-ffi-$arch.cdx.json"
+                python3 .github/scripts/sbom-add-crate.py "$msi" "$RUNNER_TEMP/pitboard-share-ffi-$arch.cdx.json"
+                python3 .github/scripts/sbom-add-crate.py "$msi" "$dotnet/dotnet-share.cdx.json"
+              fi
+            done
+          fi
 
       # crates.io gives this job a token of its own, made from GitHub's word about which
       # workflow in which repository is running, and revokes it when the job ends. There is
@@ -568,10 +1143,18 @@ jobs:
             ${{ runner.temp }}/dist/install.sh
       # The feed decides what every installed copy runs next, which makes it the most worth
       # attesting of anything here. Only the latest release publishes one.
+      - if: needs.guard.outputs.windows == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/dist/*.msi
       - if: needs.guard.outputs.latest == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/dist/appcast.xml
+      - if: needs.guard.outputs.latest == 'true' && needs.guard.outputs.windows == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/dist/appcast-windows.xml
 
       - name: What changed
         env:
@@ -593,8 +1176,10 @@ jobs:
           files: |
             ${{ runner.temp }}/dist/*.tar.gz
             ${{ runner.temp }}/dist/*.zip
+            ${{ runner.temp }}/dist/*.msi
             ${{ runner.temp }}/dist/*.cdx.json
             ${{ runner.temp }}/dist/appcast.xml
+            ${{ runner.temp }}/dist/appcast-windows.xml
             ${{ runner.temp }}/dist/SHA256SUMS
             ${{ runner.temp }}/dist/install.sh
       - if: needs.guard.outputs.prerelease == 'true'
@@ -662,6 +1247,139 @@ jobs:
           attested "$feed"
           attested "$RUNNER_TEMP/SHA256SUMS"
           attested "$RUNNER_TEMP/update.zip"
+
+  # The Windows feed, fetched as an installed copy fetches it, in two halves. Each MSI is read on
+  # its own machine, since msiexec /a extracts an MSI only where it could install it, for the key
+  # in its Pitboard.dll, which is what every copy installed from it checks with. Nothing here
+  # reads a secret.
+  windows-feed-key:
+    needs: [guard, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' &&
+      needs.guard.outputs.windows == 'true' }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            installer: x64
+          - os: windows-11-arm
+            installer: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The key in the published MSI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ matrix.installer }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $name = "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
+          $dir = Join-Path $env:RUNNER_TEMP 'published'
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $name --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $msi = Join-Path $dir $name
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $msi -Mode $mode -Subject $env:SUBJECT
+          $folder = & ./.github/scripts/extract-msi.ps1 -Msi $msi -Destination (Join-Path $env:RUNNER_TEMP 'image')
+          $key = & ./.github/scripts/read-assembly.ps1 -Assembly (Join-Path $folder 'Pitboard.dll') -Metadata WindowsUpdatePublicKey
+          if (-not $key) { throw "$name carries no update key" }
+          $out = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'key')
+          [IO.File]::WriteAllText((Join-Path $out "$env:INSTALLER.txt"), $key)
+          Write-Output "$name carries the update key $key."
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-feed-key-${{ matrix.installer }}
+          path: ${{ runner.temp }}/key
+          if-no-files-found: error
+          overwrite: true
+
+  windows-feed:
+    needs: [guard, windows-feed-key]
+    if: ${{ !cancelled() && needs.windows-feed-key.result == 'success' }}
+    runs-on: macos-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: windows-feed-key-*
+          path: ${{ runner.temp }}/key
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          key=$(cat "$RUNNER_TEMP/key/x64.txt")
+          if [ "$(cat "$RUNNER_TEMP/key/arm64.txt")" != "$key" ]; then
+            echo "the x64 and the ARM64 MSI carry different update keys" >&2
+            exit 1
+          fi
+          feed=$RUNNER_TEMP/appcast-windows.xml
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$feed" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast-windows.xml"
+          # Each architecture's enclosure as WinSparkle reads it: url, length and signature.
+          python3 - "$feed" "$VERSION" > "$RUNNER_TEMP/enclosures" <<'EOF'
+          import sys
+          from xml.etree import ElementTree
+          sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          feed, version = sys.argv[1], sys.argv[2]
+          items = ElementTree.parse(feed).getroot().find("channel").findall("item")
+          offered = [i for i in items if i.findtext(f"{sparkle}version") == version]
+          by_os = {}
+          for item in offered:
+              for enclosure in item.findall("enclosure"):
+                  by_os[enclosure.get(f"{sparkle}os")] = enclosure
+          if sorted(by_os) != ["windows-arm64", "windows-x64"]:
+              sys.exit(f"the published feed does not offer {version} for windows-x64 and windows-arm64: {sorted(by_os)}")
+          for os, enclosure in sorted(by_os.items()):
+              print(os, enclosure.get("url"), enclosure.get("length"), enclosure.get(f"{sparkle}edSignature"))
+          EOF
+          downloads="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          while read -r os url length signature; do
+            arch=${os#windows-}
+            expected=$downloads/Pitboard-${GITHUB_REF_NAME}-windows-$arch.msi
+            if [ "$url" != "$expected" ]; then
+              echo "the feed's $os enclosure is $url, not $expected" >&2
+              exit 1
+            fi
+            msi=$RUNNER_TEMP/Pitboard-${GITHUB_REF_NAME}-windows-$arch.msi
+            curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$msi" "$url"
+            if [ "$(wc -c < "$msi" | tr -d ' ')" != "$length" ]; then
+              echo "the feed gives $os a length of $length, and its MSI has another" >&2
+              exit 1
+            fi
+            swift .github/scripts/eddsa-verify.swift "$key" "$signature" "$msi"
+          done < "$RUNNER_TEMP/enclosures"
+
+          attested() {
+            for attempt in 1 2 3 4 5; do
+              gh attestation verify "$1" --repo "$GITHUB_REPOSITORY" && return 0
+              echo "no attestation for $1 yet (attempt $attempt)"
+              sleep 15
+            done
+            return 1
+          }
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/SHA256SUMS" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SHA256SUMS"
+          attested "$feed"
+          attested "$RUNNER_TEMP/SHA256SUMS"
+          for arch in x64 arm64; do
+            attested "$RUNNER_TEMP/Pitboard-${GITHUB_REF_NAME}-windows-$arch.msi"
+          done
 
   # `brew install datlechin/tap/pitboard` is in the README's install section, so the tap is
   # part of a release rather than something done to it afterwards. It used to be a workflow
@@ -994,10 +1712,11 @@ jobs:
           done
           exit 1
 
-  # What somebody who downloads a Windows zip gets, got, on each machine: the published zip
+  # What somebody who downloads a Windows zip or MSI gets, got, on each machine: the published zip
   # against SHA256SUMS and its attestation, every signature in it, and its command line run as
-  # a fresh standard user, as winget's validation runs one. A full release or a beta also
-  # installs through cargo-binstall, which takes the zip the crate's metadata names.
+  # a fresh standard user, as winget's validation runs one, then the MSI the same way, extracted
+  # and never installed. A full release or a beta also installs through cargo-binstall, which takes
+  # the zip the crate's metadata names.
   windows-install:
     needs: [guard, publish]
     if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.windows == 'true' }}
@@ -1008,9 +1727,11 @@ jobs:
           # cargo-binstall 1.25.3's zip for each, as its immutable release lists it.
           - os: windows-2025
             triple: x86_64-pc-windows-msvc
+            installer: x64
             binstall-sha256: de20bf4eefbbc4d90888e32938e4e66808c14bfe122458b2dd7d826821529cd9
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
+            installer: arm64
             binstall-sha256: 52723f6d28fc769c3d9de7841f37bddc0f3bade0061641e9f483fb1f4ff17dcf
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -1064,6 +1785,44 @@ jobs:
         run: >
           ./.github/scripts/check-windows-build.ps1 -Triple $env:TRIPLE -Version $env:BASE
           -Exe (Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe")
+      - id: numbers
+        shell: bash
+        env:
+          BASE: ${{ needs.guard.outputs.base }}
+        run: sh .github/scripts/windows-versions.sh "$BASE" >> "$GITHUB_OUTPUT"
+      - name: The MSI, as the release publishes it, every signature in it, and what it lays out
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ matrix.installer }}
+          TRIPLE: ${{ matrix.triple }}
+          MSI_VERSION: ${{ steps.numbers.outputs.msi }}
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'published'
+          $name = "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $name --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $msi = Join-Path $dir $name
+          $lines = @(Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS') | Where-Object { ($_ -split '\s+', 2)[1] -eq $name })
+          if ($lines.Count -ne 1) { throw "SHA256SUMS has $($lines.Count) lines for $name" }
+          $listed = ($lines[0] -split '\s+', 2)[0]
+          $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash
+          if ($hash -ne $listed) { throw "$name is $hash, and SHA256SUMS says $listed" }
+          foreach ($attempt in 1..5) {
+            gh attestation verify $msi --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Output "no attestation for $name yet (attempt $attempt)"
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { throw "$name has no attestation from this repository" }
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $msi -Mode $mode -Subject $env:SUBJECT
+          $folder = & ./.github/scripts/extract-msi.ps1 -Msi $msi -Destination (Join-Path $env:RUNNER_TEMP 'msi-image')
+          $zipped = Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe"
+          ./.github/scripts/check-windows-msi.ps1 -Msi $msi -Folder $folder -MsiVersion $env:MSI_VERSION -CommandLine $zipped `
+            -Share:($env:SIGNED -eq 'true')
       - if: needs.guard.outputs.crates == 'true'
         name: cargo binstall, from crates.io
         shell: pwsh

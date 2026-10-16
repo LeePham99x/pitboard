@@ -3,7 +3,7 @@
 //! of the model an app launches into it. Where the real core answers otherwise than the
 //! Swift fixture did, the test says so and holds what the core does.
 
-use super::apps::{CHATGPT, CLAUDE};
+use super::apps::{CHATGPT, CLAUDE, chatgpt};
 use super::pages;
 use super::tools::{CLAUDE_ADDRESS, CLAUDE_REFUSES, CODEX_ADDRESS};
 use super::worlds::{Folder, Launched, World, make, out_of_reach};
@@ -1112,6 +1112,41 @@ fn a_launch_reads_without_being_asked() {
         described(&read(&launched.core))
     );
     model.shutdown();
+}
+
+// On Windows by its package, so the quit question names the AUMID the Windows app's
+// AppControl takes.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn the_chatgpt_fixture_is_the_app_the_core_finds_on_each_system() {
+    use crate::launch::Remedy;
+    let launched = made(World::TwoTools);
+    for os in [Os::MacOs, Os::Windows] {
+        let chatgpt = chatgpt(os);
+        chatgpt.opens(&launched.machine.host);
+        let held: Vec<(String, Remedy)> = launched
+            .core
+            .holding("codex")
+            .into_iter()
+            .map(|held| (held.kind, held.remedy))
+            .collect();
+        assert_eq!(
+            held,
+            [(
+                "chatgpt_app".to_owned(),
+                Remedy::ReopenApp {
+                    app_id: chatgpt.app.into(),
+                    name: "ChatGPT".into(),
+                }
+            )],
+            "{os:?}"
+        );
+    }
+    assert_eq!(CHATGPT, chatgpt(OS).app);
+    assert_eq!(chatgpt(Os::Windows).app, "OpenAI.Codex_2p2nqsd0c76g0!App");
 }
 
 /// The fixture's ChatGPT runs Codex's login while it is open, as the process list shows it,

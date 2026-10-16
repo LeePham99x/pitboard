@@ -8,6 +8,11 @@ internal static partial class HiddenWindows
 {
     private const uint Close = 0x0010;
 
+    // NotifyIcon's callback message, WM_APP + 1, its icon's id and WM_CONTEXTMENU.
+    private const uint IconCallback = 0x8001;
+    private const nint IconId = 1;
+    private const nint ContextMenu = 0x007B;
+
     public static IEnumerable<nint> Of(Process process)
     {
         for (var window = FindWindowEx(0, 0, "Pitboard.HiddenWindow", null); window != 0;
@@ -26,6 +31,17 @@ internal static partial class HiddenWindows
         foreach (var window in Of(process))
         {
             PostMessage(window, Close, 0, 0);
+        }
+    }
+
+    // As Explorer tells Pitboard of a right click on its icon at a point, under NOTIFYICON_VERSION_4. The job user's
+    // Explorer takes no icon of the test user's (CF3), so no click on it reaches Pitboard.
+    public static void OpenMenu(Process process, int x, int y)
+    {
+        var at = ((nuint)(ushort)y << 16) | (ushort)x;
+        foreach (var window in Of(process))
+        {
+            PostMessage(window, IconCallback, at, ContextMenu | (IconId << 16));
         }
     }
 

@@ -326,8 +326,8 @@ pub enum Command {
         #[arg(long)]
         exe: Option<PathBuf>,
     },
-    /// K1: package identity, and writes, renames and reads under %LOCALAPPDATA%\Pitboard and
-    /// HKCU from this process and its children.
+    /// K1 and CF8: package identity, and writes, renames and reads under %LOCALAPPDATA%\Pitboard
+    /// and HKCU from this process, its children and the program its link opens.
     Sparse {
         #[arg(long, value_enum, default_value_t = SparseAction::Identity)]
         action: SparseAction,
@@ -547,6 +547,8 @@ pub enum SparseAction {
     /// From an identity process: start the plain probe and a stand-in claude.exe, each
     /// writing with a tag of its own.
     Children,
+    /// From an identity process: open the pitboard-probe-cf8 link, whose handler writes too.
+    Launch,
     /// Read back every tag, from wherever this process runs.
     Read,
     /// Remove everything the block made.
@@ -730,6 +732,27 @@ mod tests {
         assert!(
             matches!(cli.command, Command::Task { args: Some(ref a), .. } if a == "--out x dpapi")
         );
+    }
+
+    #[test]
+    fn sparse_opens_its_link_with_a_scratch_folder() {
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "sparse",
+            "--action",
+            "launch",
+            "--scratch",
+            r"C:\s",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Sparse {
+                action: SparseAction::Launch,
+                scratch: Some(_),
+                ..
+            }
+        ));
     }
 
     #[test]

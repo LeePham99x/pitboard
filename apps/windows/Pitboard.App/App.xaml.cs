@@ -15,8 +15,8 @@ public partial class App : Application
     private readonly AppStart _start;
     private readonly Handovers _handovers;
     private readonly WindowRequests _requests = new();
-    private readonly NoUpdates _updates = new();
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
+    private IUpdates _updates = new NoUpdates();
     private AppModel? _model;
     private WindowsNotifications? _notifications;
     private StartAtSignIn? _startAtSignIn;
@@ -53,6 +53,7 @@ public partial class App : Application
         }
 
         _model = model;
+        Shell.RestartAfterUpdate(_start.Identity.Build);
         _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
         _hidden = new HiddenWindow(sessionEnding: EndSession, closing: End, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
@@ -60,6 +61,11 @@ public partial class App : Application
         _icon.Show(model.MenuBar.Spoken);
         _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
         _accountWindows.Follow(model.AccountWindows);
+        _updates = SparkleUpdates.For(
+            _start.Identity.Build, SparkleUpdates.Key(typeof(App).Assembly), _version, _start.DataFolder,
+            action => queue.TryEnqueue(() => action()),
+            () => _accountWindows?.MayQuit() ?? Task.FromResult(true),
+            End);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         // A click arrives on a thread of COM's; the model takes a message from any.
@@ -82,6 +88,7 @@ public partial class App : Application
 
         // A second launch's handover arrives on a thread of its own.
         _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
+        (_updates as SparkleUpdates)?.Start();
     }
 
     // Another copy's launch: its link waits for an account, and one without a link brings the window forward.
@@ -124,10 +131,11 @@ public partial class App : Application
         var windows = new WindowsLaunch(
             _start.DataFolder, PitboardFfiMethods.WindowsRecordsKey(directory), _start.Identity.LinkScheme);
         var launch = new AppLaunch(_start.Environment, AppLocation: null, Windows: windows);
+        // Reopen is called on a thread of the model's, and the window is the UI thread's.
+        var apps = new WindowsApps(() => queue.TryEnqueue(() => _window?.Bring()));
         return AppModel.Listening(
             queue,
-            listener => new PitboardModel(
-                launch, listener, new NoOtherApps(), notifications, new WindowsLocalTime()));
+            listener => new PitboardModel(launch, listener, apps, notifications, new WindowsLocalTime()));
     }
 
     // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own.
@@ -216,6 +224,7 @@ public partial class App : Application
     private void EndSession()
     {
         _icon?.Remove();
+        (_updates as SparkleUpdates)?.Stop();
         _model?.Shutdown();
         _notifications?.Stop();
     }

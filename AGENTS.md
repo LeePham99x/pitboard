@@ -60,8 +60,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never sign with a signer's release policy or production credentials outside `release.yml`
   on a `v*` tag. Test signing uses the signer's test policy or sandbox.
 - Never let a job that runs on a pull request or by hand reach the `release`,
-  `windows-signing`, `homebrew-tap`, `scoop-bucket` or `winget` environment. Each must keep a
-  deployment rule for `v*` tags only.
+  `windows-signing`, `windows-update`, `homebrew-tap`, `scoop-bucket` or `winget`
+  environment. Each must keep a deployment rule for `v*` tags only.
 - Never write the Scoop bucket or a `winget-pkgs` branch by hand, past the first commit and
   the first versions RELEASING.md sets out. The release writes them from its own
   `SHA256SUMS`, as it writes the tap.
@@ -74,6 +74,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,
   no installed copy accepts another update.
+- Never keep the Windows update key with the signer's account, the macOS update key or the
+  Developer ID certificate, and keep its offline copy apart from all of them. WinSparkle has
+  no second route: with that key lost, every Windows copy is installed again by hand.
+- Never ship an MSI or a `Pitboard.exe` whose Windows update key is missing or one WinSparkle
+  rejects. WinSparkle then installs updates nobody signed.
 
 ### On Windows
 
@@ -116,6 +121,13 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
   no package and no certificate in a store. Only a Release build installed by an MSI
   registers, and `Pitboard.Probe` on the session machine.
+- Never give `Pitboard.exe`, `pitboard.exe` or a process they start a package identity. Only
+  `PitboardShare.exe` carries an `<msix>` manifest element.
+- Never install an MSI built from a branch on an account that holds real logins, or on a CI
+  runner, which only extracts one with `msiexec /a`. Install it only in the session machine's
+  throwaway accounts, and remove it before the session ends.
+- Never install a release's MSI on a CI runner, and never install a release's MSI or zip on a
+  machine that holds logins from a test or a script.
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
   whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
@@ -147,12 +159,14 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   job user's `HKCU\Environment`, mount volumes, share a folder, install Win32-OpenSSH from
   Microsoft's release where the image ships none and start OpenSSH Server, install Bun and
   Scoop, turn on winget's local manifests, serve files on loopback, put a build it made behind
-  a Scoop shim, in WinGet's Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's
-  attack surface reduction rules to audit. It undoes each in a `finally`. `release.yml`'s
-  `scoop-install` job, on a GitHub-hosted runner after `publish`, may install Scoop into the
-  job's temporary folder, which writes the job user's `PATH` and `HKCU\Environment`, then
-  install the published `pitboard` from the bucket and run its `--version`. Never copy one of
-  those changes, or `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
+  a Scoop shim, in WinGet's Links, in `~\.cargo\bin` or on the user `PATH`, trust a test
+  certificate in a throwaway user's `TrustedPeople` and register the probe's sparse package
+  and a probe link scheme for that user, and set Defender's attack surface reduction rules to
+  audit. It undoes each in a `finally`. `release.yml`'s `scoop-install` job, on a
+  GitHub-hosted runner after `publish`, may install Scoop into the job's temporary folder,
+  which writes the job user's `PATH` and `HKCU\Environment`, then install the published
+  `pitboard` from the bucket and run its `--version`. Never copy one of those changes, or
+  `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
   probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
   public, so anyone signed in to GitHub can download an artifact.
@@ -167,8 +181,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   Linux, as `pitboard-conformance` does.
 - Never measure a running tool on a Windows machine that holds logins. Use one kept for it,
   with throwaway accounts and scratch homes.
-- Never register the probe's sparse package outside a throwaway account in the VM.
-  Unregister it and remove its certificate before reverting the snapshot.
+- Never trust a test certificate on a machine, or register a sparse package signed with one,
+  outside a disposable runner or a throwaway account on the session machine.
 
 ## Check a change
 

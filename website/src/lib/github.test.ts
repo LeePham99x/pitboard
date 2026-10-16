@@ -263,6 +263,42 @@ test("lists a release's Windows zips after the Linux tarballs", async () => {
   );
 });
 
+test("lists a release's MSIs after the macOS app, and the Windows feed after the macOS one", async () => {
+  const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
+  const windows = [
+    "Pitboard-v0.12.0-windows-x64.msi",
+    "Pitboard-v0.12.0-windows-x64.msi.cdx.json",
+    "Pitboard-v0.12.0-windows-arm64.msi",
+    "Pitboard-v0.12.0-windows-arm64.msi.cdx.json",
+    "appcast-windows.xml",
+  ].map((name) => ({ name, size: 1, sha256: null, url: "" }));
+  const rows = fileRows({ ...r, assets: [...r.assets, ...windows] });
+  assert.deepEqual(
+    rows.map((row) => row.asset.name),
+    [
+      "Pitboard-v0.12.0-macos.zip",
+      "Pitboard-v0.12.0-windows-x64.msi",
+      "Pitboard-v0.12.0-windows-arm64.msi",
+      "pitboard-v0.12.0-aarch64-apple-darwin.tar.gz",
+      "pitboard-v0.12.0-x86_64-apple-darwin.tar.gz",
+      "pitboard-v0.12.0-x86_64-unknown-linux-musl.tar.gz",
+      "pitboard-v0.12.0-aarch64-unknown-linux-musl.tar.gz",
+      "install.sh",
+      "SHA256SUMS",
+      "appcast.xml",
+      "appcast-windows.xml",
+    ],
+  );
+  assert.deepEqual(
+    [rows[1], rows[2], rows[10]].map((row) => [row.forHtml, row.bom?.name ?? null]),
+    [
+      ["The app, Windows on x64", "Pitboard-v0.12.0-windows-x64.msi.cdx.json"],
+      ["The app, Windows on ARM64", "Pitboard-v0.12.0-windows-arm64.msi.cdx.json"],
+      ["The feed the Windows app updates from", null],
+    ],
+  );
+});
+
 test("reads SHA256SUMS in text and binary mode, and refuses anything else", () => {
   const a = "a".repeat(64);
   assert.equal(parseSums(`${a}  x.tar.gz\n${a} *y.zip\n`).size, 2);

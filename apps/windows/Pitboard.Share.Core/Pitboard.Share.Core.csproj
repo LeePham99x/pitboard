@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PitboardShare.exe's core, which builds on every system: pitboard-share-ffi's C# bindings,
+    generated into Generated/ by `cargo run -p uniffi-bindgen-csharp` and not committed, and
+    Sharing, what a share answers over the share operation the exe hands it.
+  -->
+  <PropertyGroup>
+    <!-- Generated code reaches the library through pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+</Project>

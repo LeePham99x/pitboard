@@ -82,3 +82,13 @@ fails to if the identity redirected the write. `identity` reports
 
 Send each `identity`, `write`, `children` and `read` object for both manifests, and say in
 words whether the process without identity saw each tag.
+
+## On CI's runners (CF8)
+
+`.github/scripts/runner-facts.ps1` measures the same through `windows-facts.yml`, on a
+GitHub-hosted runner, as a fresh standard user. It trusts a throwaway certificate in that
+user's own `TrustedPeople`, registers each manifest for the user, and adds the
+`pitboard-probe-cf8` link scheme under the user's `HKCU\Software\Classes`, whose handler is
+the plain probe writing with the tag `launched`. `sparse --action launch` opens that link from
+the identity process through `LaunchUriAsync`, as `PitboardShare.exe` hands a page to
+`Pitboard.exe`. It undoes each change, and `k1.ps1` stays the VM's.

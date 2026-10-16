@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -17,13 +18,18 @@ public static class Program
     // pitboard-probe's, which the owner puts in each throwaway account's profile folder.
     private const string Marker = "pitboard-probe-throwaway.marker";
 
-    private const string Usage = "Usage: Pitboard.Probe notify | unregister | package-of --pid <process id>";
+    private const string Usage =
+        "Usage: Pitboard.Probe notify | unregister | package-of --pid <process id> | app-control running|quit|reopen --aumid <id> [--front]";
 
     private const string AumidKey = $@"Software\Classes\AppUserModelId\{Aumid}";
 
     private static readonly RunOutNotice RunOut = new(
         Id: "pitboard-probe-run-out", Title: "work has no 5-hour limit left", Subtitle: null,
         Body: "spare has 80% of its own left.", SwitchTo: "claude/spare");
+
+    // As long as the model waits for an app it asked to quit, looking as often.
+    private static readonly TimeSpan QuitWithin = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan QuitCheckedEvery = TimeSpan.FromMilliseconds(200);
 
     private static int Main(string[] args)
     {
@@ -42,6 +48,10 @@ public static class Program
             [Launching.Notified, ..] => StartedByAClick(),
             ["unregister"] => Unregister(),
             ["package-of", "--pid", var given] when uint.TryParse(given, CultureInfo.InvariantCulture, out var pid) => PackageOf(pid),
+            ["app-control", "running", "--aumid", var app] => Running(app),
+            ["app-control", "quit", "--aumid", var app] => Quit(app),
+            ["app-control", "reopen", "--aumid", var app] => Reopen(app, front: false),
+            ["app-control", "reopen", "--aumid", var app, "--front"] => Reopen(app, front: true),
             _ => Refuse(Usage),
         };
     }
@@ -169,6 +179,72 @@ public static class Program
         }
 
         return Refuse($"GetPackageFullName failed for process {pid}: {error}");
+    }
+
+    // This console's window stands in for Pitboard's, which an app opened without --front goes behind.
+    private static WindowsApps Apps() => new(() => PInvoke.SetForegroundWindow(PInvoke.GetConsoleWindow()));
+
+    private static int Running(string app)
+    {
+        Console.WriteLine(Apps().Running(app) is { } running ? $"Running as {running}." : "Not running.");
+        return 0;
+    }
+
+    // Through Restart Manager, as Pitboard asks, then looked for as the model looks.
+    private static int Quit(string app)
+    {
+        var apps = Apps();
+        if (apps.Running(app) is null)
+        {
+            Console.WriteLine("Not running.");
+            return 0;
+        }
+
+        var asked = Stopwatch.StartNew();
+        apps.RequestQuit(app);
+        while (apps.Running(app) is not null)
+        {
+            if (asked.Elapsed >= QuitWithin)
+            {
+                Console.WriteLine($"Still running after {QuitWithin.TotalSeconds:0} s.");
+                return 1;
+            }
+
+            Thread.Sleep(QuitCheckedEvery);
+        }
+
+        Console.WriteLine($"Gone after {asked.Elapsed.TotalSeconds:0.0} s.");
+        return 0;
+    }
+
+    private static int Reopen(string app, bool front)
+    {
+        var asked = Stopwatch.StartNew();
+        Apps().Reopen(app, front);
+        Console.WriteLine($"Opened {app}{(front ? "" : ", then this window brought forward")} in {asked.Elapsed.TotalSeconds:0.0} s.");
+        Thread.Sleep(TimeSpan.FromSeconds(2));
+        Console.WriteLine($"In front 2 s later: {InFront()}.");
+        return 0;
+    }
+
+    private static string InFront()
+    {
+        var window = PInvoke.GetForegroundWindow();
+        if (window.IsNull)
+        {
+            return "no window";
+        }
+
+        PInvoke.GetWindowThreadProcessId(window, out var pid);
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            return $"{process.ProcessName}, process {pid}";
+        }
+        catch (ArgumentException)
+        {
+            return $"process {pid}, since ended";
+        }
     }
 
     private static int Refuse(string said)

@@ -20,28 +20,22 @@ public sealed class SitesTests
     }
 
     [TestMethod]
-    public void APitboardLinkReadsBackAsTheLinkItCarries()
+    public void APitboardLinkReadsAsTheLinkItCarries()
     {
-        var written = PitboardFfiMethods.PitboardLink(" chat.openai.com/c/x?y=1#z ", "pitboard");
-        var link = PitboardFfiMethods.ReadPitboardLink(written, "pitboard");
+        var link = PitboardFfiMethods.ReadPitboardLink(
+            "pitboard://open?url=https%3A%2F%2Fchat.openai.com%2Fc%2Fx%3Fy%3D1%23z", "pitboard");
 
-        Assert.AreEqual("pitboard://open?url=https%3A%2F%2Fchatgpt.com%2Fc%2Fx%3Fy%3D1%23z", written);
         Assert.AreEqual("https://chatgpt.com/c/x?y=1#z", link.Url);
         Assert.AreEqual("chatgpt.com", link.Site.Host);
     }
 
     [TestMethod]
-    public void ARefusalSaysWhy()
+    public void ARefusalCrossesAsItsKind()
     {
         var signIn = Assert.ThrowsExactly<LinkRefusal.SignInLink>(
             () => PitboardFfiMethods.SiteLink("https://claude.ai/magic-link#a"));
 
         Assert.AreEqual("claude.ai", signIn.host);
-        Assert.AreEqual(
-            "Pitboard doesn’t open claude.ai sign-in links from outside: one would sign the "
-            + "window in as whoever the link belongs to. Sign in inside the account’s claude.ai "
-            + "window.",
-            PitboardFfiMethods.LinkRefusalReason(signIn));
         Assert.ThrowsExactly<LinkRefusal.Unreadable>(
             () => PitboardFfiMethods.ReadPitboardLink("pitboard://open?url=a&url=b", "pitboard"));
     }

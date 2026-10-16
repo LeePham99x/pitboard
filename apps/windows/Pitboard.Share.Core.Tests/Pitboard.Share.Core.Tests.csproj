@@ -1,0 +1,12 @@
+<Project Sdk="MSTest.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Pitboard.Share.Core/Pitboard.Share.Core.csproj" />
+  </ItemGroup>
+  <!--
+    pitboard-share-ffi itself, built by Cargo: pass its path as PitboardShareNativeLibrary, such
+    as target/release/libpitboard_share_ffi.so, and it is copied beside the tests to be loaded.
+  -->
+  <ItemGroup Condition="'$(PitboardShareNativeLibrary)' != ''">
+    <None Include="$(PitboardShareNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

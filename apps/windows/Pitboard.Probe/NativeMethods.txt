@@ -3,3 +3,7 @@ SetCurrentProcessExplicitAppUserModelID
 OpenProcess
 GetPackageFullName
 WIN32_ERROR
+GetConsoleWindow
+GetForegroundWindow
+SetForegroundWindow
+GetWindowThreadProcessId

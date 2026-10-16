@@ -64,7 +64,15 @@ public static class Program
             case Start.Redirect:
                 Redirection.To(running!);
                 return 0;
-            case Start.Unregister or Start.Dropped:
+            case Start.Unregister:
+                Unregistering.Run(
+                    Running.Build,
+                    Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"),
+                    new RegistryRunKey(),
+                    new SystemAppNotifications(),
+                    () => SystemAppNotifications.Registered(Running.Aumid));
+                return 0;
+            case Start.Dropped:
                 return 0;
         }
 

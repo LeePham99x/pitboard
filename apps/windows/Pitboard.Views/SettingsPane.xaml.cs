@@ -42,6 +42,7 @@ public sealed partial class SettingsPane : UserControl
         {
             _model.PropertyChanged -= OnModelChanged;
             _startAtSignIn.Changed -= OnStartAtSignInChanged;
+            _updates.Changed -= OnUpdatesChanged;
         };
         Show();
     }
@@ -53,6 +54,8 @@ public sealed partial class SettingsPane : UserControl
         _model.PropertyChanged += OnModelChanged;
         _startAtSignIn.Changed -= OnStartAtSignInChanged;
         _startAtSignIn.Changed += OnStartAtSignInChanged;
+        _updates.Changed -= OnUpdatesChanged;
+        _updates.Changed += OnUpdatesChanged;
         _startAtSignIn.Read();
         _model.Send(new Intent.ReadSchedule());
         _model.Send(new Intent.LookForCommandLine());
@@ -67,6 +70,8 @@ public sealed partial class SettingsPane : UserControl
     }
 
     private void OnStartAtSignInChanged(object? sender, EventArgs args) => Show();
+
+    private void OnUpdatesChanged(object? sender, EventArgs args) => Show();
 
     private void Show()
     {
@@ -158,6 +163,8 @@ public sealed partial class SettingsPane : UserControl
 
     private void ShowUpdates()
     {
+        AutomaticChecksCard.Visibility = Look.Shown(_updates.Available);
+        AutomaticChecks.IsOn = _updates.ChecksAutomatically;
         UpdatesState.Text = _updates.Waiting is { } waiting
             ? $"Pitboard {waiting} is ready to install."
             : SettingsPage.Named(_version);
@@ -254,6 +261,14 @@ public sealed partial class SettingsPane : UserControl
     }
 
     private void OnRenewNow(object sender, RoutedEventArgs args) => _model.Send(new Intent.RenewNow());
+
+    private void OnAutomaticChecksToggled(object sender, RoutedEventArgs args)
+    {
+        if (!_showing)
+        {
+            _updates.ChecksAutomatically = AutomaticChecks.IsOn;
+        }
+    }
 
     private void OnCheckNow(object sender, RoutedEventArgs args) => _updates.Check();
 }

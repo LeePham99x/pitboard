@@ -1,0 +1,12 @@
+GetModuleHandle
+RegisterClassEx
+CreateWindowEx
+DefWindowProc
+GetMessage
+TranslateMessage
+DispatchMessage
+PostQuitMessage
+WM_QUERYENDSESSION
+WM_ENDSESSION
+ENDSESSION_CLOSEAPP
+ShowWindow

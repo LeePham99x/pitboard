@@ -1,9 +1,9 @@
 using Pitboard.Core;
 
-namespace Pitboard.Windows;
+namespace Pitboard.Windows.Tests;
 
-// Until Pitboard finds ChatGPT on Windows, no other app is known to run.
-public sealed class NoOtherApps : AppControl
+// For a fixture whose machine runs no app: nothing here reaches one of this PC's.
+internal sealed class NoOtherApps : AppControl
 {
     public string? Running(string app) => null;
 

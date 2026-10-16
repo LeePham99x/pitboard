@@ -176,7 +176,7 @@ pub(crate) enum Remedy {
     Restart,
     /// Quit the app the way its system quits an app, and open it again. The model may do
     /// both. `app_id` is what that system names it by, as `AppControl` takes it: on macOS
-    /// its bundle id.
+    /// its bundle id, on Windows its Application User Model ID.
     ReopenApp { app_id: String, name: String },
     /// Run this command.
     Run { command: String },

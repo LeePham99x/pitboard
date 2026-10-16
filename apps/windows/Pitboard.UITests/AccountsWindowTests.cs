@@ -148,6 +148,25 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    public void UsingACodexAccountAsksToQuitChatGptFirst()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "chatGPTOpen");
+        launched.OpenWindow();
+        var spare = launched.Row("codex/spare");
+
+        Launched.Within(spare, found => found.ByName("Use spare (Codex)"), "Use spare (Codex)").AsButton().Invoke();
+        launched.Named("Quit ChatGPT to switch?");
+        launched.Invoke("Cancel");
+        Assert.IsTrue(launched.Gone(found => found.ByName("Quit ChatGPT to switch?")), "the question stayed");
+        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("notice.switch/codex")), "something was switched");
+
+        Launched.Within(spare, found => found.ByName("Use spare (Codex)"), "Use spare (Codex)").AsButton().Invoke();
+        launched.Invoke("Quit ChatGPT and switch");
+
+        launched.Find(found => found.ByAutomationId("notice.switch/codex"), "notice switch/codex");
+    }
+
+    [TestMethod]
     public void NamingTheAccountInUse()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "unnamed");

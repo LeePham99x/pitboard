@@ -446,7 +446,7 @@ pub struct RunningSignIn {
 pub struct QuitQuestion {
     pub qualified: String,
     /// The app, as the core's holder detection names it and `AppControl` takes it: on macOS
-    /// its bundle id.
+    /// its bundle id, on Windows its Application User Model ID.
     pub app_id: String,
     /// The app as a person knows it: "ChatGPT".
     pub name: String,

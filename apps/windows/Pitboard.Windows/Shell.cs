@@ -1,5 +1,6 @@
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.System.Recovery;
 using Windows.Win32.UI.Controls;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -11,6 +12,18 @@ public static class Shell
     // Before any window, so each one groups under it on the taskbar.
     public static void Name(Identity identity) =>
         PInvoke.SetCurrentProcessExplicitAppUserModelID(identity.Aumid).ThrowOnFailure();
+
+    // An upgrade's Restart Manager starts Pitboard again once it replaced it, and nothing else does.
+    public static void RestartAfterUpdate(Build build)
+    {
+        if (build is Build.Release)
+        {
+            PInvoke.RegisterApplicationRestart(
+                Launching.Updated,
+                REGISTER_APPLICATION_RESTART_FLAGS.RESTART_NO_CRASH | REGISTER_APPLICATION_RESTART_FLAGS.RESTART_NO_HANG
+                    | REGISTER_APPLICATION_RESTART_FLAGS.RESTART_NO_REBOOT).ThrowOnFailure();
+        }
+    }
 
     // Environment.GetFolderPath falls back to LOCALAPPDATA where this fails, and no variable is to move it.
     public static string LocalAppData() => KnownFolder(PInvoke.FOLDERID_LocalAppData);

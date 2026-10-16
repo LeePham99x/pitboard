@@ -130,12 +130,12 @@ public sealed class ModelTests
             From: 360, To: 1320, RangeLabel: "06:00 to 22:00", Accounts: [], Standing: null, Note: "",
             Enabled: false));
 
-    // ChatGPT, open, as the fixture chatGPTOpen's process list has it.
+    // ChatGPT, open, as the fixture chatGPTOpen's process list has it. On Windows its running copy is its AUMID.
     private sealed class StandInApps : AppControl
     {
-        public const string ChatGpt = "com.openai.codex";
+        public static readonly string ChatGpt = OperatingSystem.IsWindows() ? "OpenAI.Codex_2p2nqsd0c76g0!App" : "com.openai.codex";
 
-        public const string ChatGptCopy = "/Applications/ChatGPT.app";
+        public static readonly string ChatGptCopy = OperatingSystem.IsWindows() ? ChatGpt : "/Applications/ChatGPT.app";
 
         private bool _chatGptOpen = true;
 
