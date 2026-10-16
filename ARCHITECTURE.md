@@ -977,7 +977,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - The whole suite runs on macOS, Linux and Windows. A test put off on a system says why in
   its `ignore` reason, which libtest lists:
   - A test that cannot pass on Windows until a later pull request of the Windows work says
-    which: `#[cfg_attr(windows, ignore = "W<n>: …")]`.
+    which: `#[cfg_attr(windows, ignore = "W<id>: …")]`.
   - A test of something one system does not have or do names it, such as
     `ignore = "a warm-up runs on macOS and Linux: …"` on Windows and
     `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.

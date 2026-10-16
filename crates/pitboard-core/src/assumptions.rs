@@ -69,8 +69,8 @@ pub enum OnSystem {
     /// carries what the fact rules out for another reason.
     NotRead(&'static str),
     /// Not read there yet. `by` names the pull requests of the Windows work that read it,
-    /// `W2` to `W27` but `W23`, `W23a`, `W23b` or `W-warm`, and `reads` what each reads, which
-    /// is a fact of its own wherever the tool behaves differently there.
+    /// `W2` to `W27` with `W23` split into `W23a` and `W23b`, or `W-warm`, and `reads` what each
+    /// reads, which is a fact of its own wherever the tool behaves differently there.
     Pending {
         by: &'static [&'static str],
         reads: &'static str,
