@@ -1,4 +1,6 @@
 using Pitboard.Core;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace Pitboard.Windows;
 
@@ -8,6 +10,7 @@ public enum Start
     Redirect,
     Dropped,
     Refused,
+    LinkRefused,
     Unregister,
 }
 
@@ -23,7 +26,11 @@ public static class Launching
     // What COM starts Pitboard.exe with for a click on its notification, as Register writes it.
     public const string Notified = "----AppNotificationActivated:";
 
-    public static Start Decide(IEnumerable<string> arguments, Func<ReadFailure?> refusal, Func<bool> holdsKey)
+    public const string LinkRefusal = "A Debug build opens a pitboard-debug link only in a fixture.";
+
+    public static Start Decide(
+        IReadOnlyCollection<string> arguments, Identity running, string? fixtureFolder, Func<ReadFailure?> refusal,
+        Func<bool> holdsKey)
     {
         var given = arguments.ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (given.Contains(Unregister))
@@ -34,6 +41,11 @@ public static class Launching
         if (refusal() is not null)
         {
             return Start.Refused;
+        }
+
+        if (!running.OpensLinks(fixtureFolder) && Link(arguments, running.LinkScheme) is not null)
+        {
+            return Start.LinkRefused;
         }
 
         if (holdsKey())
@@ -48,6 +60,38 @@ public static class Launching
     public static bool OpensWindow(IEnumerable<string> arguments) =>
         !Unasked(arguments.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
+    // The MSI's command passes a Pitboard link as its only argument, which the model reads as strictly as any link.
+    public static string? Link(IEnumerable<string> arguments, string scheme) =>
+        arguments.FirstOrDefault(argument => argument.StartsWith($"{scheme}:", StringComparison.OrdinalIgnoreCase));
+
+    // Windows App SDK hands the running copy an unpackaged launch's whole command line, its program first.
+    public static string? Handed(string commandLine, Identity running, string? fixtureFolder) =>
+        running.OpensLinks(fixtureFolder) ? Link(Arguments(commandLine).Skip(1), running.LinkScheme) : null;
+
     private static bool Unasked(HashSet<string> given) =>
         given.Contains(SignIn) || given.Contains(Updated) || given.Contains(Notified);
+
+    private static unsafe string[] Arguments(string commandLine)
+    {
+        var split = PInvoke.CommandLineToArgv(commandLine, out var count);
+        if (split is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            var arguments = new string[count];
+            for (var index = 0; index < count; index++)
+            {
+                arguments[index] = split[index].ToString();
+            }
+
+            return arguments;
+        }
+        finally
+        {
+            PInvoke.LocalFree((HLOCAL)split);
+        }
+    }
 }

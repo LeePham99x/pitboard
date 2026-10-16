@@ -69,6 +69,9 @@ internal sealed class Launched : IDisposable
         return new Launched(root, exe, fixture, arguments, homes, ownsHomes: true);
     }
 
+    // The Debug build's Pitboard link for a page, as pitboard_link makes one.
+    public static string Link(string page) => $"pitboard-debug://open?url={Uri.EscapeDataString(page)}";
+
     // Launched again now, in the same homes, as from Start.
     public Launched Again() => new(_root, _exe, _fixture, [], HomeFolders, ownsHomes: false);
 

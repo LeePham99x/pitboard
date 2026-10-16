@@ -19,6 +19,14 @@ public sealed class IdentityTests
     }
 
     [TestMethod]
+    public void OnlyAReleaseOrAFixtureOpensLinks()
+    {
+        Assert.IsTrue(Release.OpensLinks(null));
+        Assert.IsTrue(Debug.OpensLinks(@"C:\Temp\pitboard-fixture"));
+        Assert.IsFalse(Debug.OpensLinks(null));
+    }
+
+    [TestMethod]
     public void EachBuildKeepsItsDataInAFolderOfItsOwn()
     {
         var local = Path.Combine(Path.GetTempPath(), "Local");

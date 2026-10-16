@@ -43,7 +43,8 @@ public partial class App : Application
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         _notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
-        var model = Model(DispatcherQueue.GetForCurrentThread(), _notifications);
+        var queue = DispatcherQueue.GetForCurrentThread();
+        var model = Model(queue, _notifications);
         if (model is null)
         {
             Exit();
@@ -68,15 +69,31 @@ public partial class App : Application
             model.Send(launchedBy);
         }
 
+        if (_start.Link is { } link)
+        {
+            model.Send(new Intent.LinkArrived(link));
+        }
         // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
-        if (Launching.OpensWindow(_start.Arguments))
+        else if (Launching.OpensWindow(_start.Arguments))
         {
             model.Send(new Intent.ShowWindow(Pane: null));
         }
 
         // A second launch's handover arrives on a thread of its own.
-        var queue = DispatcherQueue.GetForCurrentThread();
-        _handovers.Ready(() => queue.TryEnqueue(ShowWindow));
+        _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
+    }
+
+    // Another copy's launch: its link waits for an account, and one without a link brings the window forward.
+    private void Handed(string? link)
+    {
+        if (link is null)
+        {
+            ShowWindow();
+        }
+        else
+        {
+            _model?.Send(new Intent.LinkArrived(link));
+        }
     }
 
     private AppModel? Model(DispatcherQueue queue, Notifications notifications)

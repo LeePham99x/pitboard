@@ -7,37 +7,66 @@ public sealed class HandoversTests
     public void ALaunchHandedOverWhilePitboardStartsOpensTheWindowOnceItCan()
     {
         var handovers = new Handovers();
-        var opened = 0;
+        var taken = new List<string?>();
 
-        handovers.Arrived();
-        handovers.Arrived();
-        handovers.Ready(() => opened++);
+        handovers.Arrived(null);
+        handovers.Arrived(null);
+        handovers.Ready(taken.Add);
 
-        Assert.AreEqual(1, opened);
+        CollectionAssert.AreEqual(new string?[] { null }, taken);
     }
 
     [TestMethod]
     public void EachLaunchHandedOverLaterOpensTheWindow()
     {
         var handovers = new Handovers();
-        var opened = 0;
-        handovers.Ready(() => opened++);
+        var taken = new List<string?>();
+        handovers.Ready(taken.Add);
 
-        handovers.Arrived();
-        handovers.Arrived();
+        handovers.Arrived(null);
+        handovers.Arrived(null);
 
-        Assert.AreEqual(2, opened);
+        CollectionAssert.AreEqual(new string?[] { null, null }, taken);
     }
 
     [TestMethod]
     public void NoLaunchHandedOverOpensNothing()
     {
         var handovers = new Handovers();
-        var opened = 0;
+        var taken = new List<string?>();
 
-        handovers.Ready(() => opened++);
+        handovers.Ready(taken.Add);
 
-        Assert.AreEqual(0, opened);
+        Assert.AreEqual(0, taken.Count);
+    }
+
+    // A copy started a moment after the first hands its launch over between the first's key and its model.
+    [TestMethod]
+    public void ALaunchHandedOverBeforeTheAppCanTakeItWaitsForIt()
+    {
+        var handovers = new Handovers();
+        var taken = new List<string?>();
+
+        handovers.Arrived(null);
+        handovers.Arrived("pitboard://open?url=a");
+        handovers.Ready(taken.Add);
+        handovers.Arrived("pitboard://open?url=b");
+
+        CollectionAssert.AreEqual(new[] { null, "pitboard://open?url=a", "pitboard://open?url=b" }, taken);
+    }
+
+    [TestMethod]
+    public void EachLinkHandedOverWhilePitboardStartsIsKept()
+    {
+        var handovers = new Handovers();
+        var taken = new List<string?>();
+        var link = "pitboard://open?url=a";
+
+        handovers.Arrived(link);
+        handovers.Arrived(link);
+        handovers.Ready(taken.Add);
+
+        CollectionAssert.AreEqual(new[] { link, link }, taken);
     }
 
     [TestMethod]
@@ -46,19 +75,19 @@ public sealed class HandoversTests
         for (var round = 0; round < 200; round++)
         {
             var handovers = new Handovers();
-            var opened = 0;
+            var taken = 0;
             using var go = new Barrier(2);
             var arriving = Task.Run(() =>
             {
                 go.SignalAndWait();
-                handovers.Arrived();
+                handovers.Arrived(null);
             });
 
             go.SignalAndWait();
-            handovers.Ready(() => Interlocked.Increment(ref opened));
+            handovers.Ready(_ => Interlocked.Increment(ref taken));
             arriving.Wait();
 
-            Assert.AreEqual(1, opened, $"round {round}");
+            Assert.AreEqual(1, taken, $"round {round}");
         }
     }
 }
