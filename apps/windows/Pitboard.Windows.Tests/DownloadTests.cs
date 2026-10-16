@@ -169,7 +169,7 @@ public sealed class DownloadTests
     }
 
     // Quitting stops every download, so the question counts each one under way, a paused one too, and the model hears of
-    // each end once. WebView2 pauses a download as interrupted, cancelled by the person, and able to resume.
+    // each end once. WebView2 pauses a download as interrupted, paused by the person, and able to resume.
     [UITestMethod]
     public async Task TheQuitQuestionAsksWhileADownloadIsUnderWay()
     {
