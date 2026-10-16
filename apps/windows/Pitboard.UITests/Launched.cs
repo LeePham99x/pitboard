@@ -139,9 +139,7 @@ internal sealed class Launched : IDisposable
         }
         else
         {
-            var titles = FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
-                .Select(window => $"'{window.Title}'")
-                .ToArray();
+            var titles = Titles().Select(title => $"'{title}'").ToArray();
             state = titles.Length == 0 ? "it is running, with no window" : $"it is running, with {string.Join(", ", titles)}";
         }
 
@@ -150,6 +148,9 @@ internal sealed class Launched : IDisposable
             return $"{state}, saying: {_said.ToString().Trim()}";
         }
     }
+
+    public string[] Titles() =>
+        [.. FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation).Select(window => window.Title)];
 
     // Looked for in every window of Pitboard's, since a menu or a dialog may draw in a window of its own.
     public AutomationElement Find(Func<ConditionFactory, ConditionBase> condition, string what)
@@ -198,6 +199,18 @@ internal sealed class Launched : IDisposable
 
     public static IEnumerable<string> Lines(AutomationElement scope) =>
         scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
+
+    // A button or a page's link in the scope given, once it shows.
+    public static AutomationElement? Pressable(AutomationElement scope, string name) =>
+        Retry.WhileNull(
+            () => scope.FindFirstDescendant(condition => condition.ByName(name)
+                .And(condition.ByControlType(FlaUI.Core.Definitions.ControlType.Button)
+                    .Or(condition.ByControlType(FlaUI.Core.Definitions.ControlType.Hyperlink)))),
+            Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    // As a person presses it.
+    public static void Press(AutomationElement scope, string name) =>
+        (Pressable(scope, name) ?? throw new AssertFailedException($"no '{name}' in {scope.Name}")).Patterns.Invoke.Pattern.Invoke();
 
     // OK through UI Automation is a BM_CLICK, which may fail on an inactive box (E_UNEXPECTED on windows-2025).
     public static void Dismiss(Window box) => box.Patterns.Window.Pattern.Close();

@@ -1,5 +1,4 @@
 using FlaUI.Core.AutomationElements;
-using FlaUI.Core.Definitions;
 using FlaUI.Core.Tools;
 
 namespace Pitboard.UITests;
@@ -29,7 +28,7 @@ public sealed class AccountPickerTests
         spare.Patterns.SelectionItem.Pattern.Select();
         // Open waits a moment after the accounts appear, so a stray Enter opens nothing.
         Assert.IsTrue(launched.Enables("Open"), "Open was held back");
-        Press(picker, "Open");
+        Launched.Press(picker, "Open");
 
         Launched.Shows(launched.Window("spare"), "A Pitboard fixture page at /c/shared", exact: false);
         Assert.IsTrue(Closed(picker), "the Open Link window stayed");
@@ -46,7 +45,7 @@ public sealed class AccountPickerTests
         Assert.IsTrue(
             Launched.Lines(picker).Any(line => line.Contains("This link is on example.com.", StringComparison.Ordinal)),
             string.Join(" | ", Launched.Lines(picker)));
-        Press(picker, "OK");
+        Launched.Press(picker, "OK");
         Assert.IsTrue(Closed(picker), "the Open Link window stayed");
         Assert.AreEqual(0, AccountWindows(launched));
     }
@@ -60,7 +59,7 @@ public sealed class AccountPickerTests
         var picker = launched.Share("https://claude.ai/new");
 
         Launched.Shows(picker, "Open this claude.ai link as:");
-        Press(picker, "Cancel");
+        Launched.Press(picker, "Cancel");
         Assert.IsTrue(Closed(picker), "the Open Link window stayed");
         Assert.AreEqual(0, AccountWindows(launched));
     }
@@ -73,9 +72,9 @@ public sealed class AccountPickerTests
         var picker = launched.Share("https://chatgpt.com/");
 
         Launched.Shows(picker, "No chatgpt.com Account");
-        Assert.IsNotNull(Button(picker, "Add Account…"));
-        Assert.IsNotNull(Button(picker, "Open in Browser"));
-        Press(picker, "Cancel");
+        Assert.IsNotNull(Launched.Pressable(picker, "Add Account…"));
+        Assert.IsNotNull(Launched.Pressable(picker, "Open in Browser"));
+        Launched.Press(picker, "Cancel");
         Assert.IsTrue(Closed(picker), "the Open Link window stayed");
     }
 
@@ -89,7 +88,7 @@ public sealed class AccountPickerTests
 
         Launched.Shows(picker, "Can’t Open This Link");
         Launched.Shows(picker, "Pitboard doesn’t open claude.ai sign-in links", exact: false);
-        Press(picker, "OK");
+        Launched.Press(picker, "OK");
         Assert.IsTrue(Closed(picker), "the Open Link window stayed");
     }
 
@@ -108,19 +107,9 @@ public sealed class AccountPickerTests
         Assert.AreEqual("", string.Join(", ", launched.Written()));
     }
 
-    private static AutomationElement? Button(AutomationElement picker, string name) =>
-        Retry.WhileNull(
-            () => picker.FindFirstDescendant(found => found.ByName(name).And(found.ByControlType(ControlType.Button))),
-            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-
-    private static void Press(AutomationElement picker, string name) =>
-        (Button(picker, name) ?? throw new AssertFailedException($"no '{name}' in the Open Link window")).Patterns.Invoke.Pattern.Invoke();
-
     private static bool Closed(AutomationElement picker) =>
         Retry.WhileTrue(() => picker.IsAvailable, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
     // Every window but the Open Link window and Pitboard's own is an account's.
-    private static int AccountWindows(Launched launched) =>
-        FlaUI.Core.Application.Attach(launched.Process).GetAllTopLevelWindows(launched.Automation)
-            .Count(window => window.Title is not ("Open Link" or "Pitboard"));
+    private static int AccountWindows(Launched launched) => launched.Titles().Count(title => title is not ("Open Link" or "Pitboard"));
 }

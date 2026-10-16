@@ -82,9 +82,9 @@ public sealed class AccountWindowTests
         using var launched = OpenChatGPT();
         var window = launched.Window("main");
 
-        Invoke(window, "Continue with appleid.apple.com");
+        Launched.Press(window, "Continue with appleid.apple.com");
         var signIn = launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
-        Invoke(signIn, "Done");
+        Launched.Press(signIn, "Done");
 
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), "the sign-in window stayed");
         Launched.Shows(window, "chatgpt.com stand-in");
@@ -96,9 +96,9 @@ public sealed class AccountWindowTests
     {
         using var launched = OpenChatGPT();
 
-        Invoke(launched.Window("main"), "Sign in in a window");
+        Launched.Press(launched.Window("main"), "Sign in in a window");
         var signIn = launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
-        Invoke(signIn, "Done");
+        Launched.Press(signIn, "Done");
 
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), "the sign-in window stayed");
     }
@@ -109,7 +109,7 @@ public sealed class AccountWindowTests
     {
         using var launched = OpenChatGPT();
         var window = launched.Window("main");
-        Invoke(window, "Continue with appleid.apple.com");
+        Launched.Press(window, "Continue with appleid.apple.com");
         launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
 
         window.Close();
@@ -125,7 +125,7 @@ public sealed class AccountWindowTests
         using var launched = OpenChatGPT();
         var window = launched.Window("main");
 
-        Invoke(window, "Continue with Google");
+        Launched.Press(window, "Continue with Google");
 
         Assert.IsTrue(Says(window, "window.note", "Pitboard stopped it"), "the window did not say Google was stopped");
         Launched.Shows(window, "chatgpt.com stand-in");
@@ -139,9 +139,9 @@ public sealed class AccountWindowTests
         using var launched = OpenChatGPT();
         var window = launched.Window("main");
 
-        Invoke(window, "Download notes");
+        Launched.Press(window, "Download notes");
         launched.Invoke("Download");
-        Invoke(window, "Downloads");
+        Launched.Press(window, "Downloads");
 
         var listed = Retry.WhileFalse(
             () => Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)),
@@ -175,7 +175,7 @@ public sealed class AccountWindowTests
         // The first opening says how to sign in; put it away, and leave the home page.
         var note = Launched.Within(window, found => found.ByAutomationId("window.note"), "note");
         Launched.Within(note, found => found.ByAutomationId("CloseButton"), "the note's close button").Patterns.Invoke.Pattern.Invoke();
-        Invoke(window, "A chat");
+        Launched.Press(window, "A chat");
         Launched.Shows(window, "A Pitboard fixture page at /chat/fixture", exact: false);
 
         Launched.Within(window, found => found.ByAutomationId("MoreButton"), "the command bar's More").Patterns.Invoke.Pattern.Invoke();
@@ -215,20 +215,7 @@ public sealed class AccountWindowTests
         launched.Find(found => found.ByAutomationId($"window.chatgpt.com/{label}"), "the row's window item").Click();
     }
 
-    private static int Windows(Launched launched, string title) =>
-        FlaUI.Core.Application.Attach(launched.Process).GetAllTopLevelWindows(launched.Automation)
-            .Count(window => window.Title == title);
-
-    // A page's link or button, as a person would press it.
-    private static void Invoke(AutomationElement scope, string name)
-    {
-        var found = Retry.WhileNull(
-            () => scope.FindFirstDescendant(condition => condition.ByName(name)
-                .And(condition.ByControlType(ControlType.Hyperlink).Or(condition.ByControlType(ControlType.Button)))),
-            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        Assert.IsNotNull(found, $"no '{name}' in {scope.Name}");
-        found.Patterns.Invoke.Pattern.Invoke();
-    }
+    private static int Windows(Launched launched, string title) => launched.Titles().Count(shown => shown == title);
 
     private static bool Says(AutomationElement window, string automationId, string text) =>
         Retry.WhileFalse(
