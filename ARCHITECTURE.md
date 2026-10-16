@@ -2893,17 +2893,19 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
   in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
   session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
-  would pass over, or `#p` beside one, as unreadable. On both runners Credential Manager
-  refused a piece between `#121` and `#237` of a 256-piece write with `ERROR_NOT_ENOUGH_MEMORY`
-  (run 38856939312), so a login that large fails there, and the runner tests write at most 100
-  pieces. Every write goes to Credential Manager first, and deletes `.credentials.json` only
-  where Credential Manager held no login before, as Claude Code's wrapper does; where
-  Credential Manager fails, Claude Code writes the file instead and Pitboard writes nothing
-  more, leaving the switch to the journal's recovery. A session reads the item again 30
-  seconds after it last did, and a session whose start-up look at `Bun.secrets` fails within
-  10 seconds reads only the file for its life. A network logon has no credential set: every
-  call fails 1312, which Pitboard reads as out of reach (`credential_store_locked`), never as
-  no login.
+  would pass over, or `#p` beside one, as unreadable. Every write goes to Credential Manager
+  first, and deletes `.credentials.json` only where Credential Manager held no login before,
+  as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
+  instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A
+  session reads the item again 30 seconds after it last did, and a session whose start-up
+  look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
+  logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
+  (`credential_store_locked`), never as no login.
+- Measured on both runner images on 16 October 2026 (runs 38856939312 and 38858363708): a
+  fresh standard user's Credential Manager takes about 237 pieces of 2400 characters, then
+  `CredWriteW` fails with `ERROR_NOT_ENOUGH_MEMORY`, and pieces a failed run left count
+  against that. A login near Claude Code's 256 pieces fails there, so the runner tests write
+  at most 100 pieces, and a round trip over items in memory holds the 256-piece edge.
 - Read on 16 October 2026 from the same builds (`credman_unreachable_writes_file`,
   `fallback_file_pins_session_login`): a session whose start-up look failed, as one in a
   network logon does, reads no login in Credential Manager and fails every write there, so
