@@ -521,14 +521,17 @@ pub(crate) fn sentence(text: &str) -> String {
     }
 }
 
-// Only a first word of lowercase letters is prose: a path, an email, a file name, a figure or a
-// backticked name keeps its case.
+// Only a first word of lowercase letters, "warm-ups" included, is prose: a path, an email, a
+// file name, a figure or a backticked name keeps its case.
 fn prose_capitalised(text: &str) -> String {
     let first = text
         .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
         .next()
         .unwrap_or_default();
-    if !first.is_empty() && first.bytes().all(|b| b.is_ascii_lowercase()) {
+    if first
+        .split('-')
+        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase()))
+    {
         capitalised(text)
     } else {
         text.to_owned()

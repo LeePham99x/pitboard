@@ -736,6 +736,13 @@ mod tests {
                 "",
             ),
             ("state", "accounts", Level::Ok, "1 enrolled", ""),
+            (
+                "warm_up",
+                "warm-up",
+                Level::Ok,
+                "warm-ups are not available on Windows",
+                "",
+            ),
         ])
         .into_iter()
         .map(|line| line.detail)
@@ -751,6 +758,7 @@ mod tests {
                 "dana@example.com · org 1f2e",
                 "2.1.299",
                 "1 enrolled",
+                "Warm-ups are not available on Windows",
             ]
         );
     }
