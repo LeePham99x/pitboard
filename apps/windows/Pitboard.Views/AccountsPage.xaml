@@ -69,6 +69,7 @@
         Grid.Row="1"
         Padding="24,0,24,16"
         SelectionMode="Single"
+        IsSynchronizedWithCurrentItem="False"
         Visibility="{x:Bind ViewModel.Listed, Mode=OneWay}"
         AutomationProperties.AutomationId="accounts"
         AutomationProperties.Name="Accounts"

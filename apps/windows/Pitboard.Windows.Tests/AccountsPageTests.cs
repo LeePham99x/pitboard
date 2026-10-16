@@ -85,6 +85,39 @@ public sealed class AccountsPageTests
         Views.Element<ListViewItem>(page, "account.codex/spare");
     }
 
+    // A ListView over a CollectionViewSource follows the view's current item, which starts on a row, so twoTools opened
+    // with a row selected that nobody chose (after-shot 43).
+    [UITestMethod]
+    public async Task NoRowIsSelectedUntilOneIsChosen()
+    {
+        var two = Snapshots.Read(1) with
+        {
+            ShowsTools = true,
+            Sections =
+            [
+                Items.Section("claude", "Claude Code", Items.Account("claude", "work", inUse: true), Items.Account("claude", "old")),
+                Items.Section("codex", "Codex", Items.Account("codex", "spare")),
+            ],
+        };
+        var (page, _, app) = await Over(two);
+        var list = Views.Element<ListView>(page, "accounts");
+        await Views.Drained();
+        Assert.IsNull(list.SelectedItem);
+
+        app.Apply(two with
+        {
+            Revision = 2,
+            Sections =
+            [
+                Items.Section("claude", "Claude Code", Items.Account("claude", "old"), Items.Account("claude", "work", inUse: true)),
+                Items.Section("codex", "Codex", Items.Account("codex", "spare")),
+            ],
+        });
+        await Views.Drained();
+
+        Assert.IsNull(list.SelectedItem);
+    }
+
     // The model makes every list anew for each snapshot, and the frame keeps the page while another shows; the row the
     // person selected stays selected.
     [UITestMethod]
