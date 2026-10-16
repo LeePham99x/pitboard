@@ -69,6 +69,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saying **No accounts** while Claude Code is signed in.
 - An account you add while Pitboard cannot identify the login in use says it was parked, not put
   in use, on a first run too.
+- On Linux, `pitboard doctor` notes the Claude Desktop accounts in a Pitboard directory brought
+  from a Mac, which nothing there changes, instead of failing its Claude data folder check.
 
 ## [0.14.0] - 2026-10-14
 

@@ -1471,8 +1471,9 @@ impl Pitboard {
         schedule::uninstall(&self.ctx, self.permit()?)
     }
 
-    /// Point a schedule an app up to 0.3.0 wrote, which runs the app itself, at the command
-    /// line this context names. `true` when it did; nothing changes otherwise.
+    /// Point a schedule an app up to 0.3.0 wrote, which runs the app itself, or on Windows a
+    /// task whose Pitboard is gone and whose settings are as Pitboard wrote them, at the
+    /// command line this context names. `true` when it did; nothing changes otherwise.
     pub fn schedule_repair(&self) -> Result<bool> {
         schedule::repair(&self.ctx, self.permit()?)
     }

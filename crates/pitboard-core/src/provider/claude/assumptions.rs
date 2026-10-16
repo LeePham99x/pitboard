@@ -435,11 +435,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_statusline_powershell",
         macos: NotRead("only Windows runs a status line in PowerShell"),
         linux: NotRead("only Windows runs a status line in PowerShell"),
-        windows: Pending {
-            by: &["W27"],
-            reads: "which PowerShell runs a status line where no Git Bash is found, without \
-                    pwsh 7 and with it, session step 12",
-        },
+        windows: Read("2.1.301"),
     },
     PerSystem {
         name: "proxy_from_variables",
@@ -1842,6 +1838,7 @@ mod tests {
                 "windows_browser_open",
                 "windows_token_handover",
                 "windows_statusline_shell",
+                "windows_statusline_powershell",
                 "proxy_from_variables",
                 "request_starts_the_five_hour_period",
                 "weekly_period_is_a_fixed_cycle",

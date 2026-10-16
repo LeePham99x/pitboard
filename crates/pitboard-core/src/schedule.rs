@@ -286,23 +286,10 @@ pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<Location> {
     Ok(location)
 }
 
-/// Point a schedule that runs an app's own program at the command line the context names.
-/// `true` when it did.
-///
-/// An app up to 0.3.0 scheduled itself, and that app renews nothing when started with
-/// `renew`: launchd started a second menu bar app every day instead. The app calls this
-/// when it starts, so nothing changes unless the schedule is such a one and belongs to this
-/// home, and the context names a command line that will still be there when the scheduler
-/// runs it.
-///
-/// Nothing changes from inside the schedule's own run either: launchd stops a job's process
-/// when it unloads the job, which a repair does before loading it again, so nothing would be
-/// left to load it back.
-///
-/// The job is given the proxy variables its file gives, never the app's own: an app is
-/// started with the system's environment, which names no proxy a shell set, and a repair is
-/// no reason to change where the schedule's requests go. An app of 0.3.0 or earlier, whose
-/// schedules alone are repaired, wrote none.
+// The app calls this as it starts. An app up to 0.3.0 scheduled itself, which launchd started
+// as a second menu bar app every day, and on Windows a task outlives the Pitboard it runs. Never
+// from the schedule's own run, which launchd stops as a repair unloads its job, and never with
+// the app's proxy, which names none a shell set.
 pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
     if scheduler(ctx).is_none() || started_this_run(ctx) {
         return Ok(false);
@@ -312,7 +299,7 @@ pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
     };
     if !serves(ctx)
         || lasting(named).is_err()
-        || !installed_program(ctx).is_some_and(|program| an_apps_own_program(&program))
+        || !installed_program(ctx).is_some_and(|program| broken(ctx, &program))
     {
         return Ok(false);
     }
@@ -329,6 +316,16 @@ pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
         },
     );
     repaired.map(|_| true)
+}
+
+// A task whose settings were changed in Task Scheduler stays as it is: the change may be the
+// person's, and doctor names the way back.
+fn broken(ctx: &Context, program: &Path) -> bool {
+    match task(ctx) {
+        Some(task) if !task.drifted.is_empty() => false,
+        Some(_) => an_apps_own_program(program) || !program.is_file(),
+        None => an_apps_own_program(program),
+    }
 }
 
 /// Whether `program` is the one an app bundle starts, `Contents/MacOS/<name>`, where no
@@ -788,6 +785,64 @@ mod tests {
             .with_scheduled_job("application.com.datlechin.pitboard.1.2".into());
         assert!(repair(&opened, Permit::for_a_test()).expect("repaired"));
         assert_eq!(installed_program(&ctx), Some(bundled));
+    }
+
+    // Settings changed in Task Scheduler may be the person's, so only a gone program is mended.
+    #[test]
+    fn the_app_points_a_task_whose_pitboard_is_gone_at_its_own_and_nothing_else() {
+        let home = Scratch(
+            tempfile::tempdir().expect("a scratch home"),
+            MemoryHost::scheduling_tasks("S-1-5-21-1"),
+        );
+        let ctx = home.read(&[("HTTPS_PROXY", "http://proxy.example.com:3128")]);
+        let scoop = home
+            .path()
+            .join(r"scoop\apps\pitboard\current\pitboard.exe");
+        let bundled = home.path().join(r"Programs\Pitboard\bin\pitboard.exe");
+        a_program_at(&scoop);
+        a_program_at(&bundled);
+        install(
+            &ctx.clone().with_schedule_program(scoop.clone()),
+            Permit::for_a_test(),
+        )
+        .expect("installed from Scoop's pitboard");
+        let the_app = home.read(&[]).with_schedule_program(bundled.clone());
+        assert!(
+            !repair(&the_app, Permit::for_a_test()).expect("nothing to do"),
+            "a Pitboard that is there"
+        );
+
+        std::fs::remove_file(&scoop).expect("Scoop's pitboard uninstalled");
+        let kept = path(&ctx).expect("the task's file");
+        let written = std::fs::read_to_string(&kept).expect("the task");
+        for (setting, changed) in [
+            ("<StartWhenAvailable>true<", "<StartWhenAvailable>false<"),
+            (
+                "<StopIfGoingOnBatteries>false<",
+                "<StopIfGoingOnBatteries>true<",
+            ),
+            ("<Hidden>", "<Enabled>false</Enabled><Hidden>"),
+        ] {
+            std::fs::write(&kept, written.replace(setting, changed)).expect("changed by hand");
+            assert!(
+                !repair(&the_app, Permit::for_a_test()).expect("nothing to do"),
+                "{changed}"
+            );
+            assert_eq!(installed_program(&ctx), Some(scoop.clone()), "{changed}");
+        }
+
+        std::fs::write(&kept, &written).expect("as Pitboard wrote it");
+        assert!(repair(&the_app, Permit::for_a_test()).expect("repaired"));
+        assert_eq!(installed_program(&ctx), Some(bundled));
+        assert_eq!(
+            given(&ctx),
+            pairs(&[("HTTPS_PROXY", "http://proxy.example.com:3128")]),
+            "the proxy it was given, not the app's none"
+        );
+        assert!(
+            !repair(&the_app, Permit::for_a_test()).expect("nothing to do"),
+            "the app's own, which is there"
+        );
     }
 
     /// Only what `install` writes is read, and only the way it writes it.
