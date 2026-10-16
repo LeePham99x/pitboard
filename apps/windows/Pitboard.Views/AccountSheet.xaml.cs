@@ -32,18 +32,19 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     private string? _announced;
     private bool _told;
 
-    public AccountSheet(AppModel model, string key, Action<Uri> open)
+    public AccountSheet(AppModel model, Sheet sheet, Action<Uri> open)
     {
         _model = model;
         _open = open;
-        Key = key;
+        Sheet = sheet;
         InitializeComponent();
         AlertSpace.Content = new AlertBar(model);
         model.PropertyChanged += OnModelChanged;
         Show();
     }
 
-    public string Key { get; }
+    // The model's sheet it shows: another one, even of the same kind, is put up afresh.
+    public Sheet Sheet { get; }
 
     public CancellationToken Withdrawn => _withdrawn.Token;
 
@@ -80,7 +81,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     // Another sheet's words never reach this one, and one on its way out keeps what it showed.
     private void Show()
     {
-        if (_model.Sheet is not { } sheet || SheetPage.Key(sheet) != Key || SheetPage.Of(_model, _page) is not { } page)
+        if (_model.Sheet is not { } sheet || sheet != Sheet || SheetPage.Of(_model, _page) is not { } page)
         {
             return;
         }

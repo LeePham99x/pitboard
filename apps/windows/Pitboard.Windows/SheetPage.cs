@@ -13,17 +13,6 @@ public abstract record SheetPage
 
     public virtual bool EscapeCloses => Closable;
 
-    // Told apart as the macOS app tells them, so one replacing another is put up afresh.
-    public static string Key(Sheet sheet) => sheet switch
-    {
-        Sheet.Add add => $"add/{add.Provider}",
-        Sheet.SignInAgain again => $"again/{again.Provider}/{again.Label}",
-        Sheet.Name name => $"name/{name.Provider}",
-        Sheet.Rename rename => $"rename/{rename.Provider}/{rename.Label}",
-        Sheet.Stow => "stow",
-        _ => throw new ArgumentOutOfRangeException(nameof(sheet)),
-    };
-
     // A sheet on its way out keeps what it showed, so it does not flash its form as it goes.
     public static SheetPage? Of(AppModel model, SheetPage? shown)
     {

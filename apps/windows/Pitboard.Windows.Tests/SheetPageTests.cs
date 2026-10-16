@@ -11,20 +11,6 @@ public sealed class SheetPageTests
         SheetPage.Of(new AppModel(snapshot), before);
 
     [TestMethod]
-    public void SheetsAreToldApartAsTheMacOSAppTellsThem()
-    {
-        Assert.AreEqual("add/", SheetPage.Key(Add));
-        Assert.AreEqual("add/codex", SheetPage.Key(new Sheet.Add("codex")));
-        Assert.AreEqual("again/claude/work", SheetPage.Key(new Sheet.SignInAgain("claude", "work")));
-        Assert.AreEqual("rename/claude/work", SheetPage.Key(new Sheet.Rename("claude", "work")));
-        Assert.AreEqual("stow", SheetPage.Key(new Sheet.Stow()));
-        Assert.AreEqual(
-            SheetPage.Key(new Sheet.Name("claude", "dana@work.example")),
-            SheetPage.Key(new Sheet.Name("claude", "dana@home.example")),
-            "a new address for the login being named is the same sheet");
-    }
-
-    [TestMethod]
     public void TheSheetForANewAccountSaysWhatThePickedToolDoes()
     {
         var text = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex"));

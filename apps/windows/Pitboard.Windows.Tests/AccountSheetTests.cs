@@ -425,6 +425,27 @@ public sealed class AccountSheetTests
         Assert.IsEmpty(up.Model.Sent);
     }
 
+    // The model's Sheet records compare by value, so the same sheet keeps its dialog and a login of another address being
+    // named is a new one.
+    [UITestMethod]
+    public async Task SheetsAreToldApartByTheModelsSheet()
+    {
+        var naming = Snapshots.Read(1) with
+        {
+            Sheet = new Sheet.Name("claude", "dana@work.example"),
+            SheetText = Items.Rename("") with { Title = "Name this account", Confirm = "Save" },
+        };
+        await using var up = await Up.Over(naming);
+        var first = up.Sheet;
+
+        up.App.Apply(naming with { Revision = 2, Sheet = new Sheet.Name("claude", "dana@work.example"), SheetText = Items.Rename("dana") });
+        Assert.AreSame(first, up.Dialogs.Open, "the same sheet was put up again");
+        up.App.Apply(naming with { Revision = 3, Sheet = new Sheet.Name("claude", "dana@home.example") });
+
+        await Views.Until(() => up.Dialogs.Open is AccountSheet next && next != first, "the sheet for another login kept its dialog");
+        Assert.IsEmpty(up.Model.Sent);
+    }
+
     [UITestMethod]
     public async Task PutAwayWaitsForTheLookAndThenPutsTheLoginAway()
     {
