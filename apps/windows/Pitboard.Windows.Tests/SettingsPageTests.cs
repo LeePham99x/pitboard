@@ -180,6 +180,10 @@ public sealed class SettingsPageTests
             Warm = TwoWarmed with { From = 420, To = 1260 },
             Schedule = machine.Schedule with { On = true, Runs = "Every day" },
         }));
+        // The expander's repeater makes a card for each account on its next layout.
+        await Views.Until(
+            () => Views.Descendants(page).OfType<ToggleSwitch>().Any(on => AutomationProperties.GetAutomationId(on) == "settings.warm.claude/personal"),
+            "the warm-up's accounts did not show");
 
         Assert.AreEqual(90.0, Views.Element<NumberBox>(page, "settings.autoSwitchAt").Value);
         Assert.IsTrue(Views.Element<ToggleSwitch>(page, "settings.warm.claude/personal").IsOn);

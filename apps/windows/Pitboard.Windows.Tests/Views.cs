@@ -72,13 +72,27 @@ internal static class Views
         }
     }
 
+    private static bool InIcon(DependencyObject element, DependencyObject root)
+    {
+        for (var at = VisualTreeHelper.GetParent(element); at is not null && at != root; at = VisualTreeHelper.GetParent(at))
+        {
+            if (at is IconElement)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // Shown, and not inside anything collapsed.
     public static IEnumerable<T> Visible<T>(DependencyObject root)
         where T : UIElement =>
         Descendants(root).OfType<T>().Where(element => IsVisible(element, root));
 
+    // An icon draws its glyph with a TextBlock of its own, which is no text a person reads.
     public static string[] Texts(DependencyObject root) =>
-        [.. Visible<TextBlock>(root).Select(text => text.Text).Where(text => text.Length > 0)];
+        [.. Visible<TextBlock>(root).Where(text => !InIcon(text, root)).Select(text => text.Text).Where(text => text.Length > 0)];
 
     public static string? Description(TextBox field) => (field.Description as TextBlock)?.Text;
 

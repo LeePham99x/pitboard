@@ -38,7 +38,8 @@ public sealed partial class WindowChromeTests
         }
         finally
         {
-            foreach (var window in windows)
+            // The sign-in window first: closing its account window destroys it, and WinUI's Close then fails fast.
+            foreach (var window in Enumerable.Reverse(windows))
             {
                 window.Close();
             }
