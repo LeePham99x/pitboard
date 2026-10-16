@@ -3,10 +3,15 @@ namespace Pitboard.Windows.Tests;
 [TestClass]
 public sealed class UpdateSettingsTests
 {
+    private readonly string _folder = Directory.CreateTempSubdirectory("pitboard-updates-").FullName;
+
+    [TestCleanup]
+    public void RemoveFolder() => Directory.Delete(_folder, recursive: true);
+
     [TestMethod]
     public void WhatWinSparkleWritesTheNextRunReads()
     {
-        var file = Path.Combine(Directory.CreateTempSubdirectory("pitboard-updates-").FullName, "Pitboard App", "updates.json");
+        var file = Path.Combine(_folder, "Pitboard App", "updates.json");
         var settings = new UpdateSettings(file);
 
         Assert.IsNull(settings.Read("CheckForUpdates"));
@@ -22,7 +27,7 @@ public sealed class UpdateSettingsTests
     [TestMethod]
     public void AFileItCannotReadHoldsNothing()
     {
-        var file = Path.Combine(Directory.CreateTempSubdirectory("pitboard-updates-").FullName, "updates.json");
+        var file = Path.Combine(_folder, "updates.json");
         File.WriteAllText(file, "{ not json");
         var settings = new UpdateSettings(file);
 

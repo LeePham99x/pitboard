@@ -24,9 +24,25 @@ public sealed class SparkleUpdatesTests
         </rss>
         """;
 
-    private static string DataFolder() => Directory.CreateTempSubdirectory("pitboard-updates-").FullName;
+    private readonly List<string> _folders = [];
 
-    private static IUpdates Made(
+    [TestCleanup]
+    public void RemoveFolders()
+    {
+        foreach (var folder in _folders)
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    private string DataFolder()
+    {
+        var folder = Directory.CreateTempSubdirectory("pitboard-updates-").FullName;
+        _folders.Add(folder);
+        return folder;
+    }
+
+    private IUpdates Made(
         StandInSparkle sparkle, Build build = Build.Release, string? key = Key, string version = "1.0.0",
         Func<Task<bool>>? mayQuit = null, Action? quit = null, string? folder = null) =>
         SparkleUpdates.For(
@@ -37,7 +53,7 @@ public sealed class SparkleUpdatesTests
             },
             mayQuit ?? (() => Task.FromResult(true)), quit ?? (() => { }), () => Task.FromResult(Offered));
 
-    private static SparkleUpdates Started(
+    private SparkleUpdates Started(
         StandInSparkle sparkle, string version = "1.0.0", Func<Task<bool>>? mayQuit = null, Action? quit = null)
     {
         var updates = (SparkleUpdates)Made(sparkle, version: version, mayQuit: mayQuit, quit: quit);
