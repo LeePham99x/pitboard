@@ -30,7 +30,7 @@ and later, the `rust-version` in `Cargo.toml`.
 | `cargo-hack` | The Rust 1.91 floor |
 | `cargo-zigbuild`, Zig and Rust's `x86_64-unknown-linux-gnu` target | Linting the Linux code from a Mac |
 | `shellcheck` 0.11.0 or later, Python 3.11 or later | The install script and the release's scripts |
-| Xcode with Swift 6.2 or later, XcodeGen | [The app](#the-app) |
+| Xcode with Swift 6.2 or later, XcodeGen | [The macOS app](#the-macos-app) |
 | .NET 10 SDK | [The C# bindings](#the-c-bindings) |
 | Node 24 or later | [Website](#website) |
 
@@ -131,11 +131,11 @@ shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.
 python3 .github/scripts/test-release.py
 ```
 
-The app, the C# bindings, Windows and the website have checks of their own, in their
+The macOS app, Windows, the Windows app and the website have checks of their own, in their
 sections. CI's `all-green` check fails when any other job failed or was cancelled, and a pull
 request needs it to pass.
 
-## The app
+## The macOS app
 
 Building the app takes a Mac with Xcode whose Swift is 6.2 or later, XcodeGen, and Rust's two
 Mac targets. `./apps/macos/scripts/build-app.sh` builds the release bundle the way CI and a
@@ -247,62 +247,6 @@ pluginkit -r <build>/Pitboard.app/Contents/PlugIns/PitboardShare.appex
 
 `pluginkit -m | grep usepitboard` lists the Share extensions macOS still offers.
 
-### The C# bindings
-
-The Windows app reaches the core through C# bindings, generated from `pitboard-ffi` like the
-Swift ones and not committed, and `PitboardShare.exe` reaches `pitboard-share-ffi` through
-its own. They need the .NET 10 SDK and run on macOS and Linux as well as Windows.
-`Pitboard.slnx` holds them and their tests, the half of `apps/windows` that builds on every
-system; `Pitboard.Windows.slnx` adds the app, which builds only on Windows:
-
-```sh
-cargo build --locked -p pitboard-ffi
-cargo build --locked -p pitboard-share-ffi
-mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
-cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_ffi.a \
-  --out-dir apps/windows/Pitboard.Core/Generated --config crates/pitboard-ffi/uniffi.toml --no-format
-cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_share_ffi.a \
-  --out-dir apps/windows/Pitboard.Share.Core/Generated --config crates/pitboard-share-ffi/uniffi.toml --no-format
-cd apps/windows
-dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target/debug/libpitboard_ffi.dylib" \
-  -p:PitboardShareNativeLibrary="$PWD/../../target/debug/libpitboard_share_ffi.dylib"
-```
-
-On Linux the libraries the tests load are `libpitboard_ffi.so` and `libpitboard_share_ffi.so`,
-and on Windows `pitboard_ffi.dll` and `pitboard_share_ffi.dll`. There the generator reads
-`pitboard_ffi.dll` or `pitboard_ffi.lib`, which give the same file; `pitboard_ffi.dll.lib`
-gives none. A Windows library built with `--cfg pitboard_unreleased_windows` takes
-`-p:PitboardNativeLibraryOpened=true` as well, or the test of what a 0.x release refuses
-fails. C# makes each field of a record a member of it, so a field may not share its record's
-name.
-
-On Windows, run the tests as [Windows](#windows) says: as a Windows account that holds no real
-login, with the homes [AGENTS.md](AGENTS.md#on-windows) names at fresh folders. A C# test that
-cannot pass there until a later Windows pull request says so in its Rust counterpart's words:
-
-```csharp
-[OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<id>: <what it waits on>")]
-```
-
-In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
-
-```csharp
-[Ignore("W<n>: <what it waits on>")]
-```
-
-The tests that start a fixture's model are skipped against a library built without the
-`fixture` feature. To run them, build the library with
-`cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
-need not be generated again.
-
-Each project restores only the packages its `packages.lock.json` pins, at the versions
-`Directory.Packages.props` names, with the exact .NET SDK `global.json` names:
-`Pitboard.Core`'s lock file holds that SDK's trimming analyzers. After changing a package or
-the SDK, run `dotnet restore --force-evaluate` on both solutions, with
-`-p:EnableWindowsTargeting=true` on macOS and Linux, and commit the lock files. The build
-fails on the style rules in `apps/windows/.editorconfig`, and CI checks the layout with
-`dotnet format whitespace --folder --verify-no-changes apps/windows`.
-
 ## Windows
 
 A Windows build of a 0.x release answers only `--version`, `--help`, `completions` and
@@ -351,52 +295,7 @@ folder, the app's data folder, a link scheme, a notification registration, a sta
 sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a 0.x release is
 built and checks that it refuses and changes nothing. It runs the opened build with no
 argument as a fresh standard user, as winget's validation runs a program. One test reads the
-app execution aliases in the job user's own profile, since a fresh standard user's has none. The
-`csharp-windows` job builds `pitboard_ffi.dll` twice, as a 0.x release is built and opened
-with its fixtures, checks that the bindings generated from each are the Linux job's byte for
-byte, and runs the C# tests against each the same way.
-
-CI's `windows-app` job builds the app in Debug over `pitboard_ffi.dll` opened with its
-fixtures, and publishes it in Release over the library as a 0.x release builds it, on both
-images. Beside it, it publishes `PitboardShare.exe`, the share target, with Native AOT, and
-`.github/scripts/pack-windows-share.ps1` packs its sparse package and signs it with a
-throwaway certificate, which nothing trusts and nothing registers. `PitboardShare.exe` names
-its package's publisher, so its build takes the signer's subject in `WINDOWS_SIGNER_SUBJECT`.
-`.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a package
-identity on any program but `PitboardShare.exe`, a `PitboardShare.exe` that names another
-identity than its package or a package another publisher than the signer, an update key in
-`Pitboard.dll` other than the one the build was given or one WinSparkle would not take, a feed
-other than the latest full release's, a commit in `Pitboard.exe`'s version,
-a program or library of Pitboard's whose version resource names another product or version
-than `Cargo.toml`'s or another file version than `.github/scripts/windows-versions.sh` gives
-it, a core opened before Windows is released, the core's C runtime and a
-`WinSparkle.dll` for another machine, and `test-windows-app.ps1` tests its identity, key,
-feed and version checks. The job sets `PITBOARD_REQUIRE_VERSIONINFO=1`, so a `pitboard_ffi.dll` or
-`pitboard_share_ffi.dll` built without its version resource fails the build. The Release
-build takes its update key from `WINDOWS_UPDATE_PUBLIC_KEY`; CI gives it 32 bytes no private
-key was made for. It reads each image's WebView2 Runtime, which the account windows need. The job runs `Pitboard.Windows.Tests`, a WinUI app that hosts
-its own tests, its WebView2 tests against a stand-in site on the loopback among them,
-`Pitboard.UITests`, which drives the built app with FlaUI, and `Pitboard.Share.Core.Tests`
-over `pitboard_share_ffi.dll`, as a fresh standard user, then the UI test of an elevated
-launch as the job's user. It builds `Pitboard.Probe`, which the session machine runs to
-measure the app's notifications, and checks that it refuses an account without
-`pitboard-probe`'s throwaway marker. The WinUI projects and `PitboardShare.exe` build only
-there.
-
-The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
-build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
-a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
-`.github/scripts/extract-msi.ps1` extracts it with `msiexec /a`, `check-windows-app.ps1`
-checks the files it holds, `check-windows-msi.ps1` its version, its layout, the command line
-in `bin` and the package it carries, the UI test of the release gate starts its
-`Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
-`check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
-unsigned MSI and on the package the job signed. WiX builds only on Windows. For a change to the version the MSI carries,
-which needs only the .NET SDK:
-
-```sh
-sh .github/scripts/test-msi-version.sh
-```
+app execution aliases in the job user's own profile, since a fresh standard user's has none.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
@@ -408,6 +307,126 @@ signatures. They run on CI's runners only.
 `pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:
 one that changes the probe, its helpers or the script dispatches it on its branch and names
 the run. `ARCHITECTURE.md` records what it measured.
+
+## The Windows app
+
+The Windows app is C# in `apps/windows`, over the core's C# bindings. The
+[code map](ARCHITECTURE.md#code-map) says what each project holds. `Pitboard.slnx` holds the
+bindings and their tests. `Pitboard.Windows.slnx` adds the app, `PitboardShare.exe`, the MSI,
+the probe and their tests. The WinUI projects, `PitboardShare.exe` and the MSI build only on
+Windows, and the UI tests run only on CI's runners.
+
+Each project restores only the packages its `packages.lock.json` pins, at the versions
+`Directory.Packages.props` names, with the exact .NET SDK `global.json` names:
+`Pitboard.Core`'s lock file holds that SDK's trimming analyzers. After changing a package or
+the SDK, run `dotnet restore --force-evaluate` on both solutions, with
+`-p:EnableWindowsTargeting=true` on macOS and Linux, and commit the lock files. The build
+fails on the style rules in `apps/windows/.editorconfig`, and CI checks the layout with
+`dotnet format whitespace --folder --verify-no-changes apps/windows`.
+
+### The C# bindings
+
+The Windows app reaches the core through C# bindings, generated from `pitboard-ffi` like the
+Swift ones and not committed, and `PitboardShare.exe` reaches `pitboard-share-ffi` through
+its own. They need the .NET 10 SDK, and they and their tests build and run on macOS and Linux
+as well as Windows:
+
+```sh
+cargo build --locked -p pitboard-ffi
+cargo build --locked -p pitboard-share-ffi
+mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
+cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_ffi.a \
+  --out-dir apps/windows/Pitboard.Core/Generated --config crates/pitboard-ffi/uniffi.toml --no-format
+cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_share_ffi.a \
+  --out-dir apps/windows/Pitboard.Share.Core/Generated --config crates/pitboard-share-ffi/uniffi.toml --no-format
+cd apps/windows
+dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target/debug/libpitboard_ffi.dylib" \
+  -p:PitboardShareNativeLibrary="$PWD/../../target/debug/libpitboard_share_ffi.dylib"
+```
+
+On Linux the libraries the tests load are `libpitboard_ffi.so` and `libpitboard_share_ffi.so`,
+and on Windows `pitboard_ffi.dll` and `pitboard_share_ffi.dll`. There the generator reads
+`pitboard_ffi.dll` or `pitboard_ffi.lib`, which give the same file; `pitboard_ffi.dll.lib`
+gives none. A Windows library built with `--cfg pitboard_unreleased_windows` takes
+`-p:PitboardNativeLibraryOpened=true` as well, or the test of what a 0.x release refuses
+fails. C# makes each field of a record a member of it, so a field may not share its record's
+name.
+
+On Windows, run the tests as [Windows](#windows) says: as a Windows account that holds no real
+login, with the homes [AGENTS.md](AGENTS.md#on-windows) names at fresh folders. A C# test that
+cannot pass there until a later Windows pull request says so in its Rust counterpart's words:
+
+```csharp
+[OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<id>: <what it waits on>")]
+```
+
+In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
+
+```csharp
+[Ignore("W<n>: <what it waits on>")]
+```
+
+The tests that start a fixture's model are skipped against a library built without the
+`fixture` feature. To run them, build the library with
+`cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
+need not be generated again.
+
+CI's `csharp-windows` job builds `pitboard_ffi.dll` twice, as a 0.x release is built and opened
+with its fixtures, checks that the bindings generated from each are the Linux job's byte for
+byte, and runs the C# tests against each the same way.
+
+### The app on CI
+
+CI's `windows-app` job builds and checks the app on `windows-2025` and `windows-11-arm`. It
+builds the app in Debug over `pitboard_ffi.dll` opened with its fixtures, and publishes it in
+Release over the library a 0.x release builds. It sets `PITBOARD_REQUIRE_VERSIONINFO=1`, so a
+`pitboard_ffi.dll` or `pitboard_share_ffi.dll` built without its version resource fails the
+build. The Release build takes its update key from `WINDOWS_UPDATE_PUBLIC_KEY`, and CI gives
+it 32 bytes no private key was made for. Beside it, the job publishes `PitboardShare.exe`, the
+share target, with Native AOT. `PitboardShare.exe` names its package's publisher, so its build
+takes the signer's subject in `WINDOWS_SIGNER_SUBJECT`.
+`.github/scripts/pack-windows-share.ps1` packs its sparse package and signs it with a
+throwaway certificate, which nothing trusts and nothing registers.
+
+`.github/scripts/check-windows-app.ps1` fails a Release build that holds:
+
+- a fixture's text;
+- a package identity on any program but `PitboardShare.exe`, an identity there other than its
+  package's, or a package another publisher than the signer published;
+- an update key in `Pitboard.dll` other than the one the build was given, or one WinSparkle
+  would not take;
+- a feed other than the latest full release's;
+- a commit in `Pitboard.exe`'s version;
+- a program or library of Pitboard's whose version resource names another product or version
+  than `Cargo.toml`'s, or another file version than `.github/scripts/windows-versions.sh`
+  gives it;
+- a core opened before Windows is released, or one that takes its C runtime from a DLL;
+- a `WinSparkle.dll` for another machine.
+
+`test-windows-app.ps1` tests its identity, key, feed and version checks.
+
+The job reads each image's WebView2 Runtime, which the account windows need. As a fresh
+standard user, it runs `Pitboard.Windows.Tests`, a WinUI app that hosts its own tests, its
+WebView2 tests against a stand-in site on the loopback among them, `Pitboard.UITests`, which
+drives the built app with FlaUI, and `Pitboard.Share.Core.Tests` over `pitboard_share_ffi.dll`.
+Then, as the job's user, it runs the UI test of an elevated launch. It builds `Pitboard.Probe`,
+which the session machine runs to measure the app's notifications, and checks that it refuses
+an account without `pitboard-probe`'s throwaway marker.
+
+The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
+build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
+a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
+`.github/scripts/extract-msi.ps1` extracts it with `msiexec /a`, `check-windows-app.ps1`
+checks the files it holds, `check-windows-msi.ps1` its version, its layout, the command line
+in `bin` and the package it carries, the UI test of the release gate starts its
+`Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
+`check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
+unsigned MSI and on the package the job signed. For a change to the version the MSI carries,
+which needs only the .NET SDK:
+
+```sh
+sh .github/scripts/test-msi-version.sh
+```
 
 ### Run the Windows debug build
 
