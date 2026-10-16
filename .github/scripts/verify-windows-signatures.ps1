@@ -150,8 +150,9 @@ try {
                 $imageBuilt = Join-Path $work ([guid]::NewGuid().ToString('N'))
                 & $extract -Msi $before -Destination $imageBuilt | Out-Null
                 if (($files -join ', ') -ne ((Get-ImageFiles $imageBuilt) -join ', ')) { throw "$leaf holds other files than it was built with" }
-                # Signing an MSI adds its signature and changes none of its files or tables.
-                $changed = @($files | Where-Object {
+                # Signing an MSI adds its signature and changes none of its files or tables. msiexec /a writes a copy of the
+                # MSI of its own beside them, whose tables Compare-Tables reads from the MSI itself.
+                $changed = @($files | Where-Object { $_ -ne $leaf } | Where-Object {
                     (Get-FileHash -LiteralPath (Join-Path $image $_)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $imageBuilt $_)).Hash })
                 if ($changed) { throw "$leaf holds another $($changed -join ', ') than it was built with" }
                 $tables = @(Compare-Tables $file $before | Sort-Object -Unique)
