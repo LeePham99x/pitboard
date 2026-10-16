@@ -3,11 +3,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Pitboard.Core;
-using Pitboard.Views;
 using Pitboard.Windows;
 using Windows.System;
 
-namespace Pitboard.App;
+namespace Pitboard.Views;
 
 public sealed partial class MainWindow : Window
 {

@@ -122,8 +122,8 @@ public sealed class SparkleUpdates : IUpdates
         }
     }
 
-    // A question WinSparkle still waits on is answered no, so its thread lets Stop join it.
-    public void Stop()
+    // A question WinSparkle still waits on is answered no, so its thread lets Shutdown join it.
+    public void Shutdown()
     {
         lock (_lock)
         {

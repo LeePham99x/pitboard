@@ -10,7 +10,8 @@ using Launcher = Windows.System.Launcher;
 
 namespace Pitboard.App;
 
-public partial class App : Application
+// Makes the model and what shows it, and the main window when the model asks for it.
+public partial class App : Application, IIconTargets
 {
     private readonly AppStart _start;
     private readonly Handovers _handovers;
@@ -18,10 +19,11 @@ public partial class App : Application
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
     private IUpdates _updates = new NoUpdates();
     private AppModel? _model;
-    private WindowsNotifications? _notifications;
     private StartAtSignIn? _startAtSignIn;
     private HiddenWindow? _hidden;
     private NotifyIcon? _icon;
+    private IconCommands? _commands;
+    private Lifetime? _lifetime;
     private MenuHost? _menu;
     private MainWindow? _window;
     private AccountWindows? _accountWindows;
@@ -43,9 +45,9 @@ public partial class App : Application
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        _notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
+        var notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
         var queue = DispatcherQueue.GetForCurrentThread();
-        var model = Model(queue, _notifications);
+        var model = Model(queue, notifications);
         if (model is null)
         {
             Exit();
@@ -56,20 +58,25 @@ public partial class App : Application
         Shell.RestartAfterUpdate(_start.Identity.Build);
         _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
-        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: End, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
+        _hidden = new HiddenWindow(
+            sessionEnding: () => _lifetime?.EndSession(),
+            closing: () => _lifetime?.End(),
+            icon: happened => _commands?.Heard(happened),
+            taskbarCreated: () => _icon?.Readd());
         _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
         _icon.Show(model.MenuBar.Spoken);
-        _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
-        _accountWindows.Follow(model.AccountWindows);
+        var accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
+        _accountWindows = accountWindows;
+        accountWindows.Follow(model.AccountWindows);
         _updates = SparkleUpdates.For(
             _start.Identity.Build, SparkleUpdates.Key(typeof(App).Assembly), _version, _start.DataFolder,
-            action => queue.TryEnqueue(() => action()),
-            () => _accountWindows?.MayQuit() ?? Task.FromResult(true),
-            End);
+            action => queue.TryEnqueue(() => action()), accountWindows.MayQuit, () => _lifetime?.End());
+        _lifetime = new Lifetime(model, _icon, _updates, notifications, accountWindows.StopDownloads, Exit);
+        _commands = new IconCommands(model, _updates, this);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         // A click arrives on a thread of COM's; the model takes a message from any.
-        var launchedBy = _notifications.Start(intent => _model?.Send(intent));
+        var launchedBy = notifications.Start(intent => _model?.Send(intent));
         model.Send(new Intent.Start());
         if (launchedBy is not null)
         {
@@ -88,7 +95,7 @@ public partial class App : Application
 
         // A second launch's handover arrives on a thread of its own.
         _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
-        (_updates as SparkleUpdates)?.Start();
+        _updates.Start();
     }
 
     // Another copy's launch: its link waits for an account, and one without a link brings the window forward.
@@ -172,79 +179,30 @@ public partial class App : Application
         }
     }
 
-    private void OnIcon(IconEvent happened)
+    void IIconTargets.ShowMenu(IReadOnlyList<IconMenuEntry> entries, IconEvent.Menu at, Action opened, Action<IconCommand> chosen)
     {
-        switch (happened)
+        if (_menu is null)
         {
-            case IconEvent.Activated:
-                _model?.Send(new Intent.ShowWindow(Pane: null));
-                break;
-            case IconEvent.Menu at when _model is { } model:
-                if (_menu is null)
-                {
-                    _menu = new MenuHost();
-                    _menu.Closed += (_, _) => _menu = null;
-                }
-
-                _menu.Show(
-                    IconMenu.Entries(model, _updates),
-                    new PointInt32(at.X, at.Y),
-                    opened: () => model.Send(new Intent.Glanced()),
-                    chosen: Perform,
-                    cancelled: () => _icon?.ReturnFocus());
-                break;
+            _menu = new MenuHost();
+            _menu.Closed += (_, _) => _menu = null;
         }
+
+        _menu.Show(entries, new PointInt32(at.X, at.Y), opened, chosen, cancelled: () => _icon?.ReturnFocus());
     }
 
-    private void Perform(IconCommand command)
+    void IIconTargets.OpenLink(string url) => _ = Launcher.LaunchUriAsync(new Uri(url));
+
+    void IIconTargets.OpenWindow(WindowAccount window) => _accountWindows?.Open(window);
+
+    void IIconTargets.ShowSettings()
     {
-        switch (command)
-        {
-            case IconCommand.Send send:
-                _model?.Send(send.Intent);
-                break;
-            case IconCommand.OpenLink link:
-                _ = Launcher.LaunchUriAsync(new Uri(link.Url));
-                break;
-            case IconCommand.OpenWindow open:
-                _accountWindows?.Open(open.Window);
-                break;
-            case IconCommand.ShowSettings:
-                ShowWindow();
-                _window?.Select(null);
-                break;
-            case IconCommand.CheckForUpdates:
-                _updates.Check();
-                break;
-            case IconCommand.Quit:
-                Quit();
-                break;
-        }
+        ShowWindow();
+        _window?.Select(null);
     }
 
-    private void EndSession()
-    {
-        _icon?.Remove();
-        (_updates as SparkleUpdates)?.Stop();
-        _model?.Shutdown();
-        _notifications?.Stop();
-    }
+    Task<bool> IIconTargets.MayQuit() => _accountWindows?.MayQuit() ?? Task.FromResult(true);
 
-    // Quitting stops every download still running, so it asks first, as the macOS app does.
-    private async void Quit()
-    {
-        if (_accountWindows is null || await _accountWindows.MayQuit())
-        {
-            End();
-        }
-    }
-
-    private void End()
-    {
-        _accountWindows?.StopDownloads();
-        EndSession();
-        Exit();
-    }
+    void IIconTargets.Quit() => _lifetime?.End();
 
     private void Follow(WindowRequest request)
     {

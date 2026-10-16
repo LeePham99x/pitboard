@@ -17,7 +17,12 @@ public interface IUpdates
 
     bool ChecksAutomatically { get; set; }
 
+    // Once Pitboard's icon is in the notification area.
+    void Start();
+
     void Check();
+
+    void Shutdown();
 }
 
 public sealed class NoUpdates(string refusal = SettingsPage.NoUpdateKey) : IUpdates
@@ -42,7 +47,15 @@ public sealed class NoUpdates(string refusal = SettingsPage.NoUpdateKey) : IUpda
         set { }
     }
 
+    public void Start()
+    {
+    }
+
     public void Check()
+    {
+    }
+
+    public void Shutdown()
     {
     }
 }

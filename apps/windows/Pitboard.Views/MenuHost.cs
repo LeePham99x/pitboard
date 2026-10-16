@@ -2,15 +2,14 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
-using Pitboard.Views;
 using Pitboard.Windows;
 using Windows.Graphics;
 using WinRT.Interop;
 
-namespace Pitboard.App;
+namespace Pitboard.Views;
 
 // The foreground window under the icon's menu, as TrackPopupMenu asks: WinUI closes a flyout as its window deactivates.
-internal sealed partial class MenuHost : Window
+public sealed partial class MenuHost : Window
 {
     private readonly Grid _root = new();
     private readonly nint _handle;

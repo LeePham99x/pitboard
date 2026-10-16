@@ -1,12 +1,11 @@
 using Pitboard.Core;
-using Pitboard.Views;
 using Pitboard.Windows;
 
-namespace Pitboard.App;
+namespace Pitboard.Views;
 
 // WebView2's side of the account windows, and the Open link window. What they show, and which stores go, is the model's:
 // this tells it what the windows and their downloads did, and does what it says.
-internal sealed class AccountWindows
+public sealed class AccountWindows
 {
     private readonly AppModel _model;
     private readonly WebEnvironment _web;

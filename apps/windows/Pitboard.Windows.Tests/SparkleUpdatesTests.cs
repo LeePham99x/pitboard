@@ -210,8 +210,8 @@ public sealed class SparkleUpdatesTests
 
         var asked = Task.Run(sparkle.Events!.MayShutDown);
         Assert.IsTrue(asking.Wait(TimeSpan.FromSeconds(10)), "the question was never asked");
-        updates.Stop();
-        updates.Stop();
+        updates.Shutdown();
+        updates.Shutdown();
 
         Assert.IsTrue(asked.Wait(TimeSpan.FromSeconds(10)));
         Assert.IsFalse(asked.Result);
@@ -225,7 +225,7 @@ public sealed class SparkleUpdatesTests
         var sparkle = new StandInSparkle();
         var updates = (SparkleUpdates)Made(sparkle);
 
-        updates.Stop();
+        updates.Shutdown();
         updates.Check();
 
         Assert.AreEqual(0, sparkle.Stops);

@@ -224,7 +224,7 @@ public sealed class WindowsNotificationsTests
         }
     }
 
-    private sealed class StandInNotifications : IAppNotifications
+    internal sealed class StandInNotifications : IAppNotifications
     {
         private Action<IDictionary<string, string>>? _invoked;
 
