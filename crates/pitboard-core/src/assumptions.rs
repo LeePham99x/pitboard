@@ -299,6 +299,10 @@ pub fn read_from_build(assumption: &Assumption, strings: &str) -> Reading {
     }
 }
 
+/// The fewest bytes `pitboard-conformance` reads as a string of a build: a probe shorter than
+/// that is found only where the bytes beside it happen to be printable.
+pub const SHORTEST_RUN: usize = 6;
+
 /// Every printable run of `least` bytes or more, which is all a probe needs of a binary and
 /// is the one thing a compiled bundle reliably gives up.
 pub fn printable_runs(bytes: &[u8], least: usize) -> String {
@@ -572,6 +576,19 @@ mod tests {
                 assert!(
                     needle.len() >= 8,
                     "{}: `{needle}` is too short to mean one thing",
+                    a.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_probe_is_as_long_as_a_string_the_checker_reads() {
+        for a in all() {
+            for needle in a.probe {
+                assert!(
+                    needle.len() >= SHORTEST_RUN,
+                    "{}: `{needle}` is shorter than any string the checker reads",
                     a.name
                 );
             }

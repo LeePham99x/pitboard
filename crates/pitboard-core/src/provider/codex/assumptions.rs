@@ -280,14 +280,16 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     codex-rs/secrets/src/local.rs, at tag rust-v0.163.0, and the target, \
                     Comment and UTF-16 blob with its CRED_MAX_CREDENTIAL_BLOB_SIZE check in \
                     src/windows.rs of keyring 3.6.3, the version Codex's Cargo.lock pins; read \
-                    on 2026-10-16. Both win32 builds hold every name and both prefixes",
+                    on 2026-10-16. Both win32 builds hold every name and both prefixes. `cli|` \
+                    stands alone there, shorter than a string the checker reads, so the direct \
+                    store is read by its message",
         verified_against: "0.163.0",
         depends: "provider::codex::engine's refusal of `keyring`, `auto` and the secret store \
                   on Windows, and doctor's `codex_credential_manager`, which counts `cli|` and \
                   `secrets|` items by name while Codex keeps the file",
         probe: &[
             "Codex Auth",
-            "cli|",
+            "failed to deserialize CLI auth from keyring",
             "secrets|",
             "codex_auth.age",
             "Codex MCP Credentials",
