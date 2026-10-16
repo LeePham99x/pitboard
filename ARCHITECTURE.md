@@ -3168,7 +3168,8 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     `OpenAI.Codex_2p2nqsd0c76g0!App`, and Codex tells its process by that family. So
     Pitboard does too, wherever the package is installed. That the app runs its own
     `codex.exe` inside the package, and what closing its windows does, waits on the
-    session's step 10.
+    session's step 10. Read again the same day at `rust-v0.163.0` and in its win32 builds,
+    unchanged.
   - The Windows package holds `codex-command-runner.exe`, `codex-code-mode-host.exe`,
     `codex-windows-sandbox-setup.exe`, `codex-voice-host.exe` and `rg.exe` beside
     `codex.exe`. Only a program named `codex.exe`, in any case, is a running Codex.
