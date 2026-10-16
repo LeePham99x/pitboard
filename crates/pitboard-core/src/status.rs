@@ -592,9 +592,13 @@ fn ask_usage(
         Err(ProviderError::RateLimited { retry_after, .. }) => {
             Some(budget::Outcome::RateLimited(*retry_after))
         }
-        Err(ProviderError::Network { .. } | ProviderError::Unavailable { .. }) => {
-            Some(budget::Outcome::Unreachable)
-        }
+        // A refusal waits as an outage does, as every status but 200, 401, 403 and 429 did:
+        // asked again at once, it is answered the same.
+        Err(
+            ProviderError::Network { .. }
+            | ProviderError::Unavailable { .. }
+            | ProviderError::Refused { .. },
+        ) => Some(budget::Outcome::Unreachable),
         // A token that is refused, or an answer that is not understood, is not a reason to
         // wait: waiting fixes neither.
         Err(_) => None,
@@ -2097,6 +2101,33 @@ mod tests {
             .unwrap();
         assert!(alpha.signed_in, "Claude Code's row survives Codex's thread");
         assert_eq!(alpha.usage.as_ref().unwrap().windows[0].percent, 30.0);
+    }
+
+    // A refusal used to arrive as an unexpected status, which waited before the next ask.
+    #[test]
+    fn a_refused_usage_check_waits_as_an_outage_does() {
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
+        api.token_trouble(
+            "access-x",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+
+        let (answer, learned) = ask_usage(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            "acc-x",
+            &json!({"claudeAiOauth": {"accessToken": "access-x"}}),
+            false,
+            None,
+            true,
+        );
+
+        assert_eq!(answer.err(), Some(Stale::Refused));
+        assert!(
+            matches!(learned, Some((_, budget::Outcome::Unreachable))),
+            "{learned:?}"
+        );
     }
 
     /// Claude Code's `/logout` deletes the login and leaves the document behind, still
