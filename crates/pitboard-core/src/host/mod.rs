@@ -68,7 +68,7 @@ use windows as os;
 
 pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
-#[cfg(all(windows, feature = "test-support"))]
+#[cfg(all(windows, any(test, feature = "test-support")))]
 pub(crate) use windows::credman as windows_credman;
 #[cfg(all(windows, test))]
 pub(crate) use windows::seal::Dpapi;
