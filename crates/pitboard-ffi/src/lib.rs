@@ -41,8 +41,8 @@ mod versioninfo;
 
 mod sites;
 pub use sites::{
-    Conjunction, LinkRefusal, Site, SiteLink, link_refusal_reason, pitboard_link,
-    read_pitboard_link, site_link, site_names, sites, sites_for,
+    Conjunction, LinkRefusal, Site, SiteLink, read_pitboard_link, site_link, site_names, sites,
+    sites_for,
 };
 
 mod model;

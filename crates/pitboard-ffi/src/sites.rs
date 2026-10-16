@@ -102,7 +102,7 @@ impl From<pitboard_sites::SiteLink> for SiteLink {
     }
 }
 
-/// Why a link from outside is not opened. `link_refusal_reason` says it in a sentence.
+/// Why a link from outside is not opened. It says so in the sentence the account picker shows.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, uniffi::Error)]
 pub enum LinkRefusal {
     /// Nothing that reads as a link to a web page.
@@ -215,22 +215,6 @@ pub fn read_pitboard_link(text: String, scheme: String) -> Result<SiteLink, Link
     Ok(pitboard_sites::read_pitboard_link(&text, &scheme)?.into())
 }
 
-/// The Pitboard link of `scheme` that asks the app to open `text`, once `text` is checked as
-/// `site_link` checks a link: the link it reads as, with everything but the unreserved
-/// characters percent-encoded.
-#[uniffi::export]
-pub fn pitboard_link(text: String, scheme: String) -> Result<String, LinkRefusal> {
-    let link = pitboard_sites::SiteLink::parse(&text)?;
-    Ok(pitboard_sites::pitboard_link(&link, &scheme))
-}
-
-/// Why a link from outside is not opened, in the sentence the Share extension and the
-/// account picker show.
-#[uniffi::export]
-pub fn link_refusal_reason(refusal: LinkRefusal) -> String {
-    refusal.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,19 +271,20 @@ mod tests {
         );
     }
 
-    /// The bindings check a link and read a Pitboard link as pitboard-sites does, and say a
-    /// refusal in its sentence.
+    /// The bindings check a link and read a Pitboard link as pitboard-sites does, and a
+    /// refusal says its sentence.
     #[test]
     fn a_link_crosses_the_bindings_as_pitboard_sites_reads_it() {
         let link = site_link(" chat.openai.com/c/x?y=1#z ".into()).expect("a site's link");
         assert_eq!(link.url, "https://chatgpt.com/c/x?y=1#z");
         assert_eq!(link.site.host, "chatgpt.com");
-        let written = pitboard_link(link.url.clone(), "pitboard".into()).expect("a site's link");
         assert_eq!(
-            written,
-            "pitboard://open?url=https%3A%2F%2Fchatgpt.com%2Fc%2Fx%3Fy%3D1%23z"
+            read_pitboard_link(
+                "pitboard://open?url=https%3A%2F%2Fchatgpt.com%2Fc%2Fx%3Fy%3D1%23z".into(),
+                "pitboard".into()
+            ),
+            Ok(link)
         );
-        assert_eq!(read_pitboard_link(written, "pitboard".into()), Ok(link));
 
         let refused = site_link("https://claude.ai/magic-link#a".into()).expect_err("sign-in");
         assert_eq!(
@@ -309,7 +294,7 @@ mod tests {
             }
         );
         assert_eq!(
-            link_refusal_reason(refused),
+            refused.to_string(),
             "Pitboard doesn’t open claude.ai sign-in links from outside: one would sign the \
              window in as whoever the link belongs to. Sign in inside the account’s claude.ai \
              window."
@@ -319,15 +304,17 @@ mod tests {
             Err(LinkRefusal::Unreadable)
         );
         assert_eq!(
-            link_refusal_reason(LinkRefusal::NotASite {
+            LinkRefusal::NotASite {
                 host: Some("example.com".into())
-            }),
+            }
+            .to_string(),
             "Pitboard opens claude.ai and chatgpt.com links only. This link is on example.com."
         );
         assert_eq!(
-            link_refusal_reason(LinkRefusal::SignInLink {
+            LinkRefusal::SignInLink {
                 host: "example.com".into()
-            }),
+            }
+            .to_string(),
             "Pitboard opens claude.ai and chatgpt.com links only. This link is on example.com.",
             "a host no site has"
         );

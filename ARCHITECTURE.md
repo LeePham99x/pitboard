@@ -1090,18 +1090,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
   to stop, and the core, a tool's sign-in and the app's `AppControl`, `Notifications` and
   `LocalTime` are called on the model's own threads. The free functions block on nothing,
   and an app may make them where it likes: `check_name` and `downloads_quit_question`,
-  which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link`,
-  `read_pitboard_link`, `pitboard_link` and `link_refusal_reason`, which are
-  `pitboard-sites`' and read only what they are given too; the account windows' rules, such
-  as `store_id`, `window_accounts`, `decide_navigation` and `window_note`, which read only
-  what they are given as well, so a web view's delegate asks them as it is asked;
-  `download_destination`, which asks the file system whether each name it tries is taken;
-  `app_command_line`, which only joins paths; `can_run`, which asks the file system about
-  one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its profile
-  folder; `windows_records_key`, which reads only what it is given; `launch_refusal`, which
-  asks the system whether this process is elevated and which build it runs on; and
-  `fixture_names` and `fixture_page`, which read only what they are given.
+  which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link` and
+  `read_pitboard_link`, which are `pitboard-sites`' and read only what they are given too;
+  the account windows' rules, such as `store_id`, `window_accounts`, `decide_navigation` and
+  `window_note`, which read only what they are given as well, so a web view's delegate asks
+  them as it is asked; `download_destination`, which asks the file system whether each name
+  it tries is taken; `app_command_line`, which only joins paths; `can_run`, which asks the
+  file system about one path; `pitboard_directory`, which reads the environment it is given
+  and, without `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its
+  profile folder; `windows_records_key`, which reads only what it is given;
+  `launch_refusal`, which asks the system whether this process is elevated and which build
+  it runs on; and `fixture_names` and `fixture_page`, which read only what they are given.
   `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world in its
   folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
