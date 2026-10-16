@@ -28,14 +28,12 @@ public sealed class OpenLinkWindowTests
             Chosen: Main.Store, Open: "Open"));
 
     private static string? Selected(OpenLinkWindow window) =>
-        (Views.Element<ListView>(window.Content, "picker.accounts").SelectedItem as ListViewItem)?.Tag is WindowAccount account
-            ? account.Label
-            : null;
+        (Views.Element<ListView>(window.Content, "picker.accounts").SelectedItem as PickerAccount)?.Window.Label;
 
     private static void Select(OpenLinkWindow window, string label)
     {
         var list = Views.Element<ListView>(window.Content, "picker.accounts");
-        list.SelectedItem = list.Items.OfType<ListViewItem>().Single(item => item.Tag is WindowAccount { } account && account.Label == label);
+        list.SelectedItem = list.Items.OfType<PickerAccount>().Single(account => account.Window.Label == label);
     }
 
     [UITestMethod]

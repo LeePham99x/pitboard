@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -5,13 +6,16 @@ using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 using Pitboard.Views;
+using WinRT.Interop;
 
 namespace Pitboard.Windows.Tests;
 
 // An account's window over what the model says of the windows, with no model: it sends what a person did.
 [TestClass]
-public sealed class AccountWindowTests
+public sealed partial class AccountWindowTests
 {
+    private const uint Owner = 4;
+
     private static readonly WindowAccount Main = Items.Window("codex", "main", inUse: true);
 
     private static AccountWindowsShown Shown(WaitingShown waiting, params OpenWindow[] open) =>
@@ -37,6 +41,9 @@ public sealed class AccountWindowTests
             $"no dialog offered {content}");
         return found!;
     }
+
+    [LibraryImport("user32.dll")]
+    private static partial nint GetWindow(nint window, uint relation);
 
     // From the command bar's More, as a person chooses it.
     private static void RemoveWebsiteData(AccountWindow window)
@@ -240,6 +247,31 @@ public sealed class AccountWindowTests
         }
     }
 
+    // Microsoft's window guidance: a window that belongs to another is owned by it, so it stays above it and goes with it.
+    [UITestMethod]
+    public async Task ASignInWindowIsOwnedByItsAccountWindow()
+    {
+        await using var webs = await Webs.Make();
+        var sent = new List<Intent>();
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        try
+        {
+            window.Follow(Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)));
+            await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
+
+            await Page(window)!.Script(
+                $"window.open('{WebEnvironment.FixtureScheme}://{Main.Site.SignInHosts[0]}/sign-in', 'sign-in', 'width=480,height=600'); 0");
+
+            await Views.Until(() => window.SignIn is not null, "no sign-in window opened", Webs.Patience);
+            Assert.AreEqual(WindowNative.GetWindowHandle(window), GetWindow(WindowNative.GetWindowHandle(window.SignIn!), Owner));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // Remove website data asks first, empties the window's profile, and starts again at the site's home in a web view
     // of its own, so Back cannot bring the signed-in page back.
     [UITestMethod]
@@ -287,7 +319,7 @@ public sealed class AccountWindowTests
         RemoveWebsiteData(window);
         Views.Press(await DialogButton(window, "Remove"));
         window.Close();
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        await window.Removing!.WaitAsync(Webs.Patience);
 
         Assert.IsFalse(sent.Contains(new Intent.WebsiteDataRemoved(store)));
     }

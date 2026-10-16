@@ -2257,17 +2257,18 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   why a held store's entry opens nothing. `Launching` finds a launch's Pitboard link, and
   the one in a launch another copy hands over, and `Handovers` keeps what is handed over
   until the app has its model.
-- `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
-  Forward, Reload or Stop, and Downloads once the model lists a download of the window,
-  with **Remove website data…** under More, the window's note in an InfoBar, and the page,
-  or what stands for it until the model lists the window. It asks the download question
-  and the quit question as ContentDialogs. Find, zoom, script dialogs, file pickers, the
-  download list and the browser keys are WebView2's own.
-  `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
-  The icon's menu and an account's shortcut menu offer each window, from
-  `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
-  **Open link** window, over `AccountWindowsShown.picker`, with its buttons in a
-  ContentDialog's order: the default first, Cancel last.
+- `apps/windows/Pitboard.Views`: `AccountWindow` is the window, in XAML under Mica: a
+  command bar of Back, Forward, Reload or Stop, and Downloads once the model lists a
+  download of the window, with **Remove website data…** under More, the window's note in an
+  InfoBar, and the page, or an `EmptyState` standing for it until the model lists the
+  window. It asks the download question and the quit question as ContentDialogs. Find,
+  zoom, script dialogs, file pickers, the download list and the browser keys are WebView2's
+  own. `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's
+  window and owned by it. The icon's menu and an account's shortcut menu offer each window,
+  from `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
+  **Open link** window, in XAML under Mica, over `AccountWindowsShown.picker`, its accounts
+  a ListView over the model's `PickerAccount`s and its buttons in a ContentDialog's order:
+  the default first, Cancel last.
 - `apps/windows/Pitboard.Views/AccountWindows.cs` opens a window per store and brings an open
   one forward, tells the model each opened and closed, closes those the model says close,
   and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
@@ -4134,6 +4135,16 @@ Microsoft's documentation.
   follow a switch of mode while Pitboard runs is still to be read in pitboard-win; they
   stayed black on dark before (shots 21, 23 and 24 of 16 October 2026). The WinUI Gallery
   sets their colours from `ActualThemeChanged` in its `TitleBarHelper`.
+- Microsoft's Manage app windows page (updated 14 October 2026) gives a window that belongs
+  to another an owner window, set through Win32 interop, and the WinUI Gallery's
+  `ModalWindow.xaml.cs` sets it with `SetWindowLongPtr(GWLP_HWNDPARENT)`. An owned window
+  stays above its owner, is hidden while its owner is minimized and is destroyed with it
+  ([Window features](https://learn.microsoft.com/windows/win32/winmsg/window-features#owned-windows),
+  updated 21 February 2026). So a sign-in window is owned
+  by its account window, and not modal: the account window's page stays usable behind it
+  (`AccountWindowTests.ASignInWindowIsOwnedByItsAccountWindow`). The account and Open link
+  windows are under `MicaBackdrop`, as the main window is, with the system title bar the
+  Gallery's `ModalWindow` keeps.
 - Microsoft's window management guidance (updated 11 March 2025) saves a window's monitor,
   size, place and state as it closes and restores them as it opens, fits a window whose last
   place no screen holds within one, cascades a new application window from the upper left,

@@ -50,3 +50,4 @@ WIN32_ERROR
 RegisterApplicationRestart
 GetWindowPlacement
 SetWindowPlacement
+SetWindowLongPtr

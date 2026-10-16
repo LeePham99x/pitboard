@@ -29,6 +29,7 @@
         Text="{x:Bind Detail, Mode=OneWay}"
         Visibility="{x:Bind local:EmptyState.Said(Detail), Mode=OneWay}"
         Style="{StaticResource SecondaryTextBlockStyle}"
+        IsTextSelectionEnabled="True"
         TextAlignment="Center" />
     <Button
         x:Name="ChoiceButton"

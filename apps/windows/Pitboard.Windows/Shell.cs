@@ -42,19 +42,7 @@ public static class Shell
     }
 
     // Where the person's downloads go, wherever they moved the folder.
-    public static unsafe string Downloads()
-    {
-        PInvoke.SHGetKnownFolderPath(
-            PInvoke.FOLDERID_Downloads, KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY, null, out var path).ThrowOnFailure();
-        try
-        {
-            return path.ToString();
-        }
-        finally
-        {
-            PInvoke.CoTaskMemFree(path);
-        }
-    }
+    public static string Downloads() => KnownFolder(PInvoke.FOLDERID_Downloads);
 
     // The .NET SDK numbers an ApplicationIcon 32512, IDI_APPLICATION's id.
     public static unsafe nint AppIcon()
@@ -72,6 +60,10 @@ public static class Shell
     public static double Scale(nint window) => PInvoke.GetDpiForWindow((HWND)window) / 96.0;
 
     public static bool InFront(nint window) => PInvoke.GetForegroundWindow() == (HWND)window;
+
+    // An owned window stays above its owner, hides while it is minimized and goes with it. WinUI has no API for an owner.
+    public static void Own(nint window, nint owner) =>
+        PInvoke.SetWindowLongPtr((HWND)window, WINDOW_LONG_PTR_INDEX.GWLP_HWNDPARENT, owner);
 
     public static void Refuse(string message) =>
         PInvoke.MessageBox(HWND.Null, message, "Pitboard", MESSAGEBOX_STYLE.MB_OK | MESSAGEBOX_STYLE.MB_ICONERROR);

@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
@@ -10,33 +9,16 @@ using WinRT.Interop;
 
 namespace Pitboard.Views;
 
-// A window for one site and one account, not a browser: no address bar and no tabs of its own. WebView2's find bar,
-// zoom, dialogs, download list and keys serve its page, and a page that leaves the site goes to the browser.
 public sealed partial class AccountWindow : Window, ISessionWindow
 {
     private readonly WebEnvironment _web;
     private readonly Downloads _downloads;
     private readonly Action<Intent> _send;
     private readonly DialogHost _dialogs;
-    private readonly AppBarButton _back = Command("Back", Symbol.Back, "Show the previous page");
-    private readonly AppBarButton _forward = Command("Forward", Symbol.Forward, "Show the next page");
-    private readonly AppBarButton _reload = Command("Reload", Symbol.Refresh, "Load this page again");
-    private readonly AppBarButton _stop = Command("Stop", Symbol.Cancel, "Stop loading this page");
-    private readonly AppBarButton _showDownloads = Command("Downloads", Symbol.Download, "Show this window’s downloads");
-    private readonly AppBarButton _removeData = Command("Remove website data…", Symbol.Delete, null);
-    private readonly InfoBar _note = new() { Severity = InfoBarSeverity.Informational, IsClosable = true };
-    private readonly Grid _page = new();
-    private readonly StackPanel _standIn = new()
-    {
-        HorizontalAlignment = HorizontalAlignment.Center,
-        VerticalAlignment = VerticalAlignment.Center,
-        MaxWidth = 480,
-        Spacing = 12,
-    };
-
     private WebView2? _view;
     private WebSession? _session;
     private SignInWindow? _signIn;
+    private Action? _standInChoice;
     private bool _starting;
     private bool _closed;
 
@@ -46,41 +28,9 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _web = web;
         _downloads = downloads;
         _send = send;
-        var bar = new CommandBar
-        {
-            HorizontalAlignment = HorizontalAlignment.Left,
-            DefaultLabelPosition = CommandBarDefaultLabelPosition.Collapsed,
-            PrimaryCommands = { _back, _forward, _reload, _stop, _showDownloads },
-            SecondaryCommands = { _removeData },
-        };
-        _stop.Visibility = Visibility.Collapsed;
-        _showDownloads.Visibility = Visibility.Collapsed;
-        _back.Click += (_, _) => Page?.GoBack();
-        _forward.Click += (_, _) => Page?.GoForward();
-        _reload.Click += (_, _) => TryAgain();
-        _stop.Click += (_, _) => Page?.Stop();
-        _showDownloads.Click += (_, _) => Page?.OpenDefaultDownloadDialog();
-        _removeData.Click += (_, _) => RemoveWebsiteData();
-        AutomationProperties.SetAutomationId(_note, "window.note");
-        _note.CloseButtonClick += (_, _) => _session?.Dismiss();
-        _page.Children.Add(_standIn);
-        var root = new Grid
-        {
-            RowDefinitions =
-            {
-                new RowDefinition { Height = GridLength.Auto },
-                new RowDefinition { Height = GridLength.Auto },
-                new RowDefinition { Height = new GridLength(1, GridUnitType.Star) },
-            },
-        };
-        Grid.SetRow(_note, 1);
-        Grid.SetRow(_page, 2);
-        root.Children.Add(bar);
-        root.Children.Add(_note);
-        root.Children.Add(_page);
-        Content = root;
+        InitializeComponent();
         WindowChrome.Apply(this);
-        _dialogs = new DialogHost(() => root.XamlRoot);
+        _dialogs = new DialogHost(() => Root.XamlRoot);
         var scale = Shell.Scale(WindowNative.GetWindowHandle(this));
         AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(800 * scale)));
         WindowChrome.MinimumSize(this, 480, 360);
@@ -100,6 +50,9 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     internal SignInWindow? SignIn => _signIn;
 
+    // The last Remove website data, until it has done all it does.
+    internal Task? Removing { get; private set; }
+
     // The window's page, until WebView2 closes it with its browser process.
     private CoreWebView2? Page => _session is { PageClosed: true } ? null : _view?.CoreWebView2;
 
@@ -109,7 +62,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     {
         var downloaded = shown.Downloads.Any(
             download => string.Equals(download.Store, Store, StringComparison.OrdinalIgnoreCase));
-        _showDownloads.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
+        DownloadsButton.Visibility = Look.Shown(downloaded);
         var open = shown.Open.FirstOrDefault(window => string.Equals(window.Store, Store, StringComparison.OrdinalIgnoreCase));
         if (open is not null)
         {
@@ -156,24 +109,13 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     public void Changed() => ShowSession();
 
-    private static AppBarButton Command(string label, Symbol symbol, string? tip)
-    {
-        var button = new AppBarButton { Label = label, Icon = new SymbolIcon(symbol) };
-        if (tip is not null)
-        {
-            ToolTipService.SetToolTip(button, tip);
-        }
-
-        return button;
-    }
-
     private void Show(OpenWindow? open)
     {
         if (open is null)
         {
             Title = "Account";
-            _removeData.IsEnabled = false;
-            _back.IsEnabled = _forward.IsEnabled = _reload.IsEnabled = false;
+            RemoveDataButton.IsEnabled = false;
+            BackButton.IsEnabled = ForwardButton.IsEnabled = ReloadButton.IsEnabled = false;
             return;
         }
 
@@ -227,15 +169,14 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _view?.Close();
         if (_view is not null)
         {
-            _page.Children.Remove(_view);
+            PageArea.Children.Remove(_view);
         }
 
         var view = new WebView2();
         _view = view;
-        _page.Children.Insert(0, view);
+        PageArea.Children.Insert(0, view);
         var environment = await _web.Made();
         var page = await WebViews.Made(view, environment, WebEnvironment.Options(environment, Store));
-        // Under Downloads, at the left of the command bar.
         page.DefaultDownloadDialogCornerAlignment = CoreWebView2DefaultDownloadDialogCornerAlignment.TopLeft;
         return page;
     }
@@ -254,36 +195,24 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         switch (waiting.Shown)
         {
             case WaitingShown.Reading reading:
-                _standIn.Children.Clear();
-                _standIn.Children.Add(new ProgressRing { IsActive = true });
-                _standIn.Children.Add(new TextBlock { Text = reading.Title, HorizontalAlignment = HorizontalAlignment.Center });
-                _standIn.Visibility = Visibility.Visible;
+                ShowStandIn(mark: "", reading.Title, detail: "", choice: null, enabled: false, chosen: null, busy: true);
                 break;
             case WaitingShown.ReadFailed failed:
-                StandIn(Glyphs.Warning, failed.Title, failed.Detail, failed.Retry.Title, failed.Retry.Enabled, () => _send(failed.Retry.Intent));
+                ShowStandIn(Glyphs.Warning, failed.Title, failed.Detail, failed.Retry.Title, failed.Retry.Enabled, () => _send(failed.Retry.Intent));
                 break;
         }
     }
 
-    private void StandIn(string mark, string title, string detail, string? choice, bool enabled, Action? chosen)
+    private void ShowStandIn(string mark, string title, string detail, string? choice, bool enabled, Action? chosen, bool busy = false)
     {
-        _standIn.Children.Clear();
-        _standIn.Children.Add(new FontIcon { Glyph = mark, FontSize = 32 });
-        _standIn.Children.Add(new TextBlock
-        {
-            Text = title,
-            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"],
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        _standIn.Children.Add(new TextBlock { Text = detail, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, IsTextSelectionEnabled = true });
-        if (choice is not null && chosen is not null)
-        {
-            var button = new Button { Content = choice, IsEnabled = enabled, HorizontalAlignment = HorizontalAlignment.Center };
-            button.Click += (_, _) => chosen();
-            _standIn.Children.Add(button);
-        }
-
-        _standIn.Visibility = Visibility.Visible;
+        StandIn.Glyph = mark;
+        StandIn.Busy = busy;
+        StandIn.Title = title;
+        StandIn.Detail = detail;
+        StandIn.Choice = chosen is null ? "" : choice ?? "";
+        StandIn.IsChoiceEnabled = enabled;
+        _standInChoice = chosen;
+        StandIn.Visibility = Visibility.Visible;
         if (_view is not null)
         {
             _view.Visibility = Visibility.Collapsed;
@@ -297,18 +226,18 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        _note.Message = session.Note is { } note ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
-        _note.IsOpen = session.Note is not null;
-        _removeData.IsEnabled = !session.PageClosed;
-        _reload.IsEnabled = true;
+        Note.Message = session.Note is { } note ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
+        Note.IsOpen = session.Note is not null;
+        RemoveDataButton.IsEnabled = !session.PageClosed;
+        ReloadButton.IsEnabled = true;
         ShowHistory();
         if (session.Failure is { } failure)
         {
-            StandIn(Glyphs.Warning, "Couldn’t load the page", failure, "Try again", enabled: true, TryAgain);
+            ShowStandIn(Glyphs.Warning, "Couldn’t load the page", failure, "Try again", enabled: true, TryAgain);
             return;
         }
 
-        _standIn.Visibility = Visibility.Collapsed;
+        StandIn.Visibility = Visibility.Collapsed;
         if (_view is not null)
         {
             _view.Visibility = Visibility.Visible;
@@ -346,22 +275,38 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     }
 
     private void Unopened(string why) =>
-        StandIn(Glyphs.Warning, "Couldn’t open this window", why, choice: null, enabled: false, chosen: null);
+        ShowStandIn(Glyphs.Warning, "Couldn’t open this window", why, choice: null, enabled: false, chosen: null);
 
     private void ShowHistory()
     {
-        _back.IsEnabled = Page?.CanGoBack == true;
-        _forward.IsEnabled = Page?.CanGoForward == true;
+        BackButton.IsEnabled = Page?.CanGoBack == true;
+        ForwardButton.IsEnabled = Page?.CanGoForward == true;
     }
 
     private void ShowLoading(bool loading)
     {
-        _reload.Visibility = loading ? Visibility.Collapsed : Visibility.Visible;
-        _stop.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
+        ReloadButton.Visibility = Look.Shown(!loading);
+        StopButton.Visibility = Look.Shown(loading);
     }
 
+    private void OnBack(object sender, RoutedEventArgs args) => Page?.GoBack();
+
+    private void OnForward(object sender, RoutedEventArgs args) => Page?.GoForward();
+
+    private void OnReload(object sender, RoutedEventArgs args) => TryAgain();
+
+    private void OnStop(object sender, RoutedEventArgs args) => Page?.Stop();
+
+    private void OnShowDownloads(object sender, RoutedEventArgs args) => Page?.OpenDefaultDownloadDialog();
+
+    private void OnRemoveData(object sender, RoutedEventArgs args) => Removing = RemoveWebsiteData();
+
+    private void OnNoteClosed(InfoBar sender, object args) => _session?.Dismiss();
+
+    private void OnStandInChosen(object sender, RoutedEventArgs args) => _standInChoice?.Invoke();
+
     // The site is not told: the account stays signed in everywhere else.
-    private async void RemoveWebsiteData()
+    private async Task RemoveWebsiteData()
     {
         if (_session is not { } session)
         {
