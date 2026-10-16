@@ -63,7 +63,7 @@ public sealed class WindowsAppsTests
         var shut = await apps.Quit(StandInApp.Id).WaitAsync(Patience);
         var took = timer.ElapsedMilliseconds;
         var ended = standIn.App.WaitForExit(Patience);
-        Console.WriteLine(
+        Say(
             $"CF9: RmShutdown gave {shut} after {took} ms; the stand-in that honours ENDSESSION_CLOSEAPP "
             + $"{(ended ? $"exited {standIn.App.ExitCode}" : "runs on")}, its console child {(standIn.Child.HasExited ? "ended" : "runs on")}");
 
@@ -81,7 +81,7 @@ public sealed class WindowsAppsTests
 
         var timer = Stopwatch.StartNew();
         var shut = await apps.Quit(StandInApp.Id).WaitAsync(Patience);
-        Console.WriteLine(
+        Say(
             $"CF9: RmShutdown gave {shut} after {timer.ElapsedMilliseconds} ms; the stand-in that refuses "
             + $"{(standIn.App.HasExited ? "ended" : "runs on")}, its console child {(standIn.Child.HasExited ? "ended" : "runs on")}");
 
@@ -99,5 +99,12 @@ public sealed class WindowsAppsTests
         Assert.IsNull(own.Family);
         Assert.IsNull(own.Aumid);
         Assert.IsTrue(own.OwnsAWindow);
+    }
+
+    // Past MSTest, which keeps a test method's Console output in its TRX alone, so the job's log has it.
+    private static void Say(string fact)
+    {
+        using var output = new StreamWriter(Console.OpenStandardOutput());
+        output.WriteLine(fact);
     }
 }
