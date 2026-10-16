@@ -47,6 +47,12 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
 
     public static string Command(string exe) => $"\"{exe}\" {Launching.SignIn}";
 
+    // Whatever its arguments, as an uninstall finds a value this Pitboard.exe wrote.
+    public static bool Names(string? command, string exe) =>
+        command is not null
+            && Launching.Arguments(command).FirstOrDefault() is { } program
+            && string.Equals(program, exe, StringComparison.OrdinalIgnoreCase);
+
     // Paths are compared as Windows compares them, without case.
     public bool Read() =>
         Refusal is null && string.Equals(key.Value(Name), Command(exe), StringComparison.OrdinalIgnoreCase);

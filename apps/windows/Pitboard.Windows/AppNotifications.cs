@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 
@@ -25,6 +26,13 @@ public interface IAppNotifications
 public sealed class SystemAppNotifications : IAppNotifications
 {
     private static AppNotificationManager Manager => AppNotificationManager.Default;
+
+    // Register names the class a click starts under the AppUserModelId's key, which it alone writes.
+    public static bool Registered(string aumid)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey($@"Software\Classes\AppUserModelId\{aumid}");
+        return key?.GetValue("CustomActivator") is string;
+    }
 
     public bool IsSupported() => AppNotificationManager.IsSupported();
 

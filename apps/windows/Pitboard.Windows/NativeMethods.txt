@@ -47,3 +47,4 @@ CCH_RM_SESSION_KEY
 IApplicationActivationManager
 ApplicationActivationManager
 WIN32_ERROR
+RegisterApplicationRestart

@@ -680,15 +680,20 @@ window loads its site, and whatever the site's pages load, as a browser would.
     a `WarmRow`. `AccountWindow` and `SignInWindow` are the account windows.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
-    launch, and `App` makes the model, over this PC or in a Debug build started with
-    `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
-    main window when the model asks, and asks for it on a launch from Start or a shortcut,
-    since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
-    a notification opens none. It opens the account windows through `AccountWindows`. It stops
-    the model and unregisters on Exit, and as the session ends stops the model, or ends where
-    Restart Manager asks. `MenuHost` is the pixel of a window the icon's menu opens from.
-    `MainWindow` shows a pane for each of the model's `Pane`s and its settings page, and takes
-    Ctrl+N and Ctrl+comma from any of them.
+    launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
+    the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
+    exits with no window and no single-instance key. `App` makes the model, over this PC or
+    in a Debug build started with `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers
+    for notifications, opens the main window when the model asks, and asks for it on a
+    launch from Start or a shortcut, since Windows puts a new icon in the overflow; a start
+    at sign-in, after an update or from a notification opens none. A Release build asks,
+    through `RegisterApplicationRestart`, to be started with `--updated` after an update
+    Restart Manager closed it for, and never after a crash, a hang or a reboot. It opens the
+    account windows through `AccountWindows`. It stops the model and unregisters on Exit,
+    and as the session ends stops the model, or ends where Restart Manager asks. `MenuHost`
+    is the pixel of a window the icon's menu opens from. `MainWindow` shows a pane for each
+    of the model's `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any
+    of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     `Pitboard.StandInApp`, never shipped, is the app `WindowsAppsTests` ask Restart Manager

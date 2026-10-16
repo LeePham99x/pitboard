@@ -53,6 +53,7 @@ public partial class App : Application
         }
 
         _model = model;
+        Shell.RestartAfterUpdate(_start.Identity.Build);
         _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
         _hidden = new HiddenWindow(sessionEnding: EndSession, closing: End, icon: OnIcon, taskbarCreated: () => _icon?.Readd());

@@ -76,7 +76,7 @@ public static class Launching
     private static bool Unasked(HashSet<string> given) =>
         given.Contains(SignIn) || given.Contains(Updated) || given.Contains(Notified);
 
-    private static unsafe string[] Arguments(string commandLine)
+    internal static unsafe string[] Arguments(string commandLine)
     {
         var split = PInvoke.CommandLineToArgv(commandLine, out var count);
         if (split is null)
