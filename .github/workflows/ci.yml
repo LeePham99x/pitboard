@@ -567,6 +567,8 @@ jobs:
       SHARE_TEST_SIGNER: CN=Pitboard Share Test
       # The Release build's update key: 32 bytes no private key was made for, so it accepts no update.
       UPDATE_TEST_KEY: q1exPQ+LBkab+sdFuHAN+8eRpiHNak3rq4kpW8aH2G4=
+      # pitboard_ffi.dll and pitboard_share_ffi.dll carry a version resource, as a release's do.
+      PITBOARD_REQUIRE_VERSIONINFO: '1'
     defaults:
       run:
         shell: bash
@@ -582,6 +584,10 @@ jobs:
         with:
           triple: ${{ matrix.triple }}
           gated-pitboard: 'false'
+      - id: manifest
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: pitboard_ffi.dll and pitboard_share_ffi.dll as a 0.x release builds them
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
@@ -621,6 +627,7 @@ jobs:
         env:
           RUNTIME: ${{ matrix.runtime }}
           PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ steps.manifest.outputs.version }}
           WINDOWS_SIGNER_SUBJECT: ${{ env.SHARE_TEST_SIGNER }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
@@ -628,8 +635,8 @@ jobs:
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" \
-            -p:WINDOWS_UPDATE_PUBLIC_KEY="$UPDATE_TEST_KEY"
-          dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out/release" \
+            -p:WINDOWS_UPDATE_PUBLIC_KEY="$UPDATE_TEST_KEY" -p:Version="$VERSION"
+          dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out/release" -p:Version="$VERSION" \
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
           dotnet publish Pitboard.Share.Core.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/share-tests" \
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
@@ -649,22 +656,28 @@ jobs:
           ./.github/scripts/pack-windows-share.ps1 -Folder target/windows-app/release
           -Publisher $env:SHARE_TEST_SIGNER -Version '1.0.0.0' -TestCertificate
       # In the environment the gated pitboard_ffi.dll was built in, as a release runs it.
-      - name: "The Release build: no fixture, identity on PitboardShare.exe alone, its update key, the release gate, the core's C runtime inside it"
+      - name: "The Release build: no fixture, identity on PitboardShare.exe alone, its update key, one version, the release gate, the core's C runtime inside it"
         shell: pwsh
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
           CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's, and another update key
+          -Version $env:VERSION
+      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key and another version
         shell: pwsh
         env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
+          -Version $env:VERSION
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh

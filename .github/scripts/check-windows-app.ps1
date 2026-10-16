@@ -1,9 +1,10 @@
 # Checks the Windows app as a Release publish lays it out, for CI and the release alike: no
 # fixture in any of its programs, a package identity on PitboardShare.exe alone and the same one
 # in its package, published by the signer, the update key the build was given and a version
-# WinSparkle can compare, and the core built without the cfg that opens it before Windows is
-# released, for this machine and with its C runtime inside it. It reads the files and runs none
-# of them, in the environment the core was built in.
+# WinSparkle can compare, one product name and version on every program of Pitboard's, and the
+# core built without the cfg that opens it before Windows is released, for this machine and with
+# its C runtime inside it. It reads the files and runs none of them, in the environment the core
+# was built in.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -12,7 +13,9 @@ param(
     # The subject of the certificate that signs PitboardShare.msix, where the folder holds one.
     [string] $Signer,
     # The Windows update public key the build was given in WINDOWS_UPDATE_PUBLIC_KEY, if any.
-    [string] $UpdateKey
+    [string] $UpdateKey,
+    # The version Cargo.toml names, which the app's build was given too.
+    [Parameter(Mandatory)] [string] $Version
 )
 $ErrorActionPreference = 'Stop'
 
@@ -217,6 +220,17 @@ if ((Get-FileHash -LiteralPath $library).Hash -ne (Get-FileHash -LiteralPath $ga
     throw "the published pitboard_ffi.dll is not $gated"
 }
 Write-Output 'pitboard_ffi.dll is the one built here, with neither the cfg nor a feature for tests.'
+
+# SignPath signs only programs whose version resource names their product and one version.
+$ours = @('Pitboard.exe', 'pitboard_ffi.dll', 'PitboardShare.exe', 'pitboard_share_ffi.dll') |
+    Where-Object { Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf }
+foreach ($name in $ours) {
+    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root $name))
+    if ($info.ProductName -cne 'Pitboard' -or $info.ProductVersion -cne $Version) {
+        throw "$name names the product '$($info.ProductName)' at '$($info.ProductVersion)', not Pitboard at $Version"
+    }
+}
+Write-Output "$($ours -join ', ') name Pitboard at $Version."
 
 $machine = @{ 'x86_64-pc-windows-msvc' = 'AMD64'; 'aarch64-pc-windows-msvc' = 'ARM64' }[$Triple]
 $readobj = Get-Command llvm-readobj -ErrorAction SilentlyContinue

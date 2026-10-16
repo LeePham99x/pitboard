@@ -1,6 +1,6 @@
-# Tests check-windows-app.ps1's package identity and update key checks against the Release folder
-# CI's windows-app job built and packed: each case is a folder of its own with copies of the files
-# those checks read, one thing changed. It runs none of them.
+# Tests check-windows-app.ps1's package identity, update key and version checks against the
+# Release folder CI's windows-app job built and packed: each case is a folder of its own with
+# copies of the files those checks read, one thing changed. It runs none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -8,7 +8,9 @@ param(
     # The subject PitboardShare.exe was built to name, and its package was packed for.
     [Parameter(Mandatory)] [string] $Signer,
     # The update key the Release build was given.
-    [Parameter(Mandatory)] [string] $UpdateKey
+    [Parameter(Mandatory)] [string] $UpdateKey,
+    # The version the Release build was given.
+    [Parameter(Mandatory)] [string] $Version
 )
 $ErrorActionPreference = 'Stop'
 
@@ -18,7 +20,7 @@ $root = (Resolve-Path -LiteralPath $Folder).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) "test-windows-app-$([guid]::NewGuid().ToString('N'))"
 $other = 'CN=Someone Else'
 # Read here, at the script's level: PSScriptAnalyzer does not count a use inside a function.
-$checked = @{ Triple = $Triple; GatedLibrary = $GatedLibrary }
+$checked = @{ Triple = $Triple; GatedLibrary = $GatedLibrary; Version = $Version }
 $givenKey = $UpdateKey
 
 function New-Case([string] $Name, [string[]] $Files) {
@@ -30,9 +32,11 @@ function New-Case([string] $Name, [string[]] $Files) {
     $case
 }
 
-function Assert-Refused([string] $Case, [string] $In, [string] $By, [string] $Expected, [string] $Key = $givenKey) {
+function Assert-Refused([string] $Case, [string] $In, [string] $By, [string] $Expected, [string] $Key = $givenKey, [hashtable] $Instead = @{}) {
+    $given = $checked.Clone()
+    foreach ($name in $Instead.Keys) { $given[$name] = $Instead[$name] }
     try {
-        & $check -Folder $In -Signer $By -UpdateKey $Key @checked | Out-Null
+        & $check -Folder $In -Signer $By -UpdateKey $Key @given | Out-Null
     } catch {
         if ($_.Exception.Message -notmatch $Expected) {
             throw "$Case`: refused for another reason: $($_.Exception.Message)"
@@ -64,8 +68,11 @@ try {
     Assert-Refused 'an update key other than the one the build was given' (New-Case 'key' $whole) $Signer `
         "carries the update key '.+', and the build was given '$([regex]::Escape($anotherKey))'" $anotherKey
     Assert-Refused 'an update key the build was not given' (New-Case 'keyless' $whole) $Signer 'and the build was given none' ''
+
+    Assert-Refused 'a version the build was not given' (New-Case 'version' ($whole + 'pitboard_ffi.dll')) $Signer `
+        "names the product 'Pitboard' at '.+', not Pitboard at 9\.9\.9" -Instead @{ Version = '9.9.9' }
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1 refused every package identity and update key it should.'
+Write-Output 'check-windows-app.ps1 refused every package identity, update key and version it should.'
 exit 0

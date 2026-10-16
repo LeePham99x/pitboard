@@ -442,7 +442,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   (`Pitboard::warm_up`, which looks at the files first), with a refusal row of its own, and
   says each warm-up, each reason an account is held back once until it warms up, and why
   nothing is warmed up here once until that ends. No warm-up error ends it. `warm.rs` is
-  `pitboard warm`.
+  `pitboard warm`. `build/versioninfo.rs` is the Windows version resource SignPath asks of
+  what it signs: ProductName `Pitboard` and the crate's version. The build scripts of
+  `pitboard-ffi` and `pitboard-share-ffi` include it by `#[path]` and link it into their
+  DLLs, compiled by the Windows SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is
+  `X.Y.Z.N` for beta N and `X.Y.Z.1000` otherwise, so each version numbers above the one
+  before. A build without a resource compiler warns and goes on, unless
+  `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows-app` job sets.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
@@ -796,7 +802,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
     Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside
-    it, and `test-windows-app.ps1` tests the check's package identity and update key refusals.
+    it, and `test-windows-app.ps1` tests the check's package identity, update key and version
+    refusals.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.

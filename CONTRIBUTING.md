@@ -365,8 +365,11 @@ its package's publisher, so its build takes the signer's subject in `WINDOWS_SIG
 identity on any program but `PitboardShare.exe`, a `PitboardShare.exe` that names another
 identity than its package or a package another publisher than the signer, an update key in
 `Pitboard.dll` other than the one the build was given, a commit in `Pitboard.exe`'s version,
-a core opened before Windows is released, the core's C runtime and a `WinSparkle.dll` for
-another machine, and `test-windows-app.ps1` tests its identity and key checks. The Release
+a program or library of Pitboard's whose version resource names another product or version
+than `Cargo.toml`'s, a core opened before Windows is released, the core's C runtime and a
+`WinSparkle.dll` for another machine, and `test-windows-app.ps1` tests its identity, key and
+version checks. The job sets `PITBOARD_REQUIRE_VERSIONINFO=1`, so a `pitboard_ffi.dll` or
+`pitboard_share_ffi.dll` built without its version resource fails the build. The Release
 build takes its update key from `WINDOWS_UPDATE_PUBLIC_KEY`; CI gives it 32 bytes no private
 key was made for. It reads each image's WebView2 Runtime, which the account windows need. The job runs `Pitboard.Windows.Tests`, a WinUI app that hosts
 its own tests, its WebView2 tests against a stand-in site on the loopback among them,
