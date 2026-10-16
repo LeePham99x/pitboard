@@ -14,4 +14,7 @@ public sealed class Runner
                 "Pitboard.UITests runs only on a GitHub-hosted runner: it moves the mouse, types into whatever has focus and replaces the clipboard");
         }
     }
+
+    [AssemblyCleanup]
+    public static void RemoveTheRunsFolders() => Launched.RemoveWeb();
 }
