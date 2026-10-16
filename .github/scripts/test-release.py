@@ -1,5 +1,8 @@
 # The release workflow's scripts, run on what a tag and crates.io could hand them.
+import base64
+import hashlib
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -9,12 +12,15 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from xml.etree import ElementTree
 
 REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
 WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
+WINDOWS_APPCAST = REPO / ".github" / "scripts" / "windows-appcast.py"
+WINDOWS_APP = REPO / "apps" / "windows" / "Pitboard.App" / "Pitboard.App.csproj"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
 TARBALL_TARGETS = (
@@ -50,6 +56,104 @@ NO_BUILD_NUMBER = (
 
 def run(*args):
     return subprocess.run(["sh", *map(str, args)], capture_output=True, text=True)
+
+
+# Ed25519 as RFC 8032's section 6 writes it, Sparkle's and WinSparkle's signatures, so a test
+# signs with a key it makes and reads a signature back without a library.
+ED_P = 2**255 - 19
+ED_L = 2**252 + 27742317777372353535851937790883648493
+ED_D = -121665 * pow(121666, ED_P - 2, ED_P) % ED_P
+ED_ROOT = pow(2, (ED_P - 1) // 4, ED_P)
+
+
+def ed_add(a, b):
+    x1, y1, z1, t1 = a
+    x2, y2, z2, t2 = b
+    e1 = (y1 - x1) * (y2 - x2) % ED_P
+    e2 = (y1 + x1) * (y2 + x2) % ED_P
+    e3 = t1 * 2 * ED_D * t2 % ED_P
+    e4 = z1 * 2 * z2 % ED_P
+    e, f, g, h = e2 - e1, e4 - e3, e4 + e3, e2 + e1
+    return (e * f % ED_P, g * h % ED_P, f * g % ED_P, e * h % ED_P)
+
+
+def ed_times(n, point):
+    total = (0, 1, 1, 0)
+    while n:
+        if n & 1:
+            total = ed_add(total, point)
+        point = ed_add(point, point)
+        n >>= 1
+    return total
+
+
+def ed_x(y, sign):
+    if y >= ED_P:
+        return None
+    xx = (y * y - 1) * pow(ED_D * y * y + 1, ED_P - 2, ED_P)
+    if xx == 0:
+        return None if sign else 0
+    x = pow(xx, (ED_P + 3) // 8, ED_P)
+    if (x * x - xx) % ED_P:
+        x = x * ED_ROOT % ED_P
+    if (x * x - xx) % ED_P:
+        return None
+    return ED_P - x if (x & 1) != sign else x
+
+
+ED_BASE_Y = 4 * pow(5, ED_P - 2, ED_P) % ED_P
+ED_BASE = (ed_x(ED_BASE_Y, 0), ED_BASE_Y, 1, ed_x(ED_BASE_Y, 0) * ED_BASE_Y % ED_P)
+
+
+def ed_encode(point):
+    x, y, z, _ = point
+    inverse = pow(z, ED_P - 2, ED_P)
+    x, y = x * inverse % ED_P, y * inverse % ED_P
+    return (y | (x & 1) << 255).to_bytes(32, "little")
+
+
+def ed_decode(raw):
+    y = int.from_bytes(raw, "little")
+    sign, y = y >> 255, y & ((1 << 255) - 1)
+    x = ed_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % ED_P)
+
+
+def ed_hash(*parts):
+    return int.from_bytes(hashlib.sha512(b"".join(parts)).digest(), "little")
+
+
+def ed_secret(seed):
+    digest = hashlib.sha512(seed).digest()
+    scalar = int.from_bytes(digest[:32], "little") & ((1 << 254) - 8) | (1 << 254)
+    return scalar, digest[32:]
+
+
+def ed_public(seed):
+    return ed_encode(ed_times(ed_secret(seed)[0], ED_BASE))
+
+
+def ed_sign(seed, message):
+    scalar, prefix = ed_secret(seed)
+    public = ed_encode(ed_times(scalar, ED_BASE))
+    r = ed_hash(prefix, message) % ED_L
+    nonce = ed_encode(ed_times(r, ED_BASE))
+    s = (r + ed_hash(nonce, public, message) * scalar) % ED_L
+    return nonce + s.to_bytes(32, "little")
+
+
+def ed_verify(public, message, signature):
+    if len(public) != 32 or len(signature) != 64:
+        return False
+    key, nonce = ed_decode(public), ed_decode(signature[:32])
+    s = int.from_bytes(signature[32:], "little")
+    if key is None or nonce is None or s >= ED_L:
+        return False
+    h = ed_hash(signature[:32], public, message) % ED_L
+    left, right = ed_times(s, ED_BASE), ed_add(nonce, ed_times(h, key))
+    return (left[0] * right[2] - right[0] * left[2]) % ED_P == 0 and (
+        left[1] * right[2] - right[1] * left[2]
+    ) % ED_P == 0
 
 
 class CoreUnchanged(unittest.TestCase):
@@ -473,6 +577,130 @@ class WingetHashes(unittest.TestCase):
     def test_it_takes_two_arguments(self):
         done = subprocess.run(
             [sys.executable, str(WINGET_HASHES), str(self.work)], capture_output=True, text=True
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class WindowsAppcast(unittest.TestCase):
+    VERSION = "1.0.1"
+    DOWNLOADS = f"https://github.com/datlechin/pitboard/releases/download/v{VERSION}/"
+    SPARKLE = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+    NOT_FULL = "is not a full release"
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+        self.seed = os.urandom(32)
+        self.msis = {}
+        for arch in ("x64", "arm64"):
+            self.msis[arch] = self.work / f"Pitboard-v{self.VERSION}-windows-{arch}.msi"
+            self.msis[arch].write_bytes(f"the {arch} MSI\n".encode() + os.urandom(100))
+
+    def tearDown(self):
+        shutil.rmtree(self.work)
+
+    def signed(self, arch):
+        return base64.b64encode(ed_sign(self.seed, self.msis[arch].read_bytes())).decode()
+
+    def written(self, version=VERSION, downloads=DOWNLOADS, signatures=None):
+        signatures = signatures or [self.signed("x64"), self.signed("arm64")]
+        return subprocess.run(
+            [sys.executable, WINDOWS_APPCAST, version, downloads, self.work, *signatures],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_the_signatures_are_rfc_8032s(self):
+        for seed, message, public, signature in (
+            (
+                "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+                "",
+                "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+                "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+                "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+            ),
+            (
+                "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+                "72",
+                "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+                "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da"
+                "085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+            ),
+        ):
+            seed, message = bytes.fromhex(seed), bytes.fromhex(message)
+            public, signature = bytes.fromhex(public), bytes.fromhex(signature)
+            self.assertEqual(ed_public(seed), public)
+            self.assertEqual(ed_sign(seed, message), signature)
+            self.assertTrue(ed_verify(public, message, signature))
+            self.assertFalse(ed_verify(public, message + b"!", signature))
+
+    def test_each_architecture_gets_an_item_whose_msi_the_key_signed(self):
+        done = self.written()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        items = ElementTree.fromstring(done.stdout).find("channel").findall("item")
+        self.assertEqual(len(items), 2)
+        floor = re.search(
+            r"<SupportedOSPlatformVersion>(\d+\.\d+\.\d+)", WINDOWS_APP.read_text()
+        ).group(1)
+        public = ed_public(self.seed)
+        for item, arch, other in zip(items, ("x64", "arm64"), ("arm64", "x64")):
+            with self.subTest(arch=arch):
+                sparkle = self.SPARKLE
+                self.assertEqual(item.findtext(f"{sparkle}version"), self.VERSION)
+                self.assertEqual(item.findtext(f"{sparkle}shortVersionString"), self.VERSION)
+                self.assertEqual(item.findtext(f"{sparkle}minimumSystemVersion"), floor)
+                [enclosure] = item.findall("enclosure")
+                msi = self.msis[arch].read_bytes()
+                self.assertEqual(enclosure.get("url"), self.DOWNLOADS + self.msis[arch].name)
+                self.assertEqual(enclosure.get("length"), str(len(msi)))
+                self.assertEqual(enclosure.get(f"{sparkle}os"), f"windows-{arch}")
+                self.assertEqual(
+                    enclosure.get(f"{sparkle}installerArguments"), "/passive LAUNCHAFTERINSTALL=1"
+                )
+                signature = base64.b64decode(enclosure.get(f"{sparkle}edSignature"))
+                self.assertTrue(ed_verify(public, msi, signature))
+                self.assertFalse(ed_verify(public, self.msis[other].read_bytes(), signature))
+
+    def test_only_a_full_release_has_a_feed(self):
+        for version in ("1.0.0-beta.1", "1.0.0-rc1", "1.0", "v1.0.0", "01.0.0", "1.0.0+abc"):
+            with self.subTest(version=version):
+                done = self.written(version=version)
+                self.assertEqual(done.returncode, 1)
+                self.assertEqual(done.stdout, "")
+                self.assertIn(self.NOT_FULL, done.stderr)
+
+    def test_a_signature_that_is_not_one_is_refused(self):
+        for text in (
+            "",
+            "not base64!",
+            base64.b64encode(os.urandom(63)).decode(),
+            base64.b64encode(ed_public(self.seed)).decode(),
+        ):
+            with self.subTest(signature=text):
+                done = self.written(signatures=[self.signed("x64"), text])
+                self.assertEqual(done.returncode, 1)
+                self.assertEqual(done.stdout, "")
+                self.assertIn("is not an EdDSA signature", done.stderr)
+
+    def test_a_missing_installer_is_refused(self):
+        signatures = [self.signed("x64"), self.signed("arm64")]
+        self.msis["arm64"].unlink()
+        done = self.written(signatures=signatures)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn(f"no Pitboard-v{self.VERSION}-windows-arm64.msi", done.stderr)
+
+    def test_a_download_address_that_is_not_https_is_refused(self):
+        for downloads in (self.DOWNLOADS.replace("https", "http"), self.DOWNLOADS.rstrip("/")):
+            with self.subTest(downloads=downloads):
+                done = self.written(downloads=downloads)
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("is not an https:// address ending in /", done.stderr)
+
+    def test_it_takes_five_arguments(self):
+        done = subprocess.run(
+            [sys.executable, WINDOWS_APPCAST, self.VERSION, self.DOWNLOADS, self.work, "x"],
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)

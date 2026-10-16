@@ -779,9 +779,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     template, and `test-install.py` tests it and the install script. `release-kind.sh`
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
     `pitboard-core` that changed under a version crates.io already has,
-    `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`, and
-    `test-release.py` tests the three, the app's `build-number.sh` and the cargo-binstall
-    metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
+    `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`,
+    `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
+    signatures, and `test-release.py` tests the four, the app's `build-number.sh` and the
+    cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's

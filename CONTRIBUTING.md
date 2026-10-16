@@ -119,9 +119,10 @@ python3 .github/scripts/test-install.py
 The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
-For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh` and
-`check-winget-hashes.py` in `.github/scripts`, `apps/macos/scripts/build-number.sh`, or the
-cargo-binstall metadata in `crates/pitboard/Cargo.toml`:
+For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh`,
+`check-winget-hashes.py` and `windows-appcast.py` in `.github/scripts`,
+`apps/macos/scripts/build-number.sh`, or the cargo-binstall metadata in
+`crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
