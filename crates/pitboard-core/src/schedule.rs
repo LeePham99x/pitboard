@@ -198,6 +198,10 @@ pub(crate) fn opened_from_a_zip(program: &Path) -> bool {
     })
 }
 
+pub(crate) fn task(ctx: &Context) -> Option<crate::host::task::Task> {
+    scheduler(ctx)?.task(ctx)
+}
+
 /// The Pitboard the installed schedule runs, read back from what `install` wrote. `None`
 /// where nothing is installed, and where what is there does not name one the way `install`
 /// writes it.

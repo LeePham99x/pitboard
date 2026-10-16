@@ -1096,6 +1096,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
   (`Proxies::same_way`). In the app, whose environment is the system's as the job's is,
   the same line is `ok` and says how each way of installing the schedule chooses its
   proxy: the app's switch would take a terminal's proxy away.
+- On Windows `doctor` also reads what Task Scheduler keeps of the task (`Scheduler::task`):
+  when it last ran and how that run ended, and the settings Pitboard writes that were changed
+  there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
+  run not yet made or under way is a warning that names `pitboard renew`. A changed setting
+  is a warning whose fix is turning daily renewal off and on again, which writes the task as
+  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
@@ -2731,6 +2737,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | `ITaskFolder::RegisterTask` with `TASK_CREATE_OR_UPDATE`, an interactive token and no `userId` registers the task's XML for the person registering it | [RegisterTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskfolder-registertask) | RF-E1 registered the same principal through `RegisterTaskDefinition`, and no build for tests asks Task Scheduler; the session's step 13 registers one. |
+| A task's `LastTaskResult` is its program's exit code, or one of Task Scheduler's `SCHED_S_` and `SCHED_E_` codes, such as `SCHED_S_TASK_RUNNING` (`0x00041301`) and `SCHED_S_TASK_QUEUED` (`0x00041325`) | [Task Scheduler error and success constants](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants) | RF-E1 read only 0 and `SCHED_S_TASK_HAS_NOT_RUN` (`0x00041303`); the session's step 13 reads a run's. |
+| A task's `LastRunTime` is a `DATE`, days since 30 December 1899, on the machine's own clock | [get_LastRunTime](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-get_lastruntime), [DATE](https://learn.microsoft.com/en-us/cpp/atl-mfc-shared/date-type) | The runners' clocks are UTC, which reads the same either way; the session's step 13 reads one. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |

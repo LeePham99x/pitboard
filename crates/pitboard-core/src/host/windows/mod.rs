@@ -465,6 +465,7 @@ mod tests {
             Location::Task(format!(r"\Pitboard\Renew {sid}"))
         );
         assert!(!tasks.installed(&ctx));
+        assert_eq!(tasks.task(&ctx), None);
         let refused = tasks
             .put(
                 &ctx,

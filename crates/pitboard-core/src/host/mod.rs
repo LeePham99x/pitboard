@@ -873,6 +873,11 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
     fn read_by_its_runs(&self, _ctx: &Context) -> Vec<(String, String)> {
         Vec::new()
     }
+
+    // What the system says of the job beyond what Pitboard wrote: Task Scheduler's alone.
+    fn task(&self, _ctx: &Context) -> Option<task::Task> {
+        None
+    }
 }
 
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.

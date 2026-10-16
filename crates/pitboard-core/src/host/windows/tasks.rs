@@ -3,7 +3,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
-use crate::host::task::{FOLDER, Registered, Service};
+use crate::host::task::{FOLDER, Registered, Service, from_ole_date};
 use crate::service::Permit;
 use windows::Win32::Foundation::{E_FAIL, RPC_E_CHANGED_MODE};
 use windows::Win32::System::Com::{
@@ -26,11 +26,11 @@ const ALREADY_THERE: u32 = 0x8007_00B7;
 const ASKED_IN_A_TEST: &str = "a build for tests asked Task Scheduler itself";
 
 impl Service for System {
-    fn read(&self, _ctx: &Context, name: &str) -> Option<Registered> {
+    fn read(&self, ctx: &Context, name: &str) -> Option<Registered> {
         if cfg!(any(test, feature = "test-support")) {
             return None;
         }
-        let name = name.to_owned();
+        let (name, zone) = (name.to_owned(), ctx.zone());
         in_the_mta(move |service| {
             let Some(folder) = folder(service)? else {
                 return Ok(None);
@@ -44,6 +44,11 @@ impl Service for System {
                 };
                 Ok(Some(Registered {
                     xml: task.Xml()?.to_string(),
+                    last_run: task
+                        .LastRunTime()
+                        .ok()
+                        .and_then(|date| from_ole_date(date, &zone)),
+                    last_result: task.LastTaskResult().ok(),
                 }))
             }
         })

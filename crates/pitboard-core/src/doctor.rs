@@ -9,6 +9,7 @@
 
 use crate::context::Context;
 use crate::error::Error;
+use crate::host::task::{Drift, Task};
 use crate::host::{Access, Kind, Os};
 use crate::provider::claude::daemon;
 use crate::provider::claude::live as claude_live;
@@ -164,6 +165,8 @@ pub(crate) struct ProxyFact {
 /// on Windows the task as Task Scheduler keeps it.
 pub(crate) struct ScheduleFact {
     pub(crate) location: crate::schedule::Location,
+    // Task Scheduler's word on its runs and its settings; none from launchd or systemd.
+    pub(crate) task: Option<Task>,
     /// The Pitboard it runs, where the file names one the way Pitboard writes it.
     pub(crate) program: Option<PathBuf>,
     /// Whether that Pitboard is still there to be run.
@@ -590,6 +593,7 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
         location,
+        task: crate::schedule::task(ctx),
         network: network_fact(&proxies),
         network_differs: !proxies.same_way(&ctx.proxy),
     })
@@ -2277,14 +2281,24 @@ fn judge_pending(facts: &Facts) -> Check {
 fn judge_schedule(facts: &Facts) -> Option<Check> {
     let again = again(facts.os);
     let schedule = facts.schedule.as_ref()?;
-    Some(match &schedule.program {
-        Some(program) if !schedule.program_found => fail(
+    let Some(program) = &schedule.program else {
+        return Some(warn(
+            "schedule",
+            "renewal schedule",
+            format!("{} does not say which Pitboard it runs", schedule.location),
+            again,
+        ));
+    };
+    if !schedule.program_found {
+        return Some(fail(
             "schedule",
             "renewal schedule",
             format!("runs {}, which is not there any more", program.display()),
             again,
-        ),
-        Some(program) if crate::schedule::an_apps_own_program(program) => fail(
+        ));
+    }
+    if crate::schedule::an_apps_own_program(program) {
+        return Some(fail(
             "schedule",
             "renewal schedule",
             format!(
@@ -2292,19 +2306,70 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
                 program.display()
             ),
             again,
-        ),
-        Some(program) => ok(
+        ));
+    }
+    let runs = format!("daily  ·  runs {}", program.display());
+    let Some(task) = &schedule.task else {
+        return Some(ok("schedule", "renewal schedule", runs));
+    };
+    if !task.drifted.is_empty() {
+        let drifted = task.drifted.iter().map(drift).collect();
+        return Some(warn(
             "schedule",
             "renewal schedule",
-            format!("daily  ·  runs {}", program.display()),
-        ),
-        None => warn(
-            "schedule",
-            "renewal schedule",
-            format!("{} does not say which Pitboard it runs", schedule.location),
+            format!(
+                "{runs}, but in Task Scheduler it {}",
+                words::listed(drifted)
+            ),
             again,
+        ));
+    }
+    let ago = |at: i64| words::span(facts.now - at);
+    Some(match (task.failed(), task.last_run) {
+        (Some(result), at) => warn(
+            "schedule",
+            "renewal schedule",
+            format!(
+                "{runs}, and its last run{} ended {}",
+                at.map(|at| format!(", {} ago,", ago(at)))
+                    .unwrap_or_default(),
+                ended(result)
+            ),
+            "Run `pitboard renew` to see what it says.",
+        ),
+        (None, Some(at)) => ok(
+            "schedule",
+            "renewal schedule",
+            format!("{runs}  ·  last ran {} ago", ago(at)),
+        ),
+        (None, None) => ok(
+            "schedule",
+            "renewal schedule",
+            format!("{runs}  ·  not run yet"),
         ),
     })
+}
+
+// As Task Scheduler's own settings word each.
+fn drift(drift: &Drift) -> String {
+    match drift {
+        Drift::OnAcPowerOnly => "starts only if the computer is on AC power",
+        Drift::StopsOnBattery => "stops if the computer switches to battery power",
+        Drift::SkipsMissedStarts => {
+            "does not run as soon as possible after a scheduled start is missed"
+        }
+        Drift::Disabled => "is disabled",
+    }
+    .to_string()
+}
+
+// A program's exit code, or one of Task Scheduler's own results.
+fn ended(result: i32) -> String {
+    if (0..=255).contains(&result) {
+        format!("with exit code {result}")
+    } else {
+        format!("with 0x{:08X}", result as u32)
+    }
 }
 
 /// The system starts the schedule's runs with its own environment, not the person's shell,
@@ -5202,6 +5267,7 @@ mod tests {
             location: Location::File(PathBuf::from(
                 "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
             )),
+            task: None,
             program: Some(PathBuf::from("/opt/homebrew/bin/pitboard")),
             program_found: true,
             network: direct(),
@@ -5223,6 +5289,7 @@ mod tests {
             location: Location::File(PathBuf::from(
                 "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
             )),
+            task: None,
             program: Some(PathBuf::from(
                 "/Applications/Pitboard.app/Contents/MacOS/Pitboard",
             )),
@@ -5256,6 +5323,84 @@ mod tests {
         let unread = check(&checks, "schedule");
         assert_eq!(unread.level, Level::Warn);
         assert!(!unread.advice.is_empty());
+    }
+
+    #[test]
+    fn a_task_is_judged_by_its_settings_and_its_last_run() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let program = r"C:\Users\x\scoop\apps\pitboard\current\pitboard.exe";
+        let task = |last_run: Option<i64>, last_result: i32, drifted: Vec<Drift>| ScheduleFact {
+            location: Location::Task(r"\Pitboard\Renew S-1-5-21-1".into()),
+            task: Some(Task {
+                last_run,
+                last_result: Some(last_result),
+                drifted,
+            }),
+            program: Some(PathBuf::from(program)),
+            program_found: true,
+            network: direct(),
+            network_differs: false,
+        };
+        let judged = |f: &Facts| {
+            evaluate(f)
+                .into_iter()
+                .find(|c| c.code == "schedule")
+                .expect("the schedule's line")
+        };
+
+        f.schedule = Some(task(None, 0x0004_1303, Vec::new()));
+        let fresh = judged(&f);
+        assert_eq!(fresh.level, Level::Ok);
+        assert_eq!(
+            fresh.detail,
+            format!("daily  ·  runs {program}  ·  not run yet")
+        );
+
+        let an_hour_ago = Some(f.now - 3_660);
+        for fine in [0, 0x0004_1301] {
+            f.schedule = Some(task(an_hour_ago, fine, Vec::new()));
+            let ran = judged(&f);
+            assert_eq!(ran.level, Level::Ok, "{fine:#x}");
+            assert_eq!(
+                ran.detail,
+                format!("daily  ·  runs {program}  ·  last ran 1h 01m ago")
+            );
+        }
+
+        for (result, ended) in [
+            (1, "with exit code 1"),
+            (0x8007_10E0_u32 as i32, "with 0x800710E0"),
+        ] {
+            f.schedule = Some(task(an_hour_ago, result, Vec::new()));
+            let failed = judged(&f);
+            assert_eq!(failed.level, Level::Warn);
+            assert_eq!(
+                failed.detail,
+                format!("daily  ·  runs {program}, and its last run, 1h 01m ago, ended {ended}")
+            );
+            assert!(
+                failed.advice.contains("`pitboard renew`"),
+                "{}",
+                failed.advice
+            );
+        }
+
+        f.schedule = Some(task(
+            an_hour_ago,
+            0,
+            vec![Drift::OnAcPowerOnly, Drift::Disabled],
+        ));
+        let drifted = judged(&f);
+        assert_eq!(drifted.level, Level::Warn);
+        assert_eq!(
+            drifted.detail,
+            format!(
+                "daily  ·  runs {program}, but in Task Scheduler it starts only if the computer \
+                 is on AC power and is disabled"
+            )
+        );
+        assert_eq!(drifted.advice, again(Os::Windows));
     }
 
     /// The way back works from the command line everywhere, and names the app only where
@@ -5304,12 +5449,58 @@ mod tests {
         );
     }
 
+    // Through the pretend Task Scheduler, on any system; a reinstall is the fix doctor names.
+    #[test]
+    fn a_task_changed_in_task_scheduler_is_read_where_it_is_kept() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let home = scratch.path().to_string_lossy().into_owned();
+        let program = scratch.path().join("bin").join("pitboard.exe");
+        std::fs::create_dir_all(program.parent().expect("its folder")).expect("a bin");
+        std::fs::write(&program, "").expect("a Pitboard");
+        let env: crate::context::Environment =
+            [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+                .into_iter()
+                .collect();
+        let ctx = Context::for_command_line(&env)
+            .with_memory_stores(crate::host::memory::MemoryHost::scheduling_tasks(
+                "S-1-5-21-1",
+            ))
+            .with_schedule_program(program);
+        crate::schedule::install(&ctx, Permit::for_a_test()).expect("installed");
+        let fresh = Task {
+            last_run: None,
+            last_result: Some(0x0004_1303),
+            drifted: Vec::new(),
+        };
+        let read = |ctx: &Context| schedule_fact(ctx).expect("installed").task;
+        assert_eq!(read(&ctx), Some(fresh.clone()));
+
+        let kept = crate::schedule::path(&ctx).expect("the task's file");
+        let xml = std::fs::read_to_string(&kept).expect("written");
+        std::fs::write(
+            &kept,
+            xml.replace(
+                "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
+                "<StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>",
+            ),
+        )
+        .expect("changed by hand");
+        assert_eq!(
+            read(&ctx).map(|task| task.drifted),
+            Some(vec![Drift::StopsOnBattery])
+        );
+
+        crate::schedule::install(&ctx, Permit::for_a_test()).expect("installed again");
+        assert_eq!(read(&ctx), Some(fresh));
+    }
+
     /// A schedule that runs a Pitboard still there, installed with `network`.
     fn scheduled(network: NetworkFact, network_differs: bool) -> ScheduleFact {
         ScheduleFact {
             location: Location::File(PathBuf::from(
                 "/home/x/.config/systemd/user/pitboard-renew.timer",
             )),
+            task: None,
             program: Some(PathBuf::from("/usr/local/bin/pitboard")),
             program_found: true,
             network,

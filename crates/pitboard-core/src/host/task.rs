@@ -11,6 +11,11 @@ use std::sync::Arc;
 
 pub(crate) const FOLDER: &str = r"\Pitboard";
 const ENVIRONMENT: &str = "schedule.env";
+// Task Scheduler's own results that are no failure: RF-E1 read `NOT_RUN_YET` off a task whose
+// person was not signed in.
+const RUNNING: i32 = 0x0004_1301;
+const NOT_RUN_YET: i32 = 0x0004_1303;
+const QUEUED: i32 = 0x0004_1325;
 
 // Task names are global within a folder, so each person's carries their SID.
 pub(crate) fn name(sid: &str) -> String {
@@ -21,10 +26,12 @@ pub(crate) fn path(sid: &str) -> String {
     format!(r"{FOLDER}\{}", name(sid))
 }
 
-// A task as Task Scheduler keeps it.
+// A task as Task Scheduler keeps it: its definition, and how its last run went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Registered {
     pub(crate) xml: String,
+    pub(crate) last_run: Option<i64>,
+    pub(crate) last_result: Option<i32>,
 }
 
 // Task Scheduler, or a test's machine's stand-in for it, asked for one task in `FOLDER`.
@@ -32,6 +39,29 @@ pub(crate) trait Service: Send + Sync + std::fmt::Debug {
     fn read(&self, ctx: &Context, name: &str) -> Option<Registered>;
     fn register(&self, permit: Permit, ctx: &Context, name: &str, xml: &str) -> Result<()>;
     fn delete(&self, permit: Permit, ctx: &Context, name: &str) -> Result<()>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Drift {
+    OnAcPowerOnly,
+    StopsOnBattery,
+    SkipsMissedStarts,
+    Disabled,
+}
+
+// What Task Scheduler says of the task beyond what Pitboard wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Task {
+    pub(crate) last_run: Option<i64>,
+    pub(crate) last_result: Option<i32>,
+    pub(crate) drifted: Vec<Drift>,
+}
+
+impl Task {
+    pub(crate) fn failed(&self) -> Option<i32> {
+        self.last_result
+            .filter(|result| ![0, RUNNING, NOT_RUN_YET, QUEUED].contains(result))
+    }
 }
 
 // InteractiveToken runs only while the person is signed in, when DPAPI and Credential Manager
@@ -104,6 +134,37 @@ pub(crate) fn program(xml: &str) -> Option<PathBuf> {
         .and_then(|quoted| quoted.strip_suffix('"'))
         .unwrap_or(&command);
     (!command.is_empty()).then(|| PathBuf::from(command))
+}
+
+// Task Scheduler leaves a setting out where it is at its default.
+pub(crate) fn drifted(xml: &str) -> Vec<Drift> {
+    let settings = element(xml, "Settings").unwrap_or_default();
+    let on =
+        |tag: &str, default: bool| element(settings, tag).map_or(default, |v| v.trim() == "true");
+    [
+        (on("DisallowStartIfOnBatteries", true), Drift::OnAcPowerOnly),
+        (on("StopIfGoingOnBatteries", true), Drift::StopsOnBattery),
+        (!on("StartWhenAvailable", false), Drift::SkipsMissedStarts),
+        (!on("Enabled", true), Drift::Disabled),
+    ]
+    .into_iter()
+    .filter_map(|(drifted, drift)| drifted.then_some(drift))
+    .collect()
+}
+
+// An OLE automation date, days since 30 December 1899 on the machine's clock, as epoch seconds.
+pub(crate) fn from_ole_date(date: f64, zone: &jiff::tz::TimeZone) -> Option<i64> {
+    if !date.is_finite() || date <= 0.0 {
+        return None;
+    }
+    let seconds = (date * 86_400.0).round() as i64;
+    jiff::civil::date(1899, 12, 30)
+        .at(0, 0, 0, 0)
+        .checked_add(jiff::SignedDuration::from_secs(seconds))
+        .ok()?
+        .to_zoned(zone.clone())
+        .ok()
+        .map(|at| at.timestamp().as_second())
 }
 
 // The first `<tag>`, as Task Scheduler writes one: with no attributes.
@@ -281,6 +342,17 @@ impl Scheduler for Tasks {
             .map(|text| environment_read(&text))
             .unwrap_or_default()
     }
+
+    fn task(&self, ctx: &Context) -> Option<Task> {
+        let registered = self.registered(ctx)?;
+        Some(Task {
+            last_run: registered
+                .last_run
+                .filter(|_| registered.last_result != Some(NOT_RUN_YET)),
+            last_result: registered.last_result,
+            drifted: drifted(&registered.xml),
+        })
+    }
 }
 
 // Task Scheduler's store as a test's machine keeps it, in the test's own home, where the
@@ -310,6 +382,8 @@ impl Service for Pretend {
     fn read(&self, ctx: &Context, name: &str) -> Option<Registered> {
         Some(Registered {
             xml: std::fs::read_to_string(Pretend::file(ctx, name)).ok()?,
+            last_run: None,
+            last_result: Some(NOT_RUN_YET),
         })
     }
 
@@ -383,6 +457,7 @@ mod tests {
             assert!(!xml.contains(never), "{never}\n{xml}");
         }
         assert_eq!(program(&xml).as_deref(), Some(exe));
+        assert_eq!(drifted(&xml), []);
         assert_eq!(path(SID), format!(r"\Pitboard\Renew {SID}"));
     }
 
@@ -400,6 +475,79 @@ mod tests {
         );
         assert_eq!(program(&xml.replace("renew --scheduled", "renew")), None);
         assert_eq!(program("not a task"), None);
+    }
+
+    #[test]
+    fn a_setting_changed_in_task_scheduler_is_read_as_it_leaves_it() {
+        let xml = definition(Path::new(r"C:\p.exe"), "2026-10-17T09:30:00");
+        let changed = xml
+            .replace(
+                "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+                "",
+            )
+            .replace(
+                "<StartWhenAvailable>true</StartWhenAvailable>",
+                "<StartWhenAvailable>false</StartWhenAvailable>",
+            )
+            .replace("<Hidden>", "<Enabled>false</Enabled>\n    <Hidden>");
+        assert_eq!(
+            drifted(&changed),
+            [
+                Drift::OnAcPowerOnly,
+                Drift::SkipsMissedStarts,
+                Drift::Disabled
+            ]
+        );
+        assert_eq!(
+            drifted("<Task><Settings></Settings></Task>"),
+            [
+                Drift::OnAcPowerOnly,
+                Drift::StopsOnBattery,
+                Drift::SkipsMissedStarts
+            ]
+        );
+        let trigger_off = xml.replace(
+            "<StartBoundary>",
+            "<Enabled>false</Enabled>\n      <StartBoundary>",
+        );
+        assert_eq!(
+            drifted(&trigger_off),
+            [],
+            "a trigger's own is not the task's"
+        );
+    }
+
+    #[test]
+    fn a_last_run_is_read_on_the_machines_clock() {
+        let utc = jiff::tz::TimeZone::UTC;
+        assert_eq!(from_ole_date(45_000.5, &utc), Some(1_678_881_600));
+        let ahead = jiff::tz::TimeZone::fixed(jiff::tz::offset(7));
+        assert_eq!(
+            from_ole_date(45_000.5, &ahead),
+            Some(1_678_881_600 - 7 * 3_600)
+        );
+        assert_eq!(from_ole_date(0.0, &utc), None);
+        assert_eq!(from_ole_date(f64::NAN, &utc), None);
+        let not_run = Task {
+            last_run: None,
+            last_result: Some(NOT_RUN_YET),
+            drifted: Vec::new(),
+        };
+        assert_eq!(not_run.failed(), None);
+        for fine in [0, RUNNING, QUEUED] {
+            let task = Task {
+                last_result: Some(fine),
+                ..not_run.clone()
+            };
+            assert_eq!(task.failed(), None, "{fine:#x}");
+        }
+        for failed in [1, 0x8007_10E0_u32 as i32] {
+            let task = Task {
+                last_result: Some(failed),
+                ..not_run.clone()
+            };
+            assert_eq!(task.failed(), Some(failed));
+        }
     }
 
     #[test]
