@@ -75,7 +75,8 @@ public sealed class LaunchingTests
     [TestMethod]
     public void ALaunchCarriesTheLinkOnItsBuildsScheme()
     {
-        Assert.AreEqual("pitboard://open?url=x", Launching.Link(["--updated", "pitboard://open?url=x"], "pitboard"));
+        Assert.AreEqual("pitboard://open?url=x", Launching.Link(["pitboard://open?url=x"], "pitboard"));
+        Assert.IsNull(Launching.Link(["--updated", "pitboard://open?url=x"], "pitboard"), "a link after another argument");
         Assert.AreEqual("PITBOARD://open?url=x", Launching.Link(["PITBOARD://open?url=x"], "pitboard"), "a scheme in another case");
         Assert.IsNull(Launching.Link([Shared], "pitboard"), "the Debug build's");
         Assert.IsNull(Launching.Link(["https://claude.ai/new"], "pitboard"), "a site's own");
@@ -107,6 +108,21 @@ public sealed class LaunchingTests
     {
         Assert.AreEqual(Start.Redirect, Launching.Decide([Shared], Debug, Fixture, () => null, () => false));
         Assert.AreEqual(Start.Redirect, Launching.Decide(["pitboard://open?url=x"], Release, null, () => null, () => false));
+    }
+
+    // Microsoft's guide to URI schemes: a link with unencoded quotes or spaces reaches Pitboard split into more
+    // arguments, so nothing after a link is read as a flag.
+    [TestMethod]
+    public void ALinkLaunchReadsNoFlagAfterItsLink()
+    {
+        string[] split = ["pitboard://open?x=", "--unregister", ""];
+
+        Assert.AreEqual(Start.Run, Launching.Decide(split, Release, null, () => null, () => true));
+        Assert.AreEqual(Start.Redirect, Launching.Decide(split, Release, null, () => null, () => false));
+        Assert.AreEqual(Start.Redirect, Launching.Decide(["pitboard://open?x=", "--updated"], Release, null, () => null, () => false));
+        Assert.AreEqual(
+            "pitboard://open?x=", Launching.Handed(@"""C:\Pitboard.exe"" ""pitboard://open?x="" --unregister """"", Release, null));
+        Assert.IsNull(Launching.Handed(@"""C:\Pitboard.exe"" --updated pitboard://open?url=x", Release, null), "a link after a flag");
     }
 
     // Windows App SDK hands the running copy an unpackaged launch's whole command line, its program first, as

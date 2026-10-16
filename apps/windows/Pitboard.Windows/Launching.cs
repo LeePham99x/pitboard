@@ -28,11 +28,14 @@ public static class Launching
 
     public const string LinkRefusal = "A Debug build opens a pitboard-debug link only in a fixture.";
 
+    // A link launch reads no flag: Microsoft's guide to URI schemes warns that a link's unencoded quotes or spaces split
+    // it into more arguments, which another app can make look like Pitboard's own.
     public static Start Decide(
         IReadOnlyCollection<string> arguments, Identity running, string? fixtureFolder, Func<ReadFailure?> refusal,
         Func<bool> holdsKey)
     {
-        var given = arguments.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var link = Link(arguments, running.LinkScheme);
+        var given = link is null ? arguments.ToHashSet(StringComparer.OrdinalIgnoreCase) : [];
         if (given.Contains(Unregister))
         {
             return Start.Unregister;
@@ -43,7 +46,7 @@ public static class Launching
             return Start.Refused;
         }
 
-        if (!running.OpensLinks(fixtureFolder) && Link(arguments, running.LinkScheme) is not null)
+        if (link is not null && !running.OpensLinks(fixtureFolder))
         {
             return Start.LinkRefused;
         }
@@ -60,9 +63,11 @@ public static class Launching
     public static bool OpensWindow(IEnumerable<string> arguments) =>
         !Unasked(arguments.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
-    // The MSI's command passes a Pitboard link as its only argument, which the model reads as strictly as any link.
+    // The MSI's command passes a Pitboard link as its first argument, which the model reads as strictly as any link.
     public static string? Link(IEnumerable<string> arguments, string scheme) =>
-        arguments.FirstOrDefault(argument => argument.StartsWith($"{scheme}:", StringComparison.OrdinalIgnoreCase));
+        arguments.FirstOrDefault() is { } first && first.StartsWith($"{scheme}:", StringComparison.OrdinalIgnoreCase)
+            ? first
+            : null;
 
     // Windows App SDK hands the running copy an unpackaged launch's whole command line, its program first.
     public static string? Handed(string commandLine, Identity running, string? fixtureFolder) =>
