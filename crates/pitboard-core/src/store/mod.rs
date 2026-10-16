@@ -214,7 +214,7 @@ pub(crate) trait RawStore: Send + Sync {
     }
 
     /// What a write would cost against this store's ceiling. `None` where there is none,
-    /// which is every store but the keychain.
+    /// which is every store but the keychain and Credential Manager.
     fn cost(&self, _service: &str, _contents: &str) -> Option<Cost> {
         None
     }
@@ -602,6 +602,7 @@ mod tests {
 
         let first = store(Backend::CredentialManager);
         first.fault("svc", Fault::FailWrite("unreachable".into()));
+        first.takes_on_stdin(2560);
         let file = holding(Backend::File, "svc", "in the file");
         assert!(matches!(
             write_raw(&live(&first, &file), Permit::for_a_test(), "svc", "lost"),
@@ -614,8 +615,12 @@ mod tests {
         );
         assert_eq!(
             cost(&live(&first, &file), "svc", "x"),
-            None,
-            "the first store's ceiling, whatever holds the login"
+            Some(Cost {
+                needs: 1,
+                limit: 2560,
+                second_route: true
+            }),
+            "the first store's ceiling, while the file holds the login"
         );
     }
 
