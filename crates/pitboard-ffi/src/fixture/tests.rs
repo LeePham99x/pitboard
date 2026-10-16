@@ -2184,7 +2184,7 @@ fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account()
 /// testGivingUpOnAnInterruptedSwitch and MenuBarTests.swift's
 /// testShowingANoticeOpensTheWindowOnTheAccounts read in stuck. That second test first waits,
 /// on This Mac, for a check called "Keychain", which the core's doctor has none of; there it
-/// has "interrupted switch", worth looking at, beside personal's parked login.
+/// has "Interrupted switch", worth looking at, beside personal's parked login.
 #[test]
 fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
     let launched = made(World::Stuck);
@@ -2226,7 +2226,7 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
         .checks
         .lines
         .iter()
-        .find(|line| line.name == "interrupted switch")
+        .find(|line| line.name == "Interrupted switch")
         .expect("doctor's check");
     assert_eq!(interrupted.level, crate::Level::Warn);
     assert!(
@@ -2307,7 +2307,7 @@ fn this_mac_shows_the_cores_checks() {
         .collect();
     assert_eq!(
         worth_looking_at,
-        [("parked_login", "account personal")],
+        [("parked_login", "Account personal")],
         "{:#?}",
         checks.lines
     );
@@ -2325,10 +2325,10 @@ fn this_mac_shows_the_cores_checks() {
     let personal = checks
         .lines
         .iter()
-        .find(|line| line.name == "account personal")
+        .find(|line| line.name == "Account personal")
         .expect("personal's");
     assert!(
-        personal.detail.starts_with("its parked login expires in "),
+        personal.detail.starts_with("Its parked login expires in "),
         "{personal:?}"
     );
     assert_eq!(

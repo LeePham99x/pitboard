@@ -26,7 +26,7 @@ public sealed class PanesTests
         launched.OpenWindow();
         launched.Select("pane.machine");
 
-        launched.Named("account personal");
+        launched.Named("Account personal");
         launched.Named("One thing is worth looking at.");
     }
 }

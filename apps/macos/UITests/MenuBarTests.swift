@@ -83,7 +83,7 @@ final class MenuBarTests: FixtureTestCase {
         let app = launch(.stuck)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.machine"].click()
-        let checks = app.staticTexts["interrupted switch"]
+        let checks = app.staticTexts["Interrupted switch"]
         XCTAssertTrue(checks.waitForExistence(timeout: 5))
 
         app.openMenu()

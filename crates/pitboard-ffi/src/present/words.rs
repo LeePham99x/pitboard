@@ -480,6 +480,31 @@ pub(crate) fn spoken_level(level: Level) -> &'static str {
     }
 }
 
+// The command line keeps doctor's own names, which maintenance-commands.mdx documents.
+pub(crate) fn check_name(code: &str, name: &str) -> String {
+    match code {
+        "storage_v5" => "Claude Code’s new login storage".into(),
+        "machine_id" => "Machine ID".into(),
+        _ => capitalised(name),
+    }
+}
+
+// Only a first word of lowercase letters is prose: a path, an email, a file name, a figure or a
+// backticked name keeps its case.
+pub(crate) fn check_text(text: &str) -> String {
+    let first = text
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
+        .next()
+        .unwrap_or_default();
+    let prose = !first.is_empty() && first.bytes().all(|b| b.is_ascii_lowercase());
+    let text = if prose {
+        capitalised(text)
+    } else {
+        text.to_owned()
+    };
+    text.replace('`', "")
+}
+
 /// A change as the activity list names it, by the verb the log keeps: "Switch", "Enrol", and
 /// one it does not know yet by the verb itself made readable rather than not at all. The
 /// core logs a switch as `use`, after the command that makes one.

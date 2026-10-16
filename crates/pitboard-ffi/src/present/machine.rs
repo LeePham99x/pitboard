@@ -495,12 +495,12 @@ fn checks(seen: &Seen) -> ChecksShown {
             .map(|(id, check)| CheckLine {
                 id,
                 code: check.code.clone(),
-                name: check.name.clone(),
+                name: words::check_name(&check.code, &check.name),
                 level: check.level,
                 spoken_level: words::spoken_level(check.level).to_owned(),
-                detail: check.detail.clone(),
+                detail: words::check_text(&check.detail),
                 advice: (check.level != Level::Ok && !check.advice.is_empty())
-                    .then(|| check.advice.clone()),
+                    .then(|| words::check_text(&check.advice)),
             })
             .collect(),
         summary: any.then(|| crate::doctor_summary(&machine.checks)),
@@ -562,11 +562,164 @@ fn command_line(seen: &Seen) -> CommandLineShown {
 
 #[cfg(test)]
 mod tests {
+    use super::CheckLine;
+    use crate::Level;
+    use crate::launch::Check;
     use crate::present::present_on;
     use crate::present::testing::{
         Utc, account, claude_code, claude_desktop, desktop_account, read, status,
     };
     use pitboard_core::host::Os;
+
+    fn lines(checks: &[(&str, &str, Level, &str, &str)]) -> Vec<CheckLine> {
+        let mut state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
+        state.machine.checks = checks
+            .iter()
+            .map(|&(code, name, level, detail, advice)| Check {
+                code: code.into(),
+                name: name.into(),
+                level,
+                detail: detail.into(),
+                advice: advice.into(),
+            })
+            .collect();
+        present_on(Os::Windows, &state, 0, &Utc)
+            .machine
+            .checks
+            .lines
+    }
+
+    fn names(checks: &[(&str, &str)]) -> Vec<String> {
+        let checks: Vec<_> = checks
+            .iter()
+            .map(|&(code, name)| (code, name, Level::Ok, "", ""))
+            .collect();
+        lines(&checks).into_iter().map(|line| line.name).collect()
+    }
+
+    // Doctor names a check for a terminal's table: "account personal", "config file" (shot 05).
+    #[test]
+    fn each_check_is_named_in_sentence_case() {
+        assert_eq!(
+            names(&[
+                ("config_file", "config file"),
+                ("parked_login", "account personal"),
+                ("interrupted_switch", "interrupted switch"),
+                ("claude_version", "Claude Code build"),
+                ("no_argv", "PITBOARD_NO_ARGV"),
+                ("machine_id", "machine id"),
+            ]),
+            [
+                "Config file",
+                "Account personal",
+                "Interrupted switch",
+                "Claude Code build",
+                "PITBOARD_NO_ARGV",
+                "Machine ID",
+            ]
+        );
+    }
+
+    #[test]
+    fn storage_v5_is_named_for_what_it_is() {
+        assert_eq!(
+            names(&[("storage_v5", "storage v5")]),
+            ["Claude Code’s new login storage"]
+        );
+    }
+
+    #[test]
+    fn a_prose_detail_starts_with_a_capital_and_data_keeps_its_case() {
+        let details: Vec<String> = lines(&[
+            ("storage_v5", "storage v5", Level::Ok, "inactive", ""),
+            ("state", "accounts", Level::Ok, "none enrolled yet", ""),
+            (
+                "network",
+                "network",
+                Level::Ok,
+                "direct: no variable names a proxy",
+                "",
+            ),
+            (
+                "desktop_settings",
+                "Claude settings",
+                Level::Ok,
+                "config.json read",
+                "",
+            ),
+            (
+                "home",
+                "Pitboard home",
+                Level::Ok,
+                r"C:\Users\dana\AppData\Local\Pitboard",
+                "",
+            ),
+            (
+                "identity",
+                "identity",
+                Level::Ok,
+                "dana@example.com · org 1f2e",
+                "",
+            ),
+            (
+                "claude_version",
+                "Claude Code build",
+                Level::Ok,
+                "2.1.299",
+                "",
+            ),
+            ("state", "accounts", Level::Ok, "1 enrolled", ""),
+        ])
+        .into_iter()
+        .map(|line| line.detail)
+        .collect();
+        assert_eq!(
+            details,
+            [
+                "Inactive",
+                "None enrolled yet",
+                "Direct: no variable names a proxy",
+                "config.json read",
+                r"C:\Users\dana\AppData\Local\Pitboard",
+                "dana@example.com · org 1f2e",
+                "2.1.299",
+                "1 enrolled",
+            ]
+        );
+    }
+
+    // A terminal marks a command with backticks; an app shows them as typed (shot 03).
+    #[test]
+    fn no_check_line_says_a_backtick() {
+        let shown = lines(&[
+            (
+                "identity",
+                "identity",
+                Level::Warn,
+                "Claude Code has not recorded a signed-in account",
+                "It writes this after its first successful call. Run `claude` once.",
+            ),
+            (
+                "desktop_login",
+                "Claude Desktop in use",
+                Level::Warn,
+                "`work` is recorded in use and also holds a parked login",
+                "Run `pitboard enroll work --sign-in`.",
+            ),
+        ]);
+        assert_eq!(
+            shown[0].advice.as_deref(),
+            Some("It writes this after its first successful call. Run claude once.")
+        );
+        assert_eq!(
+            shown[1].detail,
+            "work is recorded in use and also holds a parked login"
+        );
+        assert_eq!(
+            shown[1].advice.as_deref(),
+            Some("Run pitboard enroll work --sign-in.")
+        );
+    }
 
     #[test]
     fn the_renewal_note_says_a_claude_desktop_login_is_never_renewed() {

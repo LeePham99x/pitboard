@@ -69,6 +69,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saying **No accounts** while Claude Code is signed in.
 - An account you add while Pitboard cannot identify the login in use says it was parked, not put
   in use, on a first run too.
+- **This Mac** names each check in sentence case, starts what a check says with a capital and
+  shows commands without backticks.
 
 ## [0.14.0] - 2026-10-14
 
