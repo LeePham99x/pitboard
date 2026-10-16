@@ -152,8 +152,20 @@ public sealed class WebSession
     private void Prepare(CoreWebView2 page, PageRole role)
     {
         _web.Prepare(page);
-        page.NavigationStarting += (sender, args) => Navigating(role, sender, args, frame: false);
-        page.FrameNavigationStarting += (sender, args) => Navigating(role, sender, args, frame: true);
+        // WebView2 still sent the request of a navigation the policy stopped (run 38842851059), so each one's document
+        // request is answered here, empty, before it leaves.
+        var stopped = new HashSet<string>(StringComparer.Ordinal);
+        page.NavigationStarting += (sender, args) => Navigating(role, sender, args, frame: false, stopped);
+        page.FrameNavigationStarting += (sender, args) => Navigating(role, sender, args, frame: true, stopped);
+        page.AddWebResourceRequestedFilter(
+            "*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.Document);
+        page.WebResourceRequested += (sender, args) =>
+        {
+            if (stopped.Remove(args.Request.Uri))
+            {
+                args.Response = sender.Environment.CreateWebResourceResponse(null, 204, "No Content", "");
+            }
+        };
         page.NewWindowRequested += (sender, args) => NewWindow(role, sender, args);
         // A sign-in window's page closes it once it is done; an account window's page cannot close it.
         page.WindowCloseRequested += (_, _) =>
@@ -179,23 +191,26 @@ public sealed class WebSession
         page.LaunchingExternalUriScheme += (_, args) => args.Cancel = true;
     }
 
-    private void Navigating(PageRole role, CoreWebView2 page, CoreWebView2NavigationStartingEventArgs args, bool frame)
+    private void Navigating(
+        PageRole role, CoreWebView2 page, CoreWebView2NavigationStartingEventArgs args, bool frame, HashSet<string> stopped)
     {
         var request = PageRequests.Navigation(_policy, role, args.Uri, frame, args.IsUserInitiated, frame ? null : page.Source);
-        switch (PitboardFfiMethods.DecideNavigation(_policy, role, request))
+        var decision = PitboardFfiMethods.DecideNavigation(_policy, role, request);
+        if (decision is NavigationDecision.Load or NavigationDecision.LoadInPage or NavigationDecision.Popup)
         {
-            case NavigationDecision.Load or NavigationDecision.LoadInPage or NavigationDecision.Popup:
-                return;
+            stopped.Remove(args.Uri);
+            return;
+        }
+
+        args.Cancel = true;
+        stopped.Add(args.Uri);
+        switch (decision)
+        {
             case NavigationDecision.OpenElsewhere away:
-                args.Cancel = true;
                 HandOver(away.Url, away.Note);
                 return;
             case NavigationDecision.Refuse refused:
-                args.Cancel = true;
                 Say(refused.Note);
-                return;
-            default:
-                args.Cancel = true;
                 return;
         }
     }

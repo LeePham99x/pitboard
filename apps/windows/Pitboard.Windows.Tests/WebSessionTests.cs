@@ -40,16 +40,17 @@ public sealed class WebSessionTests
                     "Content-Type: text/html; charset=utf-8");
             }
         };
+        // CF7: in what order WebView2 raises what it does of /away, and whether it ever commits.
+        var seen = new List<string>();
         bool? awayClicked = null;
         page.NavigationStarting += (_, args) =>
         {
             if (args.Uri == away)
             {
                 awayClicked = args.IsUserInitiated;
+                seen.Add($"NavigationStarting cancelled {args.Cancel}");
             }
         };
-        // CF7: whether what the stand-in hears of /away passes the page's own requests, and whether it ever commits.
-        var seen = new List<string>();
         page.AddWebResourceRequestedFilter(away, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
         page.WebResourceRequested += (_, args) =>
         {
@@ -81,6 +82,33 @@ public sealed class WebSessionTests
         Assert.HasCount(1, webs.Elsewhere);
         Console.WriteLine($"CF7: the stand-in heard {string.Join(", ", site.Heard)}; the page saw {string.Join(", ", seen)}");
         Assert.IsEmpty(site.Asked, $"the stand-in heard {string.Join(", ", site.Heard)}; the page saw {string.Join(", ", seen)}");
+    }
+
+    // CF7: whether WebView2 sends the request of a navigation its handler cancelled from a page on http, as the sites'
+    // pages are on https, where from a page of the fixture's own scheme it did (run 38842851059).
+    [UITestMethod]
+    public async Task ACancelledNavigationFromAPageOnHttpNeverShowsItsPage()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var page = await webs.Page("plain");
+        var away = site.Address("/away");
+        var cancelled = false;
+        page.NavigationStarting += (_, args) =>
+        {
+            if (args.Uri == away)
+            {
+                args.Cancel = true;
+                cancelled = true;
+            }
+        };
+
+        Assert.IsTrue(await Webs.Loads(page, site.Address("/leave")), "the stand-in did not load");
+        await Views.Until(() => cancelled, "the page did not leave", Webs.Patience);
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        Console.WriteLine($"CF7: from a page on http, the stand-in heard {string.Join(", ", site.Heard)}");
+        Assert.AreEqual(site.Address("/leave"), page.Source);
     }
 
     // The sign-in window's page is set as the new window before it loads, which is what keeps window.opener.

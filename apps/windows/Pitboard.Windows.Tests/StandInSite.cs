@@ -7,8 +7,9 @@ namespace Pitboard.Windows.Tests;
 
 // A web site on this PC's loopback for the WebView2 tests, so nothing reaches the network: every path is a page, /set
 // sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, /file/<name>
-// a text file it does not say to save, and /anchor/<name> a page that saves that file through an <a download>. It says
-// which paths it was asked for, each with the headers that tell a navigation from a prefetch.
+// a text file it does not say to save, /anchor/<name> a page that saves that file through an <a download>, and /leave a
+// page whose script goes to /away. It says which paths it was asked for, each with the headers that tell a navigation
+// from a prefetch.
 internal sealed class StandInSite : IDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
@@ -79,6 +80,9 @@ internal sealed class StandInSite : IDisposable
                         return;
                     case ["", "file", var name]:
                         await Send(stream, "text/plain; charset=utf-8", Uri.UnescapeDataString(name));
+                        return;
+                    case ["", "leave"]:
+                        await Send(stream, "text/html; charset=utf-8", "<!doctype html><title>leave</title><script>location.href = '/away'</script>");
                         return;
                     case ["", "anchor", var name]:
                         await Send(
