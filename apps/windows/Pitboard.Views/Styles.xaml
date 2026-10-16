@@ -2,8 +2,7 @@
 <!-- Merged after XamlControlsResources, whose styles these extend. -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Style x:Key="SecondaryTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
     <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
   </Style>
@@ -37,11 +36,4 @@
   <Thickness x:Key="PageHeaderMarginMinimal">12,0,12,0</Thickness>
   <Thickness x:Key="PageContentPadding">24,0,24,16</Thickness>
   <Thickness x:Key="PageContentPaddingMinimal">12,0,12,16</Thickness>
-  <!-- A card in a SettingsExpander's ItemsHeader or ItemsFooter, drawn as the toolkit draws one of its items. -->
-  <Style x:Key="SettingsExpanderItemCardStyle" TargetType="toolkit:SettingsCard">
-    <Setter Property="BorderThickness" Value="0,1,0,0" />
-    <Setter Property="MinHeight" Value="52" />
-    <Setter Property="Padding" Value="58,8,44,8" />
-    <Setter Property="CornerRadius" Value="0" />
-  </Style>
 </ResourceDictionary>

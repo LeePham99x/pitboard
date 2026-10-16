@@ -6,6 +6,14 @@
     xmlns:shown="using:Pitboard.Windows"
     xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
     NavigationCacheMode="Required">
+  <!-- The toolkit's own sample of ItemsHeader and ItemsFooter: their cards take the style of the expander's items. -->
+  <Page.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="ms-appx:///CommunityToolkit.WinUI.Controls.SettingsControls/SettingsExpander/SettingsExpander.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Page.Resources>
   <Grid Padding="0,16,0,0" RowSpacing="24">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Sides">
@@ -104,7 +112,7 @@
           </toolkit:SettingsExpander.Description>
           <toolkit:SettingsExpander.ItemsHeader>
             <StackPanel>
-              <toolkit:SettingsCard Header="From" Style="{StaticResource SettingsExpanderItemCardStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
+              <toolkit:SettingsCard Header="From" Style="{StaticResource DefaultSettingsExpanderItemStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
                 <TimePicker
                     x:Name="WarmFrom"
                     SelectedTime="{x:Bind ViewModel.WarmFrom, Mode=OneWay}"
@@ -113,7 +121,7 @@
                     AutomationProperties.Name="Warm up from"
                     SelectedTimeChanged="OnWarmRangeChanged" />
               </toolkit:SettingsCard>
-              <toolkit:SettingsCard Header="To" Style="{StaticResource SettingsExpanderItemCardStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
+              <toolkit:SettingsCard Header="To" Style="{StaticResource DefaultSettingsExpanderItemStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
                 <TimePicker
                     x:Name="WarmTo"
                     SelectedTime="{x:Bind ViewModel.WarmTo, Mode=OneWay}"
@@ -144,11 +152,11 @@
             <StackPanel>
               <toolkit:SettingsCard
                   x:Name="NoWarmAccount"
-                  Style="{StaticResource SettingsExpanderItemCardStyle}"
+                  Style="{StaticResource DefaultSettingsExpanderItemStyle}"
                   Visibility="{x:Bind ViewModel.NoWarmAccounts, Mode=OneWay}" />
               <toolkit:SettingsCard
                   ContentAlignment="Left"
-                  Style="{StaticResource SettingsExpanderItemCardStyle}">
+                  Style="{StaticResource DefaultSettingsExpanderItemStyle}">
                 <TextBlock Text="{x:Bind ViewModel.WarmNote, Mode=OneWay}" Style="{StaticResource SecondaryCaptionTextBlockStyle}" />
               </toolkit:SettingsCard>
             </StackPanel>
