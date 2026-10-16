@@ -511,9 +511,10 @@ pub(crate) fn check_text(text: &str) -> String {
     prose_capitalised(text).replace('`', "")
 }
 
-// The command line prints the core's words after "error:"; an app shows them on their own.
+// The command line prints the core's words after "error:"; an app shows them on their own,
+// without a terminal's backticks.
 pub(crate) fn sentence(text: &str) -> String {
-    let text = prose_capitalised(text);
+    let text = prose_capitalised(text).replace('`', "");
     if text.is_empty() || text.ends_with(['.', '!', '?', '…']) {
         text
     } else {
@@ -1340,7 +1341,11 @@ mod tests {
         );
         assert_eq!(
             sentence("`work` is signed in; switch to another account before forgetting it."),
-            "`work` is signed in; switch to another account before forgetting it."
+            "work is signed in; switch to another account before forgetting it."
+        );
+        assert_eq!(
+            sentence("`codex/main` already refers to main@example.com in another workspace"),
+            "codex/main already refers to main@example.com in another workspace."
         );
         assert_eq!(
             sentence("2 parked login(s) could not be removed yet"),

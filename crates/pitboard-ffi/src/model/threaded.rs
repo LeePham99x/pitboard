@@ -506,8 +506,8 @@ fn a_codex_switchs_warning_reaches_the_snapshot() {
         .iter()
         .find(|w| w.code == "sessions_still_running")
         .expect("the sessions still running are warned about");
-    assert!(warned.message.contains("2 `codex` sessions"), "{warned:?}");
-    assert!(warned.message.contains("`codex/personal`"), "{warned:?}");
+    assert!(warned.message.contains("2 codex sessions"), "{warned:?}");
+    assert!(warned.message.contains("codex/personal"), "{warned:?}");
     assert!(
         last.warnings
             .iter()
@@ -616,7 +616,7 @@ fn a_switch_on_a_process_list_nobody_could_read_says_so_and_asks_nothing() {
         .iter()
         .find(|w| w.code == "sessions_unknown")
         .unwrap_or_else(|| panic!("warned: {:?}", said.warnings));
-    assert!(unknown.message.contains("`codex/personal`"), "{unknown:?}");
+    assert!(unknown.message.contains("codex/personal"), "{unknown:?}");
     assert!(
         said.warnings
             .iter()

@@ -71,8 +71,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in use, on a first run too.
 - **This Mac** names each check in sentence case, starts what a check says with a capital and
   shows commands without backticks.
-- The app shows a failure it has no words of its own for as a sentence, with a capital and a
-  full stop.
+- The app shows a failure or warning it has no words of its own for as a sentence, with a
+  capital, a full stop and no backticks.
 - `pitboard doctor` and **This Mac** say to install Claude Code where it is missing, not to run
   `claude`.
 
