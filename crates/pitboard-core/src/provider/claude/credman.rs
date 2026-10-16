@@ -233,6 +233,24 @@ pub(crate) fn refused_in_a_build_for_tests(ctx: &Context, target: &str) -> Optio
     crate::provider::names::refusal(target, &own).map(|why| format!("{why}; {}", not_own(ctx)))
 }
 
+// A test's cleanup: every item Credential Manager lists under `service`, each by name, so no
+// piece is left past a gap where Claude Code's own delete stops looking.
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub(crate) fn swept(ctx: &Context, service: &str) -> Result<(), String> {
+    let filter = format!("{service}/*");
+    if let Some(why) = refused_in_a_build_for_tests(ctx, &filter) {
+        return Err(why);
+    }
+    let names = crate::host::windows_credman::names(&filter).map_err(|e| e.to_string())?;
+    for name in names {
+        if let Some(why) = refused_in_a_build_for_tests(ctx, &name) {
+            return Err(why);
+        }
+        crate::host::windows_credman::delete(&name).map_err(|e| format!("`{name}`: {e}"))?;
+    }
+    Ok(())
+}
+
 // Said with a refusal: which slots a build for tests takes for its own, or why its
 // `CLAUDE_CONFIG_DIR`'s is none of them.
 #[cfg(any(test, feature = "test-support"))]
@@ -555,7 +573,9 @@ mod tests {
     #[cfg(windows)]
     impl Drop for Scratched {
         fn drop(&mut self) {
-            let _ = Store::of(&self.ctx).delete(Permit::for_a_test(), &self.service);
+            if let Err(why) = swept(&self.ctx, &self.service) {
+                eprintln!("{} was not swept: {why}", self.service);
+            }
         }
     }
 
