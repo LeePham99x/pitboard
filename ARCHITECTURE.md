@@ -427,8 +427,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
   `build.rs` gives a Windows build its manifest, which the linker embeds, and its version
-  resource, which `rc.exe` or `llvm-rc` compiles. Both are in `build/`, the resource's writer
-  in `resources.rs`, one file so `pitboard-ffi`'s build script can include it too.
+  resource, which `rc.exe` or `llvm-rc` compiles, both through `build/versioninfo.rs`.
   `json.rs` is the one writer of that JSON, for every command and every error. Its example
   `stand-in` is the program every test starts in place of a tool: `claude`, `codex` and
   Claude's own program under a test's scratch `Claude.app`, which `ps` lists as Claude.
@@ -458,12 +457,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   says each warm-up, each reason an account is held back once until it warms up, and why
   nothing is warmed up here once until that ends. No warm-up error ends it. `warm.rs` is
   `pitboard warm`. `build/versioninfo.rs` is the Windows version resource SignPath asks of
-  what it signs: ProductName `Pitboard` and the crate's version. The build scripts of
-  `pitboard-ffi` and `pitboard-share-ffi` include it by `#[path]` and link it into their
-  DLLs, compiled by the Windows SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is
-  `X.Y.Z.N` for beta N and `X.Y.Z.1000` otherwise, so each version numbers above the one
-  before. A build without a resource compiler warns and goes on, unless
-  `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows-app` job sets.
+  what it signs: ProductName `Pitboard`, CompanyName `Pitboard` and the crate's version, and
+  `pitboard.exe`'s manifest. The build scripts of `pitboard-ffi` and `pitboard-share-ffi`
+  include it by `#[path]` and link the resource into their DLLs, compiled by the Windows
+  SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is `X.Y.Z.N` for beta N and `X.Y.Z.1000`
+  otherwise, so each version numbers above the one before. A build without a resource
+  compiler warns and goes on, unless `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows`
+  and `windows-app` jobs and the release set.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
