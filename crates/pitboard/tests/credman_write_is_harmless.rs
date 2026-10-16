@@ -31,7 +31,9 @@ struct Discarded(pitboard_core::context::Context, String);
 
 impl Drop for Discarded {
     fn drop(&mut self) {
-        let _ = credman::discard(&self.0, &self.1);
+        if let Err(why) = credman::sweep(&self.0, &self.1) {
+            eprintln!("{} was not swept: {why}", self.1);
+        }
     }
 }
 

@@ -183,7 +183,35 @@ internal sealed class Launched : IDisposable
 
     public AutomationElement Named(string name) => Find(found => found.ByName(name), $"'{name}'");
 
-    public void Invoke(string name) => Named(name).Patterns.Invoke.Pattern.Invoke();
+    // As a person presses it once it can be pressed.
+    public void Invoke(string name)
+    {
+        var found = Named(name);
+        if (!Retry.WhileFalse(() => found.IsEnabled, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result)
+        {
+            throw new AssertFailedException($"'{name}', a {found.ControlType} {found.AutomationId}, stayed dimmed for {Shortly}: {Shown()}");
+        }
+
+        found.Patterns.Invoke.Pattern.Invoke();
+    }
+
+    // Through UI Automation, which reaches a field however the foreground stands.
+    public static void Type(TextBox field, string text) => field.Patterns.Value.Pattern.SetValue(text);
+
+    // A row's shortcut menu, the row scrolled to first as a person would. Where a click cannot reach Pitboard, UI
+    // Automation asks for the menu as the menu key does.
+    public void OpenMenu(AutomationElement row)
+    {
+        row.Patterns.ScrollItem.PatternOrDefault?.ScrollIntoView();
+        if (Foreground.Takes(Window("Pitboard")))
+        {
+            row.RightClick();
+            return;
+        }
+
+        var native = ((UIA3FrameworkAutomationElement)row.FrameworkAutomationElement).NativeElement;
+        ((Interop.UIAutomationClient.IUIAutomationElement3)native).ShowContextMenu();
+    }
 
     public TextBox Field(string automationId) => Find(found => found.ByAutomationId(automationId), automationId).AsTextBox();
 
@@ -211,11 +239,15 @@ internal sealed class Launched : IDisposable
         Assert.IsTrue(shown, $"{scope.Name} does not show '{text}': {Listed(scope)}");
     }
 
+    // Its lines, and the AutomationIds of its list's items.
     private static string Listed(AutomationElement scope)
     {
         try
         {
-            return string.Join(" | ", Lines(scope));
+            var items = scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.ListItem))
+                .Select(item => item.Properties.AutomationId.ValueOrDefault)
+                .Where(id => !string.IsNullOrEmpty(id));
+            return $"{string.Join(" | ", Lines(scope))} [{string.Join(", ", items)}]";
         }
         catch (Exception unread)
         {
@@ -223,8 +255,11 @@ internal sealed class Launched : IDisposable
         }
     }
 
+    // WebView2 gives some of a page's text no Name, which reading Name throws for.
     public static IEnumerable<string> Lines(AutomationElement scope) =>
-        scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
+        scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
+            .Select(text => text.Properties.Name.ValueOrDefault)
+            .OfType<string>();
 
     // A button or a page's link in the scope given, once it shows.
     public static AutomationElement? Pressable(AutomationElement scope, string name) =>

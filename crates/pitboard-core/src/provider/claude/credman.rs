@@ -230,7 +230,51 @@ pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
 pub(crate) fn refused_in_a_build_for_tests(ctx: &Context, target: &str) -> Option<String> {
     let own = own_slots_for_tests(ctx);
     let own: Vec<&str> = own.iter().map(String::as_str).collect();
-    crate::provider::names::refusal(target, &own)
+    crate::provider::names::refusal(target, &own).map(|why| format!("{why}; {}", not_own(ctx)))
+}
+
+// A test's cleanup: every item Credential Manager lists under `service`, each by name, so no
+// piece is left past a gap where Claude Code's own delete stops looking.
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub(crate) fn swept(ctx: &Context, service: &str) -> Result<(), String> {
+    let filter = format!("{service}/*");
+    if let Some(why) = refused_in_a_build_for_tests(ctx, &filter) {
+        return Err(why);
+    }
+    let names = crate::host::windows_credman::names(&filter).map_err(|e| e.to_string())?;
+    for name in names {
+        if let Some(why) = refused_in_a_build_for_tests(ctx, &name) {
+            return Err(why);
+        }
+        crate::host::windows_credman::delete(&name).map_err(|e| format!("`{name}`: {e}"))?;
+    }
+    Ok(())
+}
+
+// Said with a refusal: which slots a build for tests takes for its own, or why its
+// `CLAUDE_CONFIG_DIR`'s is none of them.
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn not_own(ctx: &Context) -> String {
+    let real = match crate::host::real_login_places(None) {
+        Ok(real) => real,
+        Err(why) => return format!("{why}, so no slot is its own"),
+    };
+    let dir = ctx
+        .claude_config_dir
+        .as_deref()
+        .filter(|dir| !dir.is_empty());
+    let held = dir.and_then(|dir| {
+        real.iter()
+            .find(|place| crate::host::lies_in(std::path::Path::new(dir), place))
+    });
+    match (dir, held) {
+        (Some(dir), Some(place)) => format!(
+            "its CLAUDE_CONFIG_DIR {dir} is, holds or lies in {}",
+            place.display()
+        ),
+        _ => format!("its own slots are {}", own_slots(ctx, &real).join(", ")),
+    }
 }
 
 #[cfg(test)]
@@ -529,7 +573,9 @@ mod tests {
     #[cfg(windows)]
     impl Drop for Scratched {
         fn drop(&mut self) {
-            let _ = Store::of(&self.ctx).delete(Permit::for_a_test(), &self.service);
+            if let Err(why) = swept(&self.ctx, &self.service) {
+                eprintln!("{} was not swept: {why}", self.service);
+            }
         }
     }
 

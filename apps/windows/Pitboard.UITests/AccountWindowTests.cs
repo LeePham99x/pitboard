@@ -112,6 +112,7 @@ public sealed class AccountWindowTests
     {
         using var launched = OpenChatGPT();
         var window = launched.Window("main");
+        Foreground.Require(window);
         Launched.Within(window, found => found.ByName("chatgpt.com stand-in").And(found.ByControlType(ControlType.Text)), "the page")
             .Click();
 
@@ -174,9 +175,9 @@ public sealed class AccountWindowTests
 
     private static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
     {
-        launched.Row(qualified).RightClick();
+        launched.OpenMenu(launched.Row(qualified));
         var label = qualified[(qualified.IndexOf('/', StringComparison.Ordinal) + 1)..];
-        launched.Find(found => found.ByAutomationId($"window.{site}/{label}"), "the row's window item").Click();
+        launched.Find(found => found.ByAutomationId($"window.{site}/{label}"), "the row's window item").Patterns.Invoke.Pattern.Invoke();
     }
 
     private static int Windows(Launched launched, string title) => launched.Titles().Count(shown => shown == title);

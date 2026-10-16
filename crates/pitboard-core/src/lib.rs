@@ -215,6 +215,11 @@ pub mod testing {
             let permit = crate::service::gate(ctx)?;
             Ok(store(ctx).delete(permit, service)?)
         }
+
+        // A test's cleanup: every item under `service`, each by name.
+        pub fn sweep(ctx: &Context, service: &str) -> Result<(), String> {
+            crate::provider::claude::credman::swept(ctx, service)
+        }
     }
 
     /// Deletes what is parked under `service`, once the gate has let it.

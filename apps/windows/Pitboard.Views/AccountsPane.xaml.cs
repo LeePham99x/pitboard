@@ -193,7 +193,19 @@ public sealed partial class AccountsPane : UserControl
             _grouping = grouping;
             AccountList.ItemsSource = grouping ? _grouped.View : _rows;
         }
+
+        // A renamed or newly named account keeps its row and its container, which no ContainerContentChanging names again.
+        IEnumerable<ShownAccount> rows = grouping ? _sections.SelectMany(section => section) : _rows;
+        foreach (var row in rows)
+        {
+            if (AccountList.ContainerFromItem(row) is ListViewItem container)
+            {
+                AutomationProperties.SetAutomationId(container, RowId(row));
+            }
+        }
     }
+
+    private static string RowId(ShownAccount shown) => $"account.{shown.Item.Qualified ?? shown.Item.Id}";
 
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
@@ -202,7 +214,7 @@ public sealed partial class AccountsPane : UserControl
             return;
         }
 
-        AutomationProperties.SetAutomationId(args.ItemContainer, $"account.{shown.Item.Qualified ?? shown.Item.Id}");
+        AutomationProperties.SetAutomationId(args.ItemContainer, RowId(shown));
         if (args.ItemContainer.ContentTemplateRoot is AccountRow row)
         {
             row.Perform = _model.Send;

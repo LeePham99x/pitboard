@@ -3795,7 +3795,9 @@ mod tests {
     /// Everything on a machine a change could leave different: every directory and file
     /// under its home, the audit log among them and the scheduler's files with them, every
     /// item in its keychain, every login parked and the one in use. The private directory
-    /// a sign-in made before is not counted: dropping that sign-in takes it away again.
+    /// a sign-in made before is not counted: dropping that sign-in takes it away again. The
+    /// lock that sign-in holds counts by its length: Windows lets no other handle read it
+    /// while it is held, and dropping the sign-in lets it go.
     type Everything = (
         BTreeMap<String, Option<Vec<u8>>>,
         Vec<(String, Option<String>)>,
@@ -3804,16 +3806,6 @@ mod tests {
     );
 
     fn everything(m: &Machine) -> Everything {
-        // Windows lets no other handle read a range a lock holds, as the sign-in's on
-        // `signin.lock`: such a file counts by its length.
-        fn locked(path: &std::path::Path, e: std::io::Error) -> std::io::Result<Vec<u8>> {
-            const ERROR_LOCK_VIOLATION: i32 = 33;
-            if !cfg!(windows) || e.raw_os_error() != Some(ERROR_LOCK_VIOLATION) {
-                return Err(e);
-            }
-            let len = std::fs::metadata(path)?.len();
-            Ok(format!("locked, {len} bytes").into_bytes())
-        }
         fn walk(dir: &std::path::Path, into: &mut BTreeMap<String, Option<Vec<u8>>>) {
             for entry in std::fs::read_dir(dir).expect("a directory to read") {
                 let path = entry.expect("an entry").path();
@@ -3823,9 +3815,11 @@ mod tests {
                 if path.is_dir() {
                     into.insert(path.display().to_string(), None);
                     walk(&path, into);
+                } else if path.ends_with(".pitboard/signin.lock") {
+                    let len = std::fs::metadata(&path).expect("the lock's length").len();
+                    into.insert(path.display().to_string(), Some(len.to_le_bytes().to_vec()));
                 } else {
                     let body = std::fs::read(&path)
-                        .or_else(|e| locked(&path, e))
                         .unwrap_or_else(|e| panic!("{} to read: {e}", path.display()));
                     into.insert(path.display().to_string(), Some(body));
                 }
