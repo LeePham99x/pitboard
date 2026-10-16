@@ -828,6 +828,20 @@ impl Env {
         }
     }
 
+    // Claude Code with Credential Manager turned on in this test's own config, its login moved
+    // into this test's own slot as its first write there moves it (`credman_migration`). The
+    // harness deletes the slot's items by name.
+    #[cfg(windows)]
+    pub(crate) fn turn_credential_manager_on(&self) {
+        self.guard(&self.service);
+        let mut config = self.config();
+        config["cachedGrowthBookFeatures"] = serde_json::json!({"tengu_windows_credman": true});
+        std::fs::write(self.root.join(".claude.json"), config.to_string()).unwrap();
+        let login = std::fs::read_to_string(self.live_path()).unwrap();
+        pitboard_core::testing::credman::write(&self.context(), &self.service, &login).unwrap();
+        std::fs::remove_file(self.live_path()).unwrap();
+    }
+
     pub(crate) fn live(&self) -> serde_json::Value {
         let raw = match os::claude_code_login() {
             Kept::InKeychain => pitboard_core::testing::vault_read(&self.context(), &self.service)

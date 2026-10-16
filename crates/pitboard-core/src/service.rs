@@ -2596,10 +2596,6 @@ mod tests {
     /// session that cannot read the keychain signs in with and no switch reaches. Codex has
     /// no store behind the one in use, so nothing is said of it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_switch_says_a_login_is_left_where_it_does_not_reach() {
         let m = machine("switch-fallback-login");
         let left = plant_behind(
@@ -2655,10 +2651,6 @@ mod tests {
     /// reads no keychain, and says nothing of what is behind one. Codex has no store behind
     /// its own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_read_says_a_file_is_behind_the_keychain() {
         let m = machine("read-fallback-login");
         let left = plant_behind(
@@ -2724,10 +2716,6 @@ mod tests {
     /// with no login in it holds sessions to their account all the same, and is said too:
     /// in words that say so, and with what lets them follow.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn an_empty_file_behind_the_keychain_is_said_too() {
         let m = machine("read-empty-fallback");
         let left = plant_behind(&m, "{}");
@@ -2760,10 +2748,6 @@ mod tests {
     /// cannot read, as one that is not text or that this user may not read, holds sessions
     /// to their account all the same. It is said, in words that do not guess what it holds.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_behind_the_keychain_that_cannot_be_read_is_said_too() {
         let m = machine("read-unreadable-fallback");
         let left = plant_behind(&m, "{}");

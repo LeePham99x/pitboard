@@ -1658,10 +1658,6 @@ fn the_login_in_use_is_offered_a_name() {
 /// it has looked, and Put Away keeps it for personal and deletes the file, which a notice then
 /// says.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-)]
 fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
     let launched = made(World::LeftInFile);
     let (model, told) = started(&launched);

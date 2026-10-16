@@ -1532,3 +1532,68 @@ fn with_credential_manager_turned_on_a_switch_moves_the_login_there_and_back() {
     assert_eq!(code, 0, "use alpha: {err}");
     assert_eq!(stored("alpha"), "refresh-a");
 }
+
+// A session out of Credential Manager's reach, as one in a sign-in over SSH with a key, writes its
+// login to .credentials.json and leaves the item as it was (`credman_unreachable_writes_file`).
+// Put away, that login is parked for its account and the file goes; the item is not touched.
+#[cfg(windows)]
+#[test]
+fn a_login_left_behind_credential_manager_is_parked_for_its_account_and_the_file_put_away() {
+    use pitboard_core::testing::credman;
+    use pitboard_core::testing::stand_in::{Script, Step};
+    let mut env = two_accounts("windows-stow-behind-credman");
+    env.turn_credential_manager_on();
+    let ctx = env.context();
+    let stored = credman::read(&ctx, &env.service).expect("readable");
+    assert!(stored.is_some(), "alpha's login is in Credential Manager");
+    let park = env.parked_service("beta").expect("beta is parked");
+    env.delete_park(&park);
+    let (b, p) = (env.uuid('b'), env.uuid('p'));
+    env.owns("access-refresh-b2", &b, "b@example.com", &p);
+
+    let claude = env.root.join("ssh").join(common::os::program("claude"));
+    std::fs::create_dir_all(claude.parent().expect("its folder")).expect("made");
+    common::put_stand_in(
+        &claude,
+        &Script::Plays {
+            args: None,
+            steps: vec![Step::WritesLogin {
+                under: "CLAUDE_CONFIG_DIR".into(),
+                name: ".credentials.json".into(),
+                contents: common::credential("refresh-b2").to_string(),
+            }],
+        },
+    );
+    let wrote = std::process::Command::new(&claude)
+        .env("CLAUDE_CONFIG_DIR", &env.root)
+        .status()
+        .expect("the stand-in ran");
+    assert!(wrote.success(), "{wrote}");
+    let left = env.root.join(".credentials.json");
+    assert!(left.exists());
+
+    let (out, err, code) = env.run(&["stow", "--yes", "--json"]);
+    assert_eq!(code, 0, "stow: {err}");
+    let stowed = envelope(&out);
+    assert_eq!(
+        (&stowed["data"]["login"], &stowed["data"]["account"]),
+        (&serde_json::json!("parked"), &serde_json::json!("beta")),
+        "{stowed}"
+    );
+    assert!(!left.exists(), "the file is gone");
+    assert_eq!(
+        credman::read(&ctx, &env.service).expect("readable"),
+        stored,
+        "Credential Manager holds what it held"
+    );
+
+    let (_, err, code) = env.run(&["use", "beta"]);
+    assert_eq!(code, 0, "use beta: {err}");
+    let now = credman::read(&ctx, &env.service)
+        .expect("readable")
+        .expect("beta's login");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&now).expect("JSON")["claudeAiOauth"]["refreshToken"],
+        "refresh-b2"
+    );
+}

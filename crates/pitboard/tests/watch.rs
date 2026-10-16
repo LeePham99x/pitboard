@@ -208,14 +208,17 @@ fn watching_says_which_account_it_watches_when_that_changes() {
     }
 }
 
-/// A warning a decision finds is printed though the line it comes with was printed before. A
-/// sign-in over SSH leaves its login in a file behind the keychain and Claude Code's config
-/// naming that account, so whose login is stored is in doubt, and the decision that settles it
-/// under the lock comes to the account already watched, and finds the file.
-#[cfg(target_os = "macos")]
+// A warning a decision finds is printed though the line it comes with was printed before. A
+// sign-in over SSH leaves its login in a file behind the keychain or Credential Manager and
+// Claude Code's config naming that account, so whose login is stored is in doubt, and the
+// decision that settles it under the lock comes to the account already watched, and finds the
+// file. Linux keeps no file behind a store.
+#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn a_warning_is_printed_though_the_line_it_comes_with_was_printed_before() {
     let env = two_accounts("watch-warned");
+    #[cfg(windows)]
+    env.turn_credential_manager_on();
     env.an_hour_on();
     let watch = Watching::start(&env);
     assert_eq!(watch.next()["event"], "watching");

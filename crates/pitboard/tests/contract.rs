@@ -614,12 +614,14 @@ fn stow_with_nothing_left() {
     contract!("stow_nothing_left", value, code);
 }
 
-/// The login Claude Code has stored, left in `.credentials.json` behind the keychain too, goes
-/// with the file. Only macOS keeps a file behind a keychain.
+// The login Claude Code has stored, left in `.credentials.json` behind the keychain or Credential
+// Manager too, goes with the file. Linux keeps no file behind a store.
 #[test]
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 fn stow() {
     let env = two_accounts("contract-stow");
+    #[cfg(windows)]
+    env.turn_credential_manager_on();
     let left = env.root.join(".credentials.json");
     os::write_private(&left, &common::credential("refresh-a").to_string());
     let (value, code) = json(&env, &["stow"]);

@@ -1292,10 +1292,6 @@ fn renaming_and_forgetting_reach_the_core() {
 /// core: the read says the file is there, the sheet says whose the login is, and once it is
 /// put away the file is gone and the read after it says nothing more of it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-)]
 fn putting_away_a_login_left_in_a_file_reaches_the_core() {
     let world = World::new("stow");
     world.enrolled("work", "here", 10.0);

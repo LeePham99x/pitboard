@@ -764,10 +764,6 @@ mod tests {
     /// The login Claude Code has stored, left in the file too, goes with the file: the
     /// keychain holds it, known by its fingerprint, so nobody is asked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn the_login_claude_code_has_stored_goes_with_the_file() {
         let m = machine("stow-stored");
         leave(&m, &document("here-refresh"));
@@ -789,10 +785,6 @@ mod tests {
     /// A login Pitboard keeps parked, left in the file too, goes with the file, and the park
     /// stays as it was.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_pitboard_keeps_parked_goes_with_the_file() {
         let m = machine("stow-already-parked");
         leave(&m, &json!({"claudeAiOauth": oauth("there-refresh", 30)}));
@@ -817,10 +809,6 @@ mod tests {
     /// A park that does not read back keeps nothing, so the same login left in the file is
     /// parked in its place before the file goes: the park's record alone is not a login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_whose_park_does_not_read_back_is_parked_in_its_place() {
         let m = machine("stow-park-gone");
         m.mem.vault().delete_everything();
@@ -849,10 +837,6 @@ mod tests {
     /// login of that account already, so this one is dropped with the file and nothing is
     /// parked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn another_login_of_the_account_in_use_is_dropped_as_a_second_sign_in() {
         let m = machine("stow-second-sign-in");
         m.api.owned_by("access-here-again", owner("here"));
@@ -874,10 +858,6 @@ mod tests {
     /// The login of an enrolled account Pitboard holds no login of is parked for it, and the
     /// file goes only once the park is recorded.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_of_an_account_with_nothing_parked_is_parked_before_the_file_goes() {
         let m = machine("stow-parks");
         enrolled(&m, "elsewhere");
@@ -920,10 +900,6 @@ mod tests {
     /// An account whose park has expired holds no login it can be switched to, so the login
     /// in the file is parked in its place.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_of_an_account_whose_park_has_expired_takes_its_place() {
         let m = machine("stow-expired-park");
         let mut state = state::load(&m.ctx).expect("state");
@@ -956,10 +932,6 @@ mod tests {
     /// An account holding a park it can be switched to keeps that park, and the other login
     /// of it goes with the file.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn an_account_with_a_park_it_can_switch_to_keeps_that_park() {
         let m = machine("stow-park-kept");
         m.api.owned_by("access-there-again", owner("there"));
@@ -984,10 +956,6 @@ mod tests {
     /// that account signed in to since goes with the file, and so does one whose access token
     /// had expired and was renewed to tell whose it is, which then expires later than any park.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_park_it_can_switch_to_is_kept_though_the_files_login_is_newer() {
         let kept = Kept::ParkKept {
             label: "there".into(),
@@ -1039,10 +1007,6 @@ mod tests {
     /// Once the file has gone it is the account's park as any other, and another login of that
     /// account left in a file later goes with that file.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_parked_from_the_file_is_kept_once_that_file_has_gone() {
         let m = machine("stow-parked-then-kept");
         enrolled(&m, "elsewhere");
@@ -1079,10 +1043,6 @@ mod tests {
     /// and a session that signs in with the file can renew the login there meanwhile, which
     /// spends the copy: the renewed login is parked in its place.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_copy_a_killed_run_never_recorded_is_not_kept_over_the_login_renewed_since() {
         let m = machine("stow-killed-unrecorded");
         enrolled(&m, "elsewhere");
@@ -1117,10 +1077,6 @@ mod tests {
     /// The login of an account nobody enrolled is refused, naming the account by its email
     /// and organisation, and nothing is deleted or parked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn the_login_of_an_account_not_enrolled_is_refused_and_named() {
         let m = machine("stow-not-enrolled");
         m.api.owned_by("access-stranger-refresh", owner("stranger"));
@@ -1157,10 +1113,6 @@ mod tests {
     /// whose `claudeAiOauth` holds no token, as every warning and doctor tell it: the look,
     /// the warning and putting it away agree, and nothing is sent anywhere.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_with_no_login_in_it_is_deleted() {
         let mcp = json!({"mcpOAuth": {"some-server": {"token": "t"}}}).to_string();
         for (contents, dropped) in [
@@ -1199,10 +1151,6 @@ mod tests {
     /// and one whose refresh token Anthropic refuses for good was no longer valid: the file
     /// goes.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_anthropic_refuses_for_good_goes_with_the_file() {
         let m = machine("stow-refused");
         m.api.renew_trouble("gone-refresh", Trouble::InvalidGrant);
@@ -1221,10 +1169,6 @@ mod tests {
     /// enrolled, which says it renewed it, the file holds the renewed login, with the
     /// machine's keys kept.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn an_expired_login_is_renewed_and_written_back_before_anything_else() {
         let m = machine("stow-renewed");
         renews(&m, "left-refresh", "left-renewed");
@@ -1267,10 +1211,6 @@ mod tests {
     /// name, written down before the refresh token is sent, is let go of, and Pitboard's
     /// record ends as it was.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn with_anthropic_out_of_reach_nothing_changes() {
         let m = machine("stow-offline");
         m.api
@@ -1300,10 +1240,6 @@ mod tests {
 
     /// A keychain that cannot be read, or a file that cannot, says why, and nothing changes.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_locked_keychain_or_an_unreadable_file_changes_nothing() {
         let m = machine("stow-locked");
         m.api.owned_by("access-there-again", owner("there"));
@@ -1339,10 +1275,6 @@ mod tests {
     /// The file is put away only while it holds what was confirmed: one that changed since,
     /// or went, is left as it is, and so is everything else.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_that_changed_since_it_was_confirmed_is_left_alone() {
         let m = machine("stow-changed");
         leave(&m, &document("here-refresh"));
@@ -1365,10 +1297,6 @@ mod tests {
     /// login in the file while Pitboard waits for that lock, or a `/logout` that took none
     /// rewriting it before it goes, leaves the file as they wrote it, and nothing else changes.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_rewritten_meanwhile_is_left_as_it_was_written() {
         // Before Claude Code's lock, a login that would be parked; before the file goes, one
         // whose account keeps its park.
@@ -1406,10 +1334,6 @@ mod tests {
     /// Claude Code's lock first replaced it, so the file, which may hold the only copy of that
     /// account's login, stays.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_sign_in_before_the_file_goes_keeps_the_file_whose_login_it_counted_on() {
         for (name, left) in [
             ("stow-stored-replaced", "here-refresh"),
@@ -1443,10 +1367,6 @@ mod tests {
     /// its own refusals and a keychain that locks alike: the file holds the renewed login, or
     /// the park stays, and the file is not deleted.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_refusal_after_the_login_was_renewed_or_parked_says_so() {
         let m = machine("stow-renewed-then-offline");
         renews(&m, "left-refresh", "left-renewed");
@@ -1534,10 +1454,6 @@ mod tests {
     /// refresh token the file holds. So that lock is taken once before the token is sent:
     /// held by a session then, nothing is sent, and nothing has changed.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_write_lock_held_before_a_renewal_stops_it_with_the_refresh_token_unsent() {
         let m = lapsed_login_left("stow-write-lock-before");
         let writing = lock_dir(&write_target(&m));
@@ -1571,10 +1487,6 @@ mod tests {
     /// only login left of that grant. So it is waited for longer than a change waits: here a
     /// session holds it until a change would have given up on it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_login_left("stow-write-lock-after");
 
@@ -1602,10 +1514,6 @@ mod tests {
     /// dropped over it: the login is saved without the lock, as Claude Code writes on once
     /// its own is lost. Here the lock is a file, which taking it over fails on at once.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_write_lock_never_let_go_of_does_not_cost_the_renewed_login() {
         let m = lapsed_login_left("stow-write-lock-stuck");
         let stuck = lock_dir(&write_target(&m));
@@ -1639,10 +1547,6 @@ mod tests {
     /// session that cannot read the keychain saves an MCP token to the file, and that is kept
     /// beside the renewed login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_whose_other_keys_were_written_meanwhile_takes_the_renewed_login() {
         let m = machine("stow-other-keys-written");
         renews(&m, "left-refresh", "left-renewed");
@@ -1673,10 +1577,6 @@ mod tests {
     /// Anthropic answers does not stand in the way of: what stops then says the login was
     /// kept, and putting away again finishes.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_keychain_that_locks_while_the_login_is_renewed_does_not_lose_it() {
         let m = lapsed_login_left("stow-locks-while-renewing");
 
@@ -1707,10 +1607,6 @@ mod tests {
     /// has nowhere to go, and what stops it says that login is spent, never that nothing
     /// changed.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_renewed_login_that_cannot_be_written_back_is_said_to_be_spent() {
         const SPENT: &str = "Pitboard deleted nothing. It renewed the login the file held and \
                              could not write the renewed login back there, so that login no \
@@ -1741,10 +1637,6 @@ mod tests {
     /// says so. The next change writes it into the file, and putting it away again finishes
     /// with it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_renewed_login_the_file_cannot_take_yet_is_kept_for_the_next_change() {
         const KEPT: &str = "Pitboard deleted nothing. It renewed the login the file held and \
                             keeps the renewed login until the next change writes it back \
@@ -1785,10 +1677,6 @@ mod tests {
     /// the store Claude Code keeps its login in: on Linux always, and on macOS where the
     /// keychain holds none.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn nothing_behind_the_store_is_nothing_to_put_away() {
         let m = machine("stow-nothing");
         let state = state::load(&m.ctx).expect("state");
@@ -1802,10 +1690,6 @@ mod tests {
     /// The look says what putting the file away would do, and changes nothing: no file is
     /// written, nothing is parked, and an expired access token is not sent anywhere.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn the_look_says_what_putting_away_would_do_and_changes_nothing() {
         let m = machine("stow-look");
         enrolled(&m, "elsewhere");
@@ -1837,10 +1721,6 @@ mod tests {
     /// Killed anywhere, a login is left somewhere: in the file, renewed or not, in a park, or
     /// in both. Putting it away again finishes the job.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn killed_anywhere_the_login_is_left_somewhere_and_putting_away_again_finishes() {
         for point in ["stow.identified", "refresh.saved", "stow.kept"] {
             let m = machine(&format!("stow-killed-{point}"));
@@ -1880,10 +1760,6 @@ mod tests {
     /// next change writes it into the file, so the file has changed since the look, and
     /// putting it away again finishes with the renewed login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn killed_before_the_renewed_login_reached_the_file_the_next_change_writes_it_there() {
         let m = lapsed_login_left("stow-killed-after-the-exchange");
         let seen = found(&m).seen;
@@ -1925,10 +1801,6 @@ mod tests {
     /// again, since the file still holds the refresh token it spent. Where it cannot be saved
     /// yet, putting the file away stops with why, sending and deleting nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_renewal_left_unsaved_is_saved_before_the_file_is_put_away() {
         let m = lapsed_login_left("stow-left-unsaved");
         let seen = found(&m).seen;
@@ -1959,10 +1831,6 @@ mod tests {
     /// though Anthropic names the file's login by its access token by then, so the spent
     /// login is never parked and the renewed one never let go of.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_file_whose_renewal_waits_is_not_put_away_once_its_login_is_named() {
         let m = machine("stow-renewal-waits-named");
         enrolled(&m, "elsewhere");
@@ -2009,10 +1877,6 @@ mod tests {
     /// login was found to be and what became of it, and a refusal with its code. A read after
     /// it no longer finds the file.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn putting_away_is_recorded_in_the_activity_log() {
         let m = machine("stow-audit");
         enrolled(&m, "elsewhere");
@@ -2058,10 +1922,6 @@ mod tests {
     /// file's login, so the next run parks the renewed login in its place, rather than keep
     /// the spent park and delete the only login that still works.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_renewed_in_the_file_after_a_run_stopped_takes_the_spent_parks_place() {
         for stop in ["killed", "locked"] {
             let m = machine(&format!("stow-renewed-after-{stop}"));
@@ -2137,10 +1997,6 @@ mod tests {
     /// waits: the login Pitboard parks, renewed by Pitboard first or as it was, is never one a
     /// session spent with its renewal lost when the file went.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_session_renewing_the_login_in_the_file_meanwhile_waits_for_it() {
         for (point, left, parked) in [
             ("refresh.saved", lapsed("left-refresh"), "left-renewed"),
@@ -2209,10 +2065,6 @@ mod tests {
     /// whose the login stored is matters only for an enrolled account, so it is not asked,
     /// and Anthropic out of reach for it does not stand in the way.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_of_an_account_not_enrolled_is_named_without_asking_whose_the_login_stored_is() {
         let m = machine("stow-not-enrolled-stored-unknown");
         m.sign_in(&document("here-renewed"));
@@ -2243,10 +2095,6 @@ mod tests {
     /// be, renewing nothing, and putting it away renews that login as Claude Code would to
     /// tell whose it is, then goes on.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_lapsed_stored_login_is_renewed_to_tell_whose_it_is_and_the_file_put_away() {
         let kept = Kept::ParkKept {
             label: "there".into(),
@@ -2288,10 +2136,6 @@ mod tests {
     /// away. Where the vault could not keep it either, it is lost, and the message says to
     /// sign in.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_renewal_of_the_login_stored_that_stops_stow_is_said() {
         for lost in [false, true] {
             let m = machine(&format!("stow-stored-renewal-lost-{lost}"));
@@ -2340,10 +2184,6 @@ mod tests {
     /// A login with no refresh token whose access token has expired can never be used again:
     /// it is dead, and goes with the file, with nothing sent anywhere.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_with_no_refresh_token_left_to_expire_is_dead() {
         let m = machine("stow-no-refresh-token");
         leave(
@@ -2366,10 +2206,6 @@ mod tests {
     /// away: something that signs Claude Code in some other way is said beside it, since
     /// sessions then follow no switch, file or no file.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn putting_away_says_what_signs_claude_code_in_some_other_way() {
         let m = machine("stow-overridden");
         let config = m.ctx_home().join(".claude");

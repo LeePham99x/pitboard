@@ -4664,10 +4664,6 @@ mod tests {
     /// holds the login in use, with the login in it, none, or why it cannot be read, and
     /// nothing where the file is the store in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn a_login_left_behind_the_keychain_is_found_in_its_file() {
         use crate::host::memory::MemoryHost;
         use crate::store::memory::Fault;

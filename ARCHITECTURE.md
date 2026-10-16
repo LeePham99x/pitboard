@@ -50,7 +50,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
       login, whose it is, how to renew it, what it has left and what its sign-in prints,
       which `provider::sign_in_view` reads for both apps, and when a session already running
       takes a switch made now (`Adoption`), which for Claude Code turns on whether a file
-      sits behind the keychain (`behind`). `provider/codex/holders.rs` names where a running
+      sits behind the keychain or Credential Manager (`behind`). `provider/codex/holders.rs` names where a running
       `codex` can be, and what makes each take a switch. `provider/codex/layers.rs` reads
       which store Codex keeps its login in from every layer of configuration Codex reads
       outside a project, in Codex's order, for a switch and for a sign-in.
@@ -173,8 +173,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     account is forgotten.
   - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
     `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
-    uninstalling, and putting away a login Claude Code left in a file behind the keychain in
-    `stow.rs`), and the journal that finishes an interrupted switch of a Claude Code or
+    uninstalling, and putting away a login Claude Code left in a file behind the keychain or
+    Credential Manager in `stow.rs`), and the journal that finishes an interrupted switch of a Claude Code or
     Codex login (`journal.rs`). `identify.rs` says whose login Claude Code or Codex has
     stored: the record's owner where the login's refresh token has the fingerprint the
     record was made for, which asks nobody, and the tool's service otherwise (`whose`). A
@@ -510,8 +510,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     switch, keeps what each tool's last switch said, runs Claude Code's and Codex's own
     sign-in, parks the account in use for a sign-in inside Claude and waits for Claude to
     quit signed in, enrols the login signed in now, renames and forgets, writes the account
-    in use into Claude Code's config, puts away a login left in a file behind the keychain
-    from a sheet that looks first, keeps the sheet over the main window, says which account
+    in use into Claude Code's config, puts away a login left in a file behind the keychain or
+    Credential Manager from a sheet that looks first, keeps the sheet over the main window, says which account
     to switch to once the one in use has run out, notified once for each reset, switches
     Claude Code by itself with its setting on, asking the core's look after every read and
     every 30 seconds and saying under the setting what it came to, warms up the accounts
@@ -882,8 +882,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   integration tests' harness says what differs by system in
   `crates/pitboard/tests/common/os.rs`, one `match` on `host::OS` for each fact: where
   Claude Code keeps the login it uses (`.credentials.json` on Windows, as on Linux, unless a
-  test turns Credential Manager on, whose items in its own slot the harness deletes by name:
-  `windows_backend_choice`), where Pitboard
+  test turns Credential Manager on, `Env::turn_credential_manager_on`, whose items in its own
+  slot the harness deletes by name: `windows_backend_choice`), where Pitboard
   parks one (sealed to the person on Windows, which only the core's vault writes, so the
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
@@ -1147,7 +1147,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account in use goes. The core refuses it, writing nothing, where another account is in
   use by then, so a button drawn before a switch landed never switches back. What it warned
   of is said beside the read after it, as a sign-in's is.
-- The notice that a login is left in a file behind the keychain offers to put it away:
+- The notice that a login is left in a file behind the keychain or Credential Manager offers
+  to put it away:
   `Sheet::Stow`, which looks first, on the lane of reads (`Job::LookLeft`), and says whose
   the login is once that is known, in the words `pitboard stow` asks with, offering **Put
   Away** only for a login it can put away. `Intent::Stow` puts away the file as that look
@@ -1373,7 +1374,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   switches: new sessions take the account switched to at once, and running ones at their
   next renewal. A read and a switch never touch the file.
 - Only `pitboard stow`, and the app's **Put Away** after its sheet, write or delete
-  `.credentials.json` while the keychain holds the login in use, and only once somebody has
+  `.credentials.json` while the keychain, or Credential Manager on Windows, holds the login in
+  use, and only once somebody has
   confirmed what the file holds. It looks first, taking no lock and writing nothing:
   `stow::find` reads the file, tells whose its login is by its refresh token's fingerprint
   where that is the login stored, a park's that reads back, or the record's, and otherwise
@@ -1430,7 +1432,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   before `stow` reads the file, and where it cannot be yet, `stow` stops with nothing
   changed. A session that signed in with the file, as one over SSH does, is signed out once
   it is gone. The activity log records it as `stow`. On Linux the file is the store, nothing
-  is behind it, and there is nothing to put away.
+  is behind it, and there is nothing to put away. On Windows a session out of Credential
+  Manager's reach, as one in a sign-in over SSH with a key, leaves one there, and it goes the
+  same way (`credman_unreachable_writes_file`).
 - A Codex login is moved, never copied (`ParkSemantics::MoveOnly`). The parked login is
   read back before the incoming login is written. Codex's own sign-in and sign-out revoke
   the stored refresh token, so two usable copies of one login must never be at rest.

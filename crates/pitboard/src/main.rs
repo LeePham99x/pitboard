@@ -1391,10 +1391,6 @@ mod tests {
     /// asked, and putting it away is not tried, so the file stays and the activity log has no
     /// line of it. On a machine in memory, whose Anthropic answers from a script.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
     fn stow_refuses_a_login_of_an_account_not_enrolled_as_the_look_found_it() {
         use pitboard_core::provider::Owner;
         use pitboard_core::testing::{FixedClock, MemoryHost, ScriptedApi, live_service};

@@ -172,7 +172,6 @@ public sealed class AccountsWindowTests
 
     // macOS has no UI test of this: no world of its fixtures left a login in a file until this one.
     [TestMethod]
-    [Ignore("W23b: Claude Code's login left in a file behind its Credential Manager store")]
     public void PuttingAwayALoginLeftInAFile()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "leftInFile");
