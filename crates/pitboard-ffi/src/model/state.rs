@@ -3222,7 +3222,7 @@ impl State {
         // choice was made from a menu that did not yet show the first. A question waiting to
         // be answered comes back to the front rather than being left behind unseen.
         if self.switch_under_way().is_some() {
-            if self.asking().is_some() {
+            if self.asking().is_some() || self.replace_asked().is_some() {
                 self.show_window(Some(Pane::Accounts));
             }
             return;

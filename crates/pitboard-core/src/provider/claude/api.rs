@@ -180,6 +180,8 @@ fn read(mut response: ureq::http::Response<ureq::Body>) -> Result<Value, Provide
                 Err(ProviderError::Unauthorized)
             }
         }
+        // The request is not one the service takes any more, which no sign-in mends.
+        404 | 405 => Err(malformed(Refusal::of(&mut response))),
         _ => Err(ProviderError::answered(SERVICE, Refusal::of(&mut response))),
     }
 }

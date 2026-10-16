@@ -180,7 +180,12 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         && !login_unread(account);
     let switching = account.qualified.is_some() && account.qualified.as_deref() == switching_for;
     let title = if account.unplaced {
-        "Login Pitboard can’t use".to_owned()
+        match account.stale.as_deref() {
+            Some("login_unreadable" | "login_unusable") => "Login Pitboard can’t use",
+            // Read, and not one Anthropic or OpenAI named, whether or not it could be asked.
+            _ => "Login Pitboard can’t identify",
+        }
+        .to_owned()
     } else {
         account
             .label

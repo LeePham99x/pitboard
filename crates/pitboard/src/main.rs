@@ -564,11 +564,10 @@ fn use_account(pitboard: &Pitboard, label: &str, confirm: Confirm) -> Option<Rep
                     tool,
                     label: typed,
                     detail,
-                    dead,
                 },
                 Confirm::Ask,
             ) => {
-                let question = pitboard_core::words::replace_question(*tool, typed, detail, *dead);
+                let question = pitboard_core::words::replace_question(*tool, typed, detail);
                 if !agreed(&question) {
                     return None;
                 }

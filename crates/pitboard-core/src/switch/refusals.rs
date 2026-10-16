@@ -489,7 +489,7 @@ fn a_switch_from_a_login_anthropic_refuses_for_good_asks_first_and_moves_nothing
     let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
 
     assert!(
-        matches!(&asked, Error::LiveLoginRefused { label, dead: true, .. } if label == "there"),
+        matches!(&asked, Error::LiveLoginRefused { label, .. } if label == "there"),
         "{asked:?}"
     );
     assert_eq!(asked.code(), "live_login_refused");
@@ -569,10 +569,10 @@ fn an_account_on_hold_or_an_outage_is_never_offered_a_replacement() {
     }
 }
 
-/// A login whose identity Anthropic refuses to give is offered as one that cannot be parked,
-/// not as one that no longer works.
+/// A login Anthropic will not name may still work: only a refresh token refused for good is
+/// a login to replace, as Claude Code takes `invalid_grant` alone to end one.
 #[test]
-fn a_login_anthropic_will_not_name_is_offered_as_one_that_cannot_be_parked() {
+fn a_login_anthropic_will_not_name_is_never_offered_for_replacing() {
     let m = machine("replace-unnamed");
     m.sign_in(&harness::document("here-unnamed"));
     m.api.token_trouble(
@@ -582,41 +582,95 @@ fn a_login_anthropic_will_not_name_is_offered_as_one_that_cannot_be_parked() {
             r#"{"error":{"type":"invalid_request_error","message":"no"}}"#,
         ),
     );
+    let before = m.mem.live().peek(&m.service);
 
-    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
-
-    assert!(
-        matches!(&asked, Error::LiveLoginRefused { dead: false, .. }),
-        "{asked:?}"
-    );
-    assert!(
-        asked.to_string().contains("signs Claude Code out of it"),
-        "{asked}"
-    );
+    for change in [switch, replace] {
+        let refused = change(settled(&m), &m.key("there")).expect_err("no switch");
+        assert_eq!(refused.code(), "identity_unverifiable", "{refused:?}");
+    }
+    assert_eq!(m.mem.live().peek(&m.service), before, "nothing moved");
 }
 
-/// Killed once the account's login is written in place of the refused one, before anything is
-/// recorded: the next change drops the park that is now a copy of the login in use, and the
-/// next read names it.
+/// A lapsed login renewed, whose renewed access token `validate` then refuses: the login
+/// Anthropic has just renewed is never written over.
 #[test]
-fn a_replacement_killed_once_written_leaves_one_copy_of_the_login() {
-    let m = dead_in_use("replace-killed");
-    let died = fault::killing("replace.installed", || {
-        replace(settled(&m), &m.key("there")).map(|_| ())
-    });
-    assert_eq!(died.err().as_deref(), Some("replace.installed"));
-
-    drop(settled(&m));
-    let state = state::load(&m.ctx).expect("state");
-    assert!(
-        state.get(&m.key("there")).expect("there").parked.is_none(),
-        "the park that is a copy of the login in use is dropped"
+fn a_login_renewed_then_refused_a_name_is_never_written_over() {
+    let m = machine("replace-renewed-then-refused");
+    m.sign_in(&harness::lapsed("here-lapsed"));
+    harness::renews(&m, "here-lapsed", "here-renewed");
+    m.api.token_trouble(
+        "access-here-renewed",
+        Trouble::Answered(404, r#"{"error":{"type":"not_found_error"}}"#),
     );
+
+    let refused = replace(settled(&m), &m.key("there")).expect_err("no replacement");
+
+    assert_eq!(refused.code(), "identity_unverifiable", "{refused:?}");
     assert_eq!(
         m.live()
             .and_then(|live| live.pointer("/claudeAiOauth/refreshToken").cloned()),
-        Some(serde_json::json!("there-refresh"))
+        Some(serde_json::json!("here-renewed")),
+        "the renewed login is where the renewal saved it"
     );
+}
+
+/// `validate` names the account and no organisation, and the profile is refused: the
+/// organisation comes from Claude Code's own record of that account, and the switch is made.
+#[test]
+fn a_login_validated_without_an_organisation_is_told_by_claude_codes_record() {
+    let m = machine("validate-unorganised");
+    m.sign_in(&harness::document("here-again"));
+    m.api.owned_by("access-here-again", owner("here"));
+    m.api.validated_without_organisation("access-here-again");
+    m.api.profile_trouble(
+        "access-here-again",
+        Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+    );
+
+    let (outcome, _) = switch(settled(&m), &m.key("there")).expect("a switch");
+
+    assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
+}
+
+/// Killed once the account's login is written in place of the refused one, before anything is
+/// recorded: the journal holds every renewal of the park going in back, and the next change
+/// finishes it, whether or not Claude Code renewed the login in the slot meanwhile.
+#[test]
+fn a_replacement_killed_once_written_is_finished_by_the_next_change() {
+    for rotated in [false, true] {
+        let m = dead_in_use(&format!("replace-killed-{rotated}"));
+        let died = fault::killing("replace.installed", || {
+            replace(settled(&m), &m.key("there")).map(|_| ())
+        });
+        assert_eq!(died.err().as_deref(), Some("replace.installed"));
+        if rotated {
+            m.api.owned_by("access-there-rotated", owner("there"));
+            m.sign_in(&harness::document("there-rotated"));
+        }
+
+        assert!(
+            journal::pending(&m.ctx),
+            "{rotated}: the replacement waits, which holds every renewal of a park back"
+        );
+        assert!(
+            renew_due(&m.ctx, Permit::for_a_test(), Due::ToStayAlive).is_empty(),
+            "{rotated}"
+        );
+
+        drop(settled(&m));
+        let state = state::load(&m.ctx).expect("state");
+        assert!(
+            state.get(&m.key("there")).expect("there").parked.is_none(),
+            "{rotated}: the park now in use is dropped"
+        );
+        assert_eq!(
+            state
+                .account_in_use(ProviderId::Claude)
+                .map(|a| a.label.as_str()),
+            Some("there"),
+            "{rotated}"
+        );
+    }
 }
 
 /// Anthropic names the account of the login in use and will not give its email, and nothing

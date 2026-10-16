@@ -73,13 +73,25 @@ impl Provider for Claude {
     fn identity(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
         let token = token(credential)?;
         let validated = api::validate(ctx, token)?;
-        match validated.organization_uuid {
-            Some(organization_uuid) => Ok(Identity {
+        if let Some(organization_uuid) = validated.organization_uuid {
+            return Ok(Identity {
                 account_uuid: validated.account_uuid,
                 organization_uuid,
-            }),
-            // The profile names the organisation every enrolled account was recorded under.
-            None => api::owner(ctx, token).map(|owner| owner.identity()),
+            });
+        }
+        // The profile names the organisation every enrolled account was recorded under, and
+        // Claude Code's sign-in records it there or from the token answer. The token is
+        // valid, so neither failing is a refusal of the login.
+        match api::owner(ctx, token) {
+            Ok(owner) => Ok(owner.identity()),
+            Err(ProviderError::Unauthorized) => Err(ProviderError::Unauthorized),
+            Err(error) => self
+                .own_record(ctx)
+                .filter(|recorded| recorded.account_uuid == validated.account_uuid)
+                .map(|recorded| recorded.identity())
+                .ok_or(ProviderError::Unnamed {
+                    error: Box::new(error),
+                }),
         }
     }
 

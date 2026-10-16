@@ -787,7 +787,12 @@ fn from_sign_in(
     login: &Stored<'_>,
 ) -> Result<(Enrolled, Vec<Warning>)> {
     let owner = identify::asked(&ctx.signed_in_at(login.dir), state, tool, login.document)
-        .map_err(|e| super::unidentified(tool.id(), e))?;
+        .map_err(|e| {
+            let login = crate::error::Unidentified::SignIn {
+                label: state.typed(key),
+            };
+            super::unidentified_as(tool.id(), login, e)
+        })?;
     claim(state, key, &owner)?;
     let (now, lost) = signed_in_now(ctx, login.permit, state, tool, &owner);
     let said = |(enrolled, warnings): (Enrolled, Vec<Warning>)| {

@@ -34,7 +34,7 @@ fn standing(row: &Row, now: i64) -> String {
             match row.stale {
                 Some(Stale::LoginUnusable) => "login cannot be switched",
                 Some(Stale::LoginUnreadable) => "login could not be read",
-                _ => "account could not be told",
+                _ => "account could not be identified",
             },
         );
     }

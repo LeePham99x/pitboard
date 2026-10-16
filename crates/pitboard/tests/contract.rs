@@ -217,6 +217,28 @@ fn a_switch_from_a_login_anthropic_no_longer_accepts_asks_and_replaces_it_with_y
     assert!(value["data"]["from"].is_null(), "{value}");
 }
 
+// A request Anthropic no longer takes is a change on its side, which no sign-in mends.
+#[test]
+fn a_request_anthropic_no_longer_takes_says_to_update_pitboard() {
+    let mut env = two_accounts("contract-not-found");
+    env.identity_answers(
+        404,
+        r#"{"type":"error","error":{"type":"not_found_error","message":"Not Found"}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(
+        value["error"]["cause"]["code"], "answer_not_understood",
+        "{value}"
+    );
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.ends_with("Check for a Pitboard update.")),
+        "{value}"
+    );
+}
+
 // The reporter's dialog said only "Anthropic answered 400".
 #[test]
 fn a_refusal_says_why_and_is_not_worth_retrying() {

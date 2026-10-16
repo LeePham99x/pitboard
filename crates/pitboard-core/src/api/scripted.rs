@@ -67,6 +67,8 @@ pub enum Asked {
 #[derive(Debug, Default)]
 struct Script {
     owners: HashMap<String, Answer<Owner>>,
+    /// Tokens `validate` answers with no organisation for.
+    unorganised: std::collections::HashSet<String>,
     /// What the profile answers in place of what `owners` says, for a token whose identity
     /// is told and whose profile is not.
     profiles: HashMap<String, Answer<Owner>>,
@@ -120,6 +122,12 @@ impl ScriptedApi {
         self.script()
             .renewals
             .insert(refresh_token.into(), Answer::Give(renewed));
+        self
+    }
+
+    /// `validate` names this access token's account and no organisation.
+    pub fn validated_without_organisation(&self, access_token: &str) -> &ScriptedApi {
+        self.script().unorganised.insert(access_token.into());
         self
     }
 
@@ -207,12 +215,13 @@ impl ScriptedApi {
 
 impl Api for ScriptedApi {
     fn validate(&self, _ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+        let unorganised = self.script().unorganised.contains(access_token);
         self.answer(Asked::Identity(access_token.into()), |s| {
             s.owners.get(access_token)
         })
         .map(|owner| Validated {
             account_uuid: owner.account_uuid,
-            organization_uuid: Some(owner.organization_uuid),
+            organization_uuid: (!unorganised).then_some(owner.organization_uuid),
         })
     }
 

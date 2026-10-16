@@ -209,6 +209,9 @@ fn over_the_account_switched_to(error: &Error) -> bool {
             login: crate::error::Unidentified::Parked { .. },
             cause,
             ..
+        }
+        | Error::RenewalFailed {
+            cause: Some(cause), ..
         } => !cause.worth_retrying(),
         error => matches!(
             error,
@@ -1042,6 +1045,45 @@ mod tests {
         assert_eq!(to, "other");
         assert_eq!(live_refresh(&m).as_deref(), Some("other-refresh"));
         hold(&m, "after passing one account over");
+    }
+
+    /// An account on hold, whose parked login Anthropic will not renew, is passed over for the
+    /// next with room, and its login kept.
+    #[test]
+    fn an_account_on_hold_is_passed_over_for_the_next() {
+        let (m, clock) = nearly_out("auto-on-hold", 96.0);
+        let parked = park::reserve(&m.ctx, Permit::for_a_test(), "other").expect("a name");
+        let parked = park::store_at(
+            &m.ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Claude),
+            &parked,
+            &harness::oauth("other-refresh", 30),
+        )
+        .expect("parked");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .push(harness::account("other", "other", Some(parked)));
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        m.api.owned_by("access-other-refresh", owner("other"));
+        measured(&m, "other", 40.0, 40.0);
+        m.api
+            .token_trouble("access-there-refresh", Trouble::Unauthorized);
+        m.api.renew_trouble("there-refresh", Trouble::OnHold);
+
+        let failed = auto(&m).expect_err("an account on hold is not a switch");
+        assert_eq!(failed.error.code(), "account_on_hold");
+        clock.advance(RETRY_SECONDS);
+        let Auto::Switched { to, .. } = auto(&m).expect("a switch").value else {
+            panic!("a switch to the other account");
+        };
+        assert_eq!(to, "other");
+        let state = state::load(&m.ctx).expect("state");
+        assert!(
+            state.get(&m.key("there")).expect("there").parked.is_some(),
+            "the login of the account on hold is kept"
+        );
     }
 
     /// A parked login Anthropic will not name is passed over as a refused one is, rather than

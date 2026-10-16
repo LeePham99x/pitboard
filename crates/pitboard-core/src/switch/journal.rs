@@ -74,10 +74,14 @@ impl Recovered {
 
 impl std::fmt::Display for Recovered {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let from = if self.from.is_empty() {
+            String::new()
+        } else {
+            format!(" from `{}`", self.from)
+        };
         write!(
             f,
-            "an earlier switch from `{}` to `{}` was interrupted; {}",
-            self.from,
+            "an earlier switch{from} to `{}` was interrupted; {}",
             self.to,
             if self.finished {
                 "it had in fact finished, and Pitboard has recorded that"
@@ -455,9 +459,15 @@ fn read(ctx: &Context, state: &State) -> Result<Option<Waiting>> {
 
     let named = in_use::named(ctx, journal.provider);
     let (owner, login) = live_owner(ctx, tool, &journal);
+    // A replacement parks no login going out, so nothing parked is what there is to find.
+    let parked = if journal.park_service.is_empty() {
+        Some(None)
+    } else {
+        read_park(ctx, &journal.park_service)
+    };
     Ok(Some(Waiting {
         tool,
-        parked: read_park(ctx, &journal.park_service),
+        parked,
         journal,
         owner,
         seen: Seen { named, login },

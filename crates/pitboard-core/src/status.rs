@@ -2247,10 +2247,6 @@ mod tests {
         assert_eq!(beta.stale, Some(Stale::NothingParked));
     }
 
-    /// A tool whose login could not be read, and whose account in use as Pitboard last
-    /// recorded it is none of its accounts, gets a row of its own, so its silence is not read
-    /// as nobody signed in. Only for a tool somebody uses through Pitboard: a machine that has
-    /// never enrolled a Codex account sees nothing about Codex.
     /// The report of 16 October 2026, first run: Claude Code signed in to a login Anthropic
     /// would not name, and the window said "No accounts". The login gets a row saying why.
     #[test]
@@ -2286,6 +2282,10 @@ mod tests {
         );
     }
 
+    /// A tool whose login could not be read, and whose account in use as Pitboard last
+    /// recorded it is none of its accounts, gets a row of its own, so its silence is not read
+    /// as nobody signed in. Only for a tool somebody uses through Pitboard: a machine that has
+    /// never enrolled a Codex account sees nothing about Codex.
     #[test]
     fn an_unreadable_login_gets_a_row_only_for_a_tool_with_accounts() {
         let unreadable = || LiveLogin {

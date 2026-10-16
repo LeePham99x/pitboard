@@ -2718,6 +2718,7 @@ fn a_login_whose_account_cannot_be_told_is_shown_from_the_first_run() {
         panic!("one row");
     };
     assert!(row.unplaced && row.action.is_none(), "{row:?}");
+    assert_eq!(row.title, "Login Pitboard can’t identify");
     assert_eq!(
         row.summary,
         "Pitboard could not tell which account Claude Code's login is (Anthropic answered 400)"

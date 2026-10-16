@@ -155,6 +155,8 @@ pub enum Unidentified {
     SignedIn,
     /// A login whose account its service named, and whose email it would not give.
     Unnamed,
+    /// The one a sign-in for the account typed as `label` made.
+    SignIn { label: String },
     /// The one parked for the account typed as `label`.
     Parked { label: String },
 }
@@ -493,15 +495,25 @@ pub enum Error {
     #[error("the signed-in account changed while switching. Nothing was moved; try again.")]
     SignedInAccountChanged,
 
-    /// The login in use is one its service refuses for good, so it cannot be parked, and a
-    /// switch to `label` asks first to put that account's login in its place. `dead` where
-    /// the service said the login no longer works, rather than refusing to say whose it is.
-    #[error("{}", live_login_refused(*tool, label, detail, *dead))]
+    /// The service refuses the refresh token of the login in use for good, so that login no
+    /// longer works and cannot be parked, and a switch to `label` asks first to put that
+    /// account's login in its place.
+    #[error("{}", live_login_refused(*tool, label, detail))]
     LiveLoginRefused {
         tool: ProviderId,
         label: String,
         detail: String,
-        dead: bool,
+    },
+
+    #[error(
+        "could not put `{label}`'s login in place of {}'s refused login ({detail}). `{label}`'s \
+         login is still parked, and nothing was lost.",
+        tool.name()
+    )]
+    ReplaceFailed {
+        tool: ProviderId,
+        label: String,
+        detail: String,
     },
 
     #[error("{}", account_on_hold(*tool, login, link.as_deref()))]
@@ -975,6 +987,7 @@ impl Error {
             IdentityUnverifiable { .. } => "identity_unverifiable",
             SignedInAccountChanged => "signed_in_account_changed",
             LiveLoginRefused { .. } => "live_login_refused",
+            ReplaceFailed { .. } => "replace_failed",
             AccountOnHold { .. } => "account_on_hold",
             RecoveryUndetermined { .. } | RecoveryStopped { .. } => "recovery_undetermined",
             RecoveryElsewhere { .. } => "recovery_elsewhere",
@@ -1030,10 +1043,10 @@ impl Error {
                 Some(*cause)
             }
             RenewalFailed { cause, .. } => *cause,
-            SessionExpired { refused: true, .. } | LiveLoginRefused { dead: true, .. } => {
+            SessionExpired { refused: true, .. } | LiveLoginRefused { .. } => {
                 Some(Cause::LoginRefused)
             }
-            LiveLoginRefused { .. } | AccountOnHold { .. } => Some(Cause::Refused),
+            AccountOnHold { .. } => Some(Cause::Refused),
             SessionExpired { .. } => Some(Cause::TokenExpired),
             StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
                 error.cause()
@@ -1180,7 +1193,7 @@ fn identity_unverifiable(
             "{}, sign in, then try again.",
             crate::words::sign_in_yourself(tool, true)
         ),
-        (None, _, Unidentified::Parked { label }) => {
+        (None, _, Unidentified::Parked { label } | Unidentified::SignIn { label }) => {
             format!("Sign in to it again with `pitboard enroll {label} --sign-in`.")
         }
     };
@@ -1193,6 +1206,10 @@ fn identity_unverifiable(
             "Pitboard could not confirm with {service} whose login is parked for `{label}` \
              ({detail}), and will not put in use a login it cannot identify. {next}"
         ),
+        Unidentified::SignIn { label } => format!(
+            "Pitboard could not confirm with {service} whose login the sign-in for `{label}` \
+             made ({detail}), and keeps no login it cannot identify. {next}"
+        ),
         Unidentified::Unnamed => format!(
             "{service} named the account of {}'s login and would not give its email \
              ({detail}), and Pitboard keeps every account under its email. {next}",
@@ -1202,10 +1219,10 @@ fn identity_unverifiable(
 }
 
 /// [`Error::LiveLoginRefused`]'s words.
-fn live_login_refused(tool: ProviderId, label: &str, detail: &str, dead: bool) -> String {
+fn live_login_refused(tool: ProviderId, label: &str, detail: &str) -> String {
     format!(
         "{} Run `pitboard use {label} --yes` to put `{label}`'s login there.",
-        crate::words::replacing(tool, detail, dead)
+        crate::words::replacing(tool, detail)
     )
 }
 
@@ -1217,7 +1234,9 @@ fn account_on_hold(tool: ProviderId, login: &Unidentified, link: Option<&str>) -
         Unidentified::SignedIn | Unidentified::Unnamed => {
             format!("the account of {}'s login in use", tool.name())
         }
-        Unidentified::Parked { label } => format!("`{label}`'s account"),
+        Unidentified::Parked { label } | Unidentified::SignIn { label } => {
+            format!("`{label}`'s account")
+        }
     };
     format!(
         "{service} has put {whose} on hold{see}. Pitboard keeps its login. Follow {service}'s \
@@ -2272,6 +2291,26 @@ mod tests {
         );
         assert!(said(Cause::Unreachable).ends_with("Check the connection and try again."));
         assert!(!said(Cause::Refused).contains("signed in ("));
+    }
+
+    // A refused sign-in used to be told to run `claude` and sign in to the tool itself.
+    #[test]
+    fn a_sign_in_that_cannot_be_identified_is_signed_in_again_through_pitboard() {
+        let said = Error::IdentityUnverifiable {
+            tool: ProviderId::Claude,
+            login: Unidentified::SignIn {
+                label: "dtg".into(),
+            },
+            cause: Cause::Refused,
+            detail: "Anthropic answered 400".into(),
+        }
+        .to_string();
+        assert_eq!(
+            said,
+            "Pitboard could not confirm with Anthropic whose login the sign-in for `dtg` made \
+             (Anthropic answered 400), and keeps no login it cannot identify. Sign in to it \
+             again with `pitboard enroll dtg --sign-in`."
+        );
     }
 
     /// The codes of the two tools' missing programs stay distinct, and Claude Code's keep

@@ -2106,3 +2106,24 @@ fn another_switch_takes_the_replace_question_away() {
     model.run(&mut machine);
     assert!(machine.replaced_with.is_empty());
 }
+
+/// Another switch asked for while the question is up waits behind it, and the question comes
+/// back to the front, as the quit question does.
+#[test]
+fn a_switch_asked_for_meanwhile_brings_the_replace_question_back() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.switched = Err(refusal("live_login_refused", REFUSED_FOR_GOOD, Vec::new()));
+    switch(&mut model, &mut machine, "work");
+    let serial = model.shown().window_request.serial;
+
+    switch(&mut model, &mut machine, "spare");
+
+    let shown = model.shown();
+    assert_eq!(machine.switched_to, ["work"], "nothing else is switched");
+    assert!(shown.replace_question.is_some());
+    assert!(
+        shown.window_request.serial > serial,
+        "the window comes to the front"
+    );
+}

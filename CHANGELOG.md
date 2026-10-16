@@ -11,18 +11,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Inside WSL, `pitboard doctor` says that Pitboard switches only the Claude Code and Codex
   installed in that Linux.
+- A switch from a Claude Code login whose refresh token Anthropic refuses for good asks to put the
+  account's login in its place, with **Replace** in the app and `pitboard use --yes`.
 
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.15.0/pitboard_core/) shows the new one.
+- **Breaking:** Some failures get a code of their own: `live_login_refused` where `pitboard use`
+  said `session_expired` for a login Anthropic no longer accepts, `account_on_hold` where it said
+  `identity_unverifiable` or `renewal_failed`, and cause and stale `refused` where they said
+  `server_error`. Branch on the new codes where a script reads the old ones.
 - **Add Account** offers every tool Pitboard handles, and says under a tool it cannot find what
   to install, with a link, instead of failing once you click **Sign In**.
 - The app looks for Claude Code and Codex each time **Add Account** or **Sign In Again** opens
   and when Pitboard comes to the front, so a tool installed while it runs is found.
-- A switch from a Claude Code login Anthropic refuses for good asks to put the account's login in
-  its place, with **Replace** in the app and `pitboard use --yes`, instead of telling you to sign
-  in to Claude Code first.
 
 ### Security
 
@@ -51,8 +54,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of saying it could not tell which account is signed in.
 - Pitboard keeps the parked login of an account Anthropic has put on hold, instead of dropping it
   as no longer accepted.
-- The automatic switch passes over an account whose parked login Anthropic will not name, as it
-  passes over one whose login Anthropic refuses.
+- The automatic switch passes over an account whose parked login Anthropic will not name or renew,
+  or whose account is on hold, as it passes over one whose login Anthropic refuses.
+- A sign-in Pitboard cannot identify says to sign in again through Pitboard, instead of with
+  `claude`.
 - Pitboard tells whose a Claude Code login is by asking Anthropic which account and organisation it
   is, as Claude Code does, so a switch between accounts you added works when Anthropic refuses the
   login's profile.

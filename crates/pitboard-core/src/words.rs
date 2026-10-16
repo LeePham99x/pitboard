@@ -1076,34 +1076,22 @@ pub fn forget_question(tool: Option<crate::provider::ProviderId>, label: &str) -
     }
 }
 
-/// What putting another login in place of `tool`'s login in use costs, where its service
-/// refuses that login for good: nothing where the service said it no longer works, and that
-/// login otherwise, since Pitboard cannot park a login it cannot name.
-pub fn replacing(tool: crate::provider::ProviderId, detail: &str, dead: bool) -> String {
-    let (service, name) = (tool.service(), tool.name());
-    if dead {
-        format!(
-            "{service} no longer accepts {name}'s login in use ({detail}), so putting another \
-             login in its place loses nothing."
-        )
-    } else {
-        format!(
-            "{service} will not say whose {name}'s login in use is ({detail}), so Pitboard \
-             cannot park it, and putting another login in its place signs {name} out of it."
-        )
-    }
+/// Why putting another login in place of `tool`'s login in use loses nothing, where its
+/// service refuses that login's refresh token for good.
+pub fn replacing(tool: crate::provider::ProviderId, detail: &str) -> String {
+    format!(
+        "{} no longer accepts {}'s login in use ({detail}), so putting another login in its \
+         place loses nothing.",
+        tool.service(),
+        tool.name()
+    )
 }
 
 /// What `pitboard use` asks before it puts `label`'s login in place of that one.
-pub fn replace_question(
-    tool: crate::provider::ProviderId,
-    label: &str,
-    detail: &str,
-    dead: bool,
-) -> String {
+pub fn replace_question(tool: crate::provider::ProviderId, label: &str, detail: &str) -> String {
     format!(
         "{}\nPut {label}'s login in its place? [y/N] ",
-        replacing(tool, detail, dead)
+        replacing(tool, detail)
     )
 }
 

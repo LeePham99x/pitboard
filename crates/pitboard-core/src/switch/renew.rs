@@ -196,6 +196,12 @@ fn ask(
             renewed: None,
             refused: true,
         }),
+        // Kept, as Claude Code keeps it: the login works again once the hold ends.
+        Err(crate::provider::ProviderError::OnHold { link, .. }) => Err(Error::AccountOnHold {
+            tool: key.provider,
+            login: crate::error::Unidentified::Parked { label: key.typed() },
+            link,
+        }),
         // Unreachable or asked to slow down: nothing is written and the next run tries.
         Err(
             crate::provider::ProviderError::Network { .. }
@@ -556,7 +562,7 @@ mod tests {
 
         let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
-        assert_eq!(outcome(&outcomes, "work"), "renewal_failed");
+        assert_eq!(outcome(&outcomes, "work"), "account_on_hold");
         let state = state::load(&m.ctx).expect("state");
         let kept = state
             .get(&Key::new(crate::provider::ProviderId::Claude, "work"))
