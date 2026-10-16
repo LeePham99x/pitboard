@@ -3,7 +3,15 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { headers, policy } from "./csp.mjs";
-import { SITE_BANNED, bannedFromDocs, checkPage, checkVersions, wordPattern } from "./guard.mjs";
+import {
+  SITE_BANNED,
+  bannedFromDocs,
+  checkImage,
+  checkPage,
+  checkVersions,
+  pngFacts,
+  wordPattern,
+} from "./guard.mjs";
 import { elements, parse, textOf } from "./html.mjs";
 
 const docs = readFileSync(new URL("../../docs/AGENTS.md", import.meta.url), "utf8");
@@ -14,10 +22,17 @@ const rules = {
   mono: new Set([...ascii, 0xb7, 0x2019, 0x2588]),
 };
 
-const page = (body, head = "") => `<!doctype html><html lang="en"><head><title>Pitboard</title>
+const image = (alt = "The logo.", twitterAlt = alt) =>
+  `<meta property="og:image" content="https://usepitboard.com/og/home-0123abcd.png"><meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${alt}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image:alt" content="${twitterAlt}">`;
+const page = (
+  body,
+  head = "",
+  tags = image(),
+) => `<!doctype html><html lang="en"><head><title>Pitboard</title>
 <meta name="description" content="A page."><link rel="canonical" href="https://usepitboard.com/">
-<meta property="og:image" content="https://usepitboard.com/og.png"><meta property="og:image:alt" content="The logo.">
-<meta name="twitter:card" content="summary_large_image">${head}</head><body><main id="main"><h1>Pitboard</h1>${body}</main></body></html>`;
+${tags}${head}</head><body><main id="main"><h1>Pitboard</h1>${body}</main></body></html>`;
 
 const problems = (body, head) => checkPage("p.html", page(body, head), rules).problems;
 
@@ -83,12 +98,81 @@ test("needs the metadata every page carries", () => {
     "no description",
     "no canonical",
     "no og:image",
+    "no og:image:type image/png",
+    "no og:image:width 1200",
+    "no og:image:height 630",
     "no og:image:alt",
+    "no twitter:image:alt",
     "no twitter:card",
     "main#main",
   ]) {
     assert.match(found, new RegExp(what.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("needs an image description X takes, the same for X as for the others", () => {
+  const tags = (alt, twitterAlt) =>
+    checkPage("p.html", page("", "", image(alt, twitterAlt)), rules);
+  assert.deepEqual(tags("The logo.").problems, []);
+  assert.match(tags("x".repeat(421)).problems.join(), /over 420 characters/);
+  assert.match(tags("The logo.", "Another.").problems.join(), /twitter:image:alt other than/);
+  assert.match(tags("The logo \u2014 big.").problems.join(), /en or em dash/);
+});
+
+// the signature and the header of a PNG, then the chunks given, each with a dummy CRC
+function png(width, height, colour, ...chunks) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    return Buffer.concat([len, Buffer.from(type, "latin1"), data, Buffer.alloc(4)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colour;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    chunk("IHDR", ihdr),
+    ...chunks.map(([type, data]) => chunk(type, data)),
+    chunk("IDAT", Buffer.alloc(16)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+test("reads a PNG's size and whether it can be transparent", () => {
+  assert.deepEqual(pngFacts(png(1200, 630, 2)), { width: 1200, height: 630, alpha: false });
+  assert.equal(pngFacts(png(1200, 630, 6)).alpha, true);
+  assert.equal(pngFacts(png(1200, 630, 3, ["PLTE", Buffer.alloc(3)])).alpha, false);
+  assert.equal(
+    pngFacts(png(1200, 630, 3, ["PLTE", Buffer.alloc(3)], ["tRNS", Buffer.alloc(1)])).alpha,
+    true,
+  );
+  assert.equal(pngFacts(Buffer.from("GIF89a")), null);
+});
+
+test("checks the preview image each page names", () => {
+  const hashed = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+  const check = (bytes, name = `home-${hashed(bytes)}`, origin = "https://usepitboard.com") => {
+    const html = page("", "").replace(
+      "https://usepitboard.com/og/home-0123abcd.png",
+      `${origin}/og/${name}.png`,
+    );
+    const { all } = checkPage("p.html", html, rules);
+    return checkImage("p.html", all, (path) => (path === `og/${name}.png` ? bytes : null)).join(
+      "\n",
+    );
+  };
+  assert.equal(check(png(1200, 630, 2)), "");
+  assert.match(check(png(1200, 600, 2)), /is 1200x600, not 1200x630/);
+  assert.match(check(png(1200, 630, 6)), /can be transparent/);
+  assert.match(check(png(1200, 630, 2, ["zTXt", Buffer.alloc(300_000)])), /over 300000/);
+  assert.match(check(png(1200, 630, 2), "home-0123abcd"), /not named by its hash/);
+  assert.match(check(Buffer.from("not a png")), /is not a PNG/);
+  assert.match(check(png(1200, 630, 2), "home"), /not a hashed image under \/og\//);
+  assert.match(check(png(1200, 630, 2), undefined, "https://example.com"), /not a hashed image/);
+  const { all } = checkPage("p.html", page(""), rules);
+  assert.match(checkImage("p.html", all, () => null).join(), /is not in dist/);
 });
 
 test("compares the downloads with the newest full release on /changelog", () => {
