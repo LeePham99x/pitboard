@@ -1,10 +1,11 @@
 # Checks the Windows app as a Release publish lays it out, for CI and the release alike: no
 # fixture in any of its programs, a package identity on PitboardShare.exe alone and the same one
-# in its package, published by the signer, the update key the build was given and a version
-# WinSparkle can compare, one product name and version on every program of Pitboard's, and the
-# core built without the cfg that opens it before Windows is released, for this machine and with
-# its C runtime inside it. It reads the files and runs none of them, in the environment the core
-# was built in.
+# in its package, published by the signer, the update key the build was given, which WinSparkle
+# takes, the feed of full releases and a version WinSparkle can compare, one product name and
+# version on every program of Pitboard's, and both libraries built without the cfg that opens
+# the core before Windows is released or a feature for tests, for this machine and with the C
+# runtime inside. It reads the files and runs none of them, in the environment the core was
+# built in.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -12,7 +13,7 @@ param(
     [Parameter(Mandatory)] [string] $GatedLibrary,
     # The subject of the certificate that signs PitboardShare.msix, where the folder holds one.
     [string] $Signer,
-    # The Windows update public key the build was given in WINDOWS_UPDATE_PUBLIC_KEY, if any.
+    # The Windows update public key the build was given in WINDOWS_UPDATE_PUBLIC_KEY.
     [string] $UpdateKey,
     # The version Cargo.toml names, which the app's build was given too.
     [Parameter(Mandatory)] [string] $Version,
@@ -158,49 +159,29 @@ if (Test-Path -LiteralPath $share -PathType Leaf) {
     throw 'PitboardShare.msix is here without PitboardShare.exe'
 }
 
-# With no key WinSparkle installs updates nobody signed, so Pitboard.dll carries the key it was given.
-Add-Type -TypeDefinition @'
-using System.IO;
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
-
-public static class PitboardAssembly
-{
-    // An AssemblyMetadata value, read from the metadata of an assembly that is never loaded.
-    public static string Metadata(string path, string key)
-    {
-        using (var stream = File.OpenRead(path))
-        using (var pe = new PEReader(stream))
-        {
-            var reader = pe.GetMetadataReader();
-            foreach (var handle in reader.GetAssemblyDefinition().GetCustomAttributes())
-            {
-                var attribute = reader.GetCustomAttribute(handle);
-                if (attribute.Constructor.Kind != HandleKind.MemberReference) continue;
-                var parent = reader.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent;
-                if (parent.Kind != HandleKind.TypeReference) continue;
-                var type = reader.GetTypeReference((TypeReferenceHandle)parent);
-                if (reader.GetString(type.Namespace) != "System.Reflection" || reader.GetString(type.Name) != "AssemblyMetadataAttribute") continue;
-                var blob = reader.GetBlobReader(attribute.Value);
-                if (blob.ReadUInt16() == 1 && blob.ReadSerializedString() == key) return blob.ReadSerializedString();
-            }
-            return null;
-        }
-    }
+# WinSparkle keeps no key but the base64 of 32 bytes, and with none it installs updates nobody
+# signed, so Pitboard.dll carries one it takes, the one the build was given.
+$read = Join-Path $PSScriptRoot 'read-assembly.ps1'
+$raw = try { [Convert]::FromBase64String($UpdateKey) } catch { $null }
+if (-not $raw -or $raw.Length -ne 32) {
+    throw "the update key '$UpdateKey' is not the base64 of 32 bytes, so WinSparkle would take none and install updates nobody signed"
 }
-'@
-$carried = [PitboardAssembly]::Metadata((Join-Path $root 'Pitboard.dll'), 'WindowsUpdatePublicKey')
-$given = if ($UpdateKey) { $UpdateKey } else { $null }
-if ($carried -cne $given) {
+$carried = & $read -Assembly (Join-Path $root 'Pitboard.dll') -Metadata 'WindowsUpdatePublicKey'
+if ($carried -cne $UpdateKey) {
     $has = if ($carried) { "the update key '$carried'" } else { 'no update key' }
-    throw "Pitboard.dll carries $has, and the build was given $(if ($given) { "'$given'" } else { 'none' })"
+    throw "Pitboard.dll carries $has, and the build was given '$UpdateKey'"
 }
 # WinSparkle sorts 1.0.0+<commit> below 1.0.0, and would offer a build its own version again and again.
 $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
 if (-not $version -or $version.Contains('+')) {
     throw "Pitboard.exe's version is '$version': WinSparkle compares it, so it carries no commit"
 }
-Write-Output "Pitboard $version carries $(if ($carried) { "the update key $carried" } else { 'no update key' })."
+Write-Output "Pitboard $version carries the update key $carried."
+# The 1.0 session's build is the only one that reads another feed, and it never ships.
+$feed = & $read -Assembly (Join-Path $root 'Pitboard.Windows.dll') -Constant 'Pitboard.Windows.SparkleUpdates.Feed'
+$latest = 'https://github.com/datlechin/pitboard/releases/latest/download/appcast-windows.xml'
+if ($feed -cne $latest) { throw "Pitboard.Windows.dll reads its updates from '$feed', not $latest" }
+Write-Output "It reads its updates from $latest."
 
 # RUSTFLAGS gives way only to CARGO_ENCODED_RUSTFLAGS. A dev-dependency's features are in
 # cargo tree's features edges unless the edge kinds are named.
@@ -211,17 +192,19 @@ foreach ($name in 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS') {
     }
 }
 $cargoToml = Join-Path $PSScriptRoot '..\..\Cargo.toml'
-$tree = & cargo tree --locked --manifest-path $cargoToml -e 'normal,build,features' --target $Triple -p pitboard-ffi | Out-String
-if ($LASTEXITCODE -ne 0) { throw "cargo tree exited $LASTEXITCODE" }
-if ($tree -match 'feature "(test-support|fixture)"') {
-    throw "pitboard_ffi.dll resolves the $($Matches[1]) feature, which only a build for tests has"
+foreach ($crate in 'pitboard-ffi', 'pitboard-share-ffi') {
+    $tree = & cargo tree --locked --manifest-path $cargoToml -e 'normal,build,features' --target $Triple -p $crate | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "cargo tree -p $crate exited $LASTEXITCODE" }
+    if ($tree -match 'feature "(test-support|fixture)"') {
+        throw "$crate resolves the $($Matches[1]) feature, which only a build for tests has"
+    }
 }
 $library = Join-Path $root 'pitboard_ffi.dll'
 if (-not (Test-Path -LiteralPath $library -PathType Leaf)) { throw 'no pitboard_ffi.dll beside Pitboard.exe' }
 if ((Get-FileHash -LiteralPath $library).Hash -ne (Get-FileHash -LiteralPath $gated).Hash) {
     throw "the published pitboard_ffi.dll is not $gated"
 }
-Write-Output 'pitboard_ffi.dll is the one built here, with neither the cfg nor a feature for tests.'
+Write-Output 'pitboard_ffi.dll is the one built here, and neither library has the cfg or a feature for tests.'
 
 # SignPath signs only programs whose version resource names their product and one version.
 $ours = @('Pitboard.exe', 'pitboard_ffi.dll', 'PitboardShare.exe', 'pitboard_share_ffi.dll') |

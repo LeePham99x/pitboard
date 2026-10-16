@@ -825,9 +825,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
     tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
     `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
-    `extract-msi.ps1` extracts an MSI's administrative image, and `test-windows-app.ps1` tests
-    the check's package identity, update key and version refusals and the signature check on
-    the MSI and the package.
+    `extract-msi.ps1` extracts an MSI's administrative image, `read-assembly.ps1` reads a
+    value from a .NET assembly's metadata, and `test-windows-app.ps1` tests the check's package
+    identity, update key, feed and version refusals and the signature check on the MSI and the
+    package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -4111,8 +4112,10 @@ Microsoft's documentation.
   updated 28 May 2026). So `Pitboard.App` turns the commit off, and carries the update key as
   `AssemblyMetadata("WindowsUpdatePublicKey")` from `WINDOWS_UPDATE_PUBLIC_KEY` rather than
   WinSparkle's `EdDSAPub` resource. `check-windows-app.ps1` refuses a Release build whose
-  `Pitboard.exe` version carries a commit or whose `Pitboard.dll` carries another key than
-  the one it was given, and a `WinSparkle.dll` for another machine.
+  `Pitboard.exe` version carries a commit, whose `Pitboard.dll` carries another key than the
+  one it was given or a key WinSparkle keeps none of, which reads another feed than the latest
+  full release's, and a `WinSparkle.dll` for another machine. `read-assembly.ps1` reads the
+  key and the feed from the assemblies' metadata without loading them.
 
 ### The model's timers
 

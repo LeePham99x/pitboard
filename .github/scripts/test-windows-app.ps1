@@ -1,4 +1,4 @@
-# Tests check-windows-app.ps1's package identity, update key and version checks against the
+# Tests check-windows-app.ps1's package identity, update key, feed and version checks against the
 # Release folder CI's windows-app job built and packed: each case is a folder of its own with
 # copies of the files those checks read, one thing changed. Then verify-windows-signatures.ps1
 # against the job's unsigned MSI and the package it signed with a throwaway certificate. It runs
@@ -88,7 +88,22 @@ try {
     $anotherKey = [Convert]::ToBase64String([byte[]]::new(32))
     Assert-Refused 'an update key other than the one the build was given' (New-Case 'key' $whole) $Signer `
         "carries the update key '.+', and the build was given '$([regex]::Escape($anotherKey))'" $anotherKey
-    Assert-Refused 'an update key the build was not given' (New-Case 'keyless' $whole) $Signer 'and the build was given none' ''
+    Assert-Refused 'no update key' (New-Case 'keyless' $whole) $Signer "the update key '' is not the base64 of 32 bytes" ''
+    $short = [Convert]::ToBase64String([byte[]]::new(31))
+    Assert-Refused 'an update key WinSparkle keeps none of' (New-Case 'short' $whole) $Signer `
+        "the update key '$([regex]::Escape($short))' is not the base64 of 32 bytes" $short
+
+    # The same length, so the assembly's metadata still reads: a feed pinned to one release.
+    $pinned = New-Case 'feed' $whole
+    $windows = Join-Path $pinned 'Pitboard.Windows.dll'
+    $latin = [Text.Encoding]::Latin1
+    $from = $latin.GetString([Text.Encoding]::Unicode.GetBytes('releases/latest/download/'))
+    $to = $latin.GetString([Text.Encoding]::Unicode.GetBytes('releases/download/v1.0.0/'))
+    $text = $latin.GetString([IO.File]::ReadAllBytes($windows))
+    if (-not $text.Contains($from)) { throw "Pitboard.Windows.dll holds no 'releases/latest/download/'" }
+    [IO.File]::WriteAllBytes($windows, $latin.GetBytes($text.Replace($from, $to)))
+    Assert-Refused 'a feed other than the latest full release''s' $pinned $Signer `
+        "reads its updates from 'https://github\.com/datlechin/pitboard/releases/download/v1\.0\.0/appcast-windows\.xml'"
 
     Assert-Refused 'a version the build was not given' (New-Case 'version' ($whole + 'pitboard_ffi.dll')) $Signer `
         "names the product 'Pitboard' at '.+', file .+, not Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
