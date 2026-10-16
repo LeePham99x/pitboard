@@ -1138,6 +1138,7 @@ fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
         Some(name) => format!("inside WSL, in {name}"),
         None => "inside WSL".to_string(),
     };
+    // Names no Pitboard for Windows until 1.0.0 is released.
     let advice = match &wsl.codex_home_on_windows {
         None => "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
                  installed on Windows keep their own logins, which Pitboard here does not switch."
