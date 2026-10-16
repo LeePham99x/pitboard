@@ -269,9 +269,8 @@ pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn refused_in_a_build_for_tests(ctx: &Context, target: &str) -> Option<String> {
-    let own = own_slots_for_tests(ctx);
-    let own: Vec<&str> = own.iter().map(String::as_str).collect();
-    crate::provider::names::refusal(target, &own).map(|why| format!("{why}; {}", not_own(ctx)))
+    crate::provider::names::refusal(target, &own_slots_for_tests(ctx))
+        .map(|why| format!("{why}; {}", not_own(ctx)))
 }
 
 // A test's cleanup: every item Credential Manager lists under `service`, each by name, so no
@@ -866,11 +865,8 @@ mod tests {
             1,
             "a folder that is a real login's place has no slot of a test's"
         );
-        let refused = |ctx: &Context, name: &str| {
-            let own = own_slots(ctx, &[]);
-            let own: Vec<&str> = own.iter().map(String::as_str).collect();
-            crate::provider::names::refusal(name, &own)
-        };
+        let refused =
+            |ctx: &Context, name: &str| crate::provider::names::refusal(name, &own_slots(ctx, &[]));
         assert_eq!(
             refused(&scratch.ctx, &format!("{own}/claude-code-user")),
             None

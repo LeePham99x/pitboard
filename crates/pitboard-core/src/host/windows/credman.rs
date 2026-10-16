@@ -191,8 +191,7 @@ impl Generic {
         let target = format!("{service}/{}", self.account);
         #[cfg(any(test, feature = "test-support"))]
         {
-            let own: Vec<&str> = self.own.iter().map(String::as_str).collect();
-            if let Some(why) = crate::provider::names::refusal(&target, &own) {
+            if let Some(why) = crate::provider::names::refusal(&target, &self.own) {
                 let not_own = crate::provider::claude::credman::not_own(&self.ctx);
                 return Err(Error::Unreadable(format!("{why}; {not_own}")));
             }
