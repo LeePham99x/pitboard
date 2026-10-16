@@ -3,6 +3,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.System.Power;
 using Pitboard.Core;
+using Pitboard.Views;
 using Pitboard.Windows;
 using Windows.Graphics;
 using Launcher = Windows.System.Launcher;
@@ -259,7 +260,7 @@ public partial class App : Application
             _window = window;
         }
 
-        _window.Show();
+        _window.Bring();
     }
 
     // On the system's thread; the model takes a message from any.

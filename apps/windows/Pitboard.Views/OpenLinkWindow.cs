@@ -94,17 +94,6 @@ public sealed partial class OpenLinkWindow : Window
         Fit(center: false);
     }
 
-    // Brought forward by each link that arrives: another app handed it over, and is in front.
-    public void Bring()
-    {
-        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
-        {
-            presenter.Restore();
-        }
-
-        Activate();
-    }
-
     // Closed once no link waits, so closing dismisses nothing.
     public void Withdraw()
     {

@@ -128,16 +128,6 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     // A window closed meanwhile answers no.
     public Task<bool> Confirm(Question question) => _dialogs.Confirm(question);
 
-    public void Bring()
-    {
-        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
-        {
-            presenter.Restore();
-        }
-
-        Activate();
-    }
-
     public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
     {
         CloseSignIn();

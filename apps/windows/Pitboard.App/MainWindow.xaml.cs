@@ -75,16 +75,6 @@ public sealed partial class MainWindow : Window
             ? Navigation.MenuItems.OfType<NavigationViewItem>().First(item => item.Tag as string == shown.ToString())
             : Navigation.SettingsItem;
 
-    public void Show()
-    {
-        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
-        {
-            presenter.Restore();
-        }
-
-        Activate();
-    }
-
     private void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         Navigation.Header = (args.SelectedItemContainer as NavigationViewItem)?.Content;
