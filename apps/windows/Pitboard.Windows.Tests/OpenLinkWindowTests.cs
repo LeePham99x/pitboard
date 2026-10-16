@@ -1,8 +1,10 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
 using Pitboard.Views;
+using Windows.UI;
 
 namespace Pitboard.Windows.Tests;
 
@@ -127,6 +129,31 @@ public sealed class OpenLinkWindowTests
             Assert.Contains("This link is on example.com.", texts);
             Views.Press(Views.Button(window.Content, "OK"));
             Assert.AreEqual(new Intent.DismissLink(7), sent.Single());
+        }
+        finally
+        {
+            window.Withdraw();
+        }
+    }
+
+    // In the theme's own brush, which a window shows before any other of Pitboard's has.
+    [UITestMethod]
+    public async Task ItsSecondaryTextFollowsTheTheme()
+    {
+        var window = await Views.Activated(new OpenLinkWindow(_ => { }, _ => { }, _ => { }));
+        try
+        {
+            window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t Open This Link", "This link is on example.com.")));
+            var root = (FrameworkElement)window.Content;
+            var reason = Views.Visible<TextBlock>(root).Single(text => text.Text == "This link is on example.com.");
+            Color Shown() => ((SolidColorBrush)reason.Foreground).Color;
+
+            root.RequestedTheme = ElementTheme.Light;
+            await Views.Until(() => root.ActualTheme == ElementTheme.Light, "the window did not take the light theme");
+            var light = Shown();
+            root.RequestedTheme = ElementTheme.Dark;
+
+            await Views.Until(() => Shown() != light, "the reason kept the light theme's brush in the dark theme");
         }
         finally
         {

@@ -120,13 +120,7 @@ public sealed partial class OpenLinkWindow : Window
             TextWrapping = TextWrapping.Wrap,
         };
 
-    private static TextBlock Explanatory(string text) =>
-        new()
-        {
-            Text = text,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            TextWrapping = TextWrapping.Wrap,
-        };
+    private static TextBlock Explanatory(string text) => new() { Text = text, Style = TextStyles.Secondary };
 
     // On one line; the whole link is its tooltip, and what Narrator reads after it.
     private static TextBlock LinkLine(string text, string url)
@@ -233,9 +227,7 @@ public sealed partial class OpenLinkWindow : Window
         {
             var row = new StackPanel { Spacing = 2, Padding = new Thickness(0, 6, 0, 6) };
             row.Children.Add(new TextBlock { Text = account.Window.Label });
-            var detail = Explanatory(account.Detail);
-            detail.Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"];
-            row.Children.Add(detail);
+            row.Children.Add(new TextBlock { Text = account.Detail, Style = TextStyles.SecondaryCaption });
             var item = new ListViewItem { Content = row, Tag = account.Window };
             // One element for Narrator, its label and its line read together.
             AutomationProperties.SetName(item, $"{account.Window.Label}, {account.Detail}");
