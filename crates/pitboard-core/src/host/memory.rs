@@ -148,6 +148,8 @@ pub struct MemoryHost {
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
     windows_settings: Mutex<WindowsSettings>,
+    kernel_is_wsl: AtomicBool,
+    windows_drives: Mutex<Vec<PathBuf>>,
 }
 
 impl Default for MemoryHost {
@@ -218,6 +220,8 @@ impl MemoryHost {
             credentials_fault: Mutex::new(None),
             user_environment_values: Mutex::new(gate),
             windows_settings: Mutex::new(WindowsSettings::default()),
+            kernel_is_wsl: AtomicBool::new(false),
+            windows_drives: Mutex::new(Vec::new()),
         }
     }
 
@@ -432,6 +436,17 @@ impl MemoryHost {
     #[cfg(test)]
     pub(crate) fn sets_windows(&self, settings: WindowsSettings) {
         *locked(&self.windows_settings) = settings;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn runs_in_wsl(&self) {
+        self.kernel_is_wsl.store(true, Ordering::SeqCst);
+    }
+
+    // A folder WSL mounts a Windows drive at, such as `/mnt/c`.
+    #[cfg(test)]
+    pub(crate) fn mounts_a_windows_drive(&self, at: &Path) {
+        locked(&self.windows_drives).push(at.to_path_buf());
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -649,6 +664,16 @@ impl Host for MemoryHost {
 
     fn windows_settings(&self) -> WindowsSettings {
         locked(&self.windows_settings).clone()
+    }
+
+    fn kernel_is_wsl(&self) -> bool {
+        self.kernel_is_wsl.load(Ordering::SeqCst)
+    }
+
+    fn on_a_windows_drive(&self, path: &Path) -> bool {
+        locked(&self.windows_drives)
+            .iter()
+            .any(|drive| path.starts_with(drive))
     }
 
     // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item

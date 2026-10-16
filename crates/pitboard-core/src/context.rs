@@ -48,6 +48,7 @@ const READ: &[&str] = &[
     "CLAUDE_CODE_HOVER_REST",
     "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
     "CLAUDE_CODE_GIT_BASH_PATH",
+    "WSL_DISTRO_NAME",
     "CODEX_HOME",
     "CODEX_INSTALL_DIR",
     "NO_COLOR",
@@ -383,6 +384,8 @@ pub struct Context {
     pub(crate) path_ext: Option<OsString>,
     // `CLAUDE_CODE_GIT_BASH_PATH`, the Git Bash Claude Code looks at first on Windows.
     pub(crate) git_bash: Option<PathBuf>,
+    // `WSL_DISTRO_NAME` on Linux, set even empty, which WSL gives its programs.
+    pub(crate) wsl_distro: Option<String>,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -504,6 +507,7 @@ impl Context {
             installer_places: std::collections::BTreeMap::new(),
             path_ext: None,
             git_bash: None,
+            wsl_distro: None,
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: false,
@@ -884,6 +888,10 @@ impl Context {
                 .path("CLAUDE_CODE_GIT_BASH_PATH")
                 .filter(|named| env.os() == Os::Windows && !named.is_empty())
                 .map(PathBuf::from),
+            wsl_distro: env
+                .path("WSL_DISTRO_NAME")
+                .filter(|_| env.os() == Os::Linux)
+                .map(|named| named.to_string_lossy().into_owned()),
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: env.set("SUDO_UID"),

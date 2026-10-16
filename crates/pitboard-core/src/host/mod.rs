@@ -836,6 +836,18 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn windows_settings(&self) -> WindowsSettings {
         WindowsSettings::default()
     }
+
+    // Whether `/proc/version` names Microsoft, as Codex 0.163.0 tells WSL by; false elsewhere,
+    // and in a build for tests on the real hosts.
+    fn kernel_is_wsl(&self) -> bool {
+        false
+    }
+
+    // Whether `path`, or the nearest folder above it that opens, is on 9p, as WSL 2 mounts
+    // Windows' drives; false off Linux.
+    fn on_a_windows_drive(&self, _path: &Path) -> bool {
+        false
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,

@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Inside WSL, `pitboard doctor` says that Pitboard switches only the Claude Code and Codex
+  installed in that Linux.
+
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its

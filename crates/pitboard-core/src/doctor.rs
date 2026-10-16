@@ -123,7 +123,15 @@ pub(crate) struct Facts {
     pub(crate) windows_settings: Option<crate::host::WindowsSettings>,
     // Windows' alone: each `pitboard.exe` a shell finds on PATH, the one it runs first.
     pub(crate) pitboards: Vec<PathBuf>,
+    // Linux's alone, inside WSL.
+    pub(crate) wsl: Option<WslFact>,
     pub(crate) now: i64,
+}
+
+pub(crate) struct WslFact {
+    pub(crate) distribution: Option<String>,
+    // Codex's home, where it is on a drive of Windows'.
+    pub(crate) codex_home_on_windows: Option<PathBuf>,
 }
 
 // The shell Claude Code runs the status line in, and the pitboard the PATH it hands that shell
@@ -546,8 +554,22 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         }),
         windows_settings: (ctx.os == Os::Windows).then(|| ctx.host().windows_settings()),
         pitboards,
+        wsl: wsl_fact(ctx),
         now: ctx.now(),
     }
+}
+
+// As Codex 0.163.0's Linux build tells WSL (`codex_wsl`).
+fn wsl_fact(ctx: &Context) -> Option<WslFact> {
+    let inside = ctx.os == Os::Linux && (ctx.wsl_distro.is_some() || ctx.host().kernel_is_wsl());
+    let codex_home = codex::home(ctx);
+    inside.then(|| WslFact {
+        distribution: ctx.wsl_distro.clone().filter(|name| !name.is_empty()),
+        codex_home_on_windows: ctx
+            .host()
+            .on_a_windows_drive(&codex_home)
+            .then_some(codex_home),
+    })
 }
 
 // One file two folders lead to, such as winget's link and its package, is one copy.
@@ -990,6 +1012,49 @@ fn judge_windows_settings(facts: &Facts) -> Vec<Check> {
         });
     }
     checks
+}
+
+fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
+    let wsl = wsl?;
+    let detail = match &wsl.distribution {
+        Some(name) => format!("inside WSL, in {name}"),
+        None => "inside WSL".to_string(),
+    };
+    let mut advice = "Pitboard here switches what is installed in this Linux. Claude Code and \
+                      Codex installed on Windows keep their own logins, which Pitboard here does \
+                      not switch."
+        .to_string();
+    if let Some(home) = &wsl.codex_home_on_windows {
+        let there = on_windows(home).map_or_else(
+            || "on a Windows drive".to_string(),
+            |path| format!("{path} on Windows"),
+        );
+        advice.push_str(&format!(
+            " Codex's home, {}, is {there}, where Codex here starts no shared background \
+             server.",
+            home.display()
+        ));
+    }
+    Some(Check {
+        advice,
+        ..ok("wsl", "WSL", detail)
+    })
+}
+
+// `/mnt/c/x` is `C:\x`, as Codex's `win_path_to_wsl` maps the other way.
+fn on_windows(path: &std::path::Path) -> Option<String> {
+    let rest = path.to_str()?.strip_prefix("/mnt/")?;
+    let mut chars = rest.chars();
+    let drive = chars.next().filter(char::is_ascii_alphabetic)?;
+    let tail = chars.as_str();
+    if !(tail.is_empty() || tail.starts_with('/')) {
+        return None;
+    }
+    Some(format!(
+        "{}:\\{}",
+        drive.to_ascii_uppercase(),
+        tail.trim_start_matches('/').replace('/', "\\")
+    ))
 }
 
 fn too_old(floor: crate::host::Floor) -> Option<Check> {
@@ -1467,6 +1532,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
 
     checks.extend(judge_windows_homes(facts));
     checks.extend(judge_windows_settings(facts));
+    checks.extend(judge_wsl(facts.wsl.as_ref()));
     checks.push(judge_storage_v5(facts));
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
@@ -4349,6 +4415,7 @@ mod tests {
             status_line: None,
             windows_settings: None,
             pitboards: Vec::new(),
+            wsl: None,
             now: NOW,
         }
     }
@@ -7909,6 +7976,107 @@ mod tests {
             Level::Fail,
             "Linux says it as it did"
         );
+    }
+
+    #[test]
+    fn linux_inside_wsl_is_told_what_pitboard_switches_there() {
+        let mut facts = facts();
+        facts.os = Os::Linux;
+        assert!(evaluate(&facts).iter().all(|c| c.code != "wsl"));
+        let said = |facts: &Facts| {
+            let checks = evaluate(facts);
+            let wsl = check(&checks, "wsl");
+            (wsl.level, wsl.detail.clone(), wsl.advice.clone())
+        };
+        let switched = "Pitboard here switches what is installed in this Linux. Claude Code and \
+                        Codex installed on Windows keep their own logins, which Pitboard here \
+                        does not switch.";
+        facts.wsl = Some(WslFact {
+            distribution: Some("Ubuntu".into()),
+            codex_home_on_windows: None,
+        });
+        assert_eq!(
+            said(&facts),
+            (Level::Ok, "inside WSL, in Ubuntu".into(), switched.into())
+        );
+        facts.wsl = Some(WslFact {
+            distribution: None,
+            codex_home_on_windows: Some(PathBuf::from("/mnt/c/Users/x/.codex")),
+        });
+        assert_eq!(
+            said(&facts),
+            (
+                Level::Ok,
+                "inside WSL".into(),
+                format!(
+                    "{switched} Codex's home, /mnt/c/Users/x/.codex, is C:\\Users\\x\\.codex on \
+                     Windows, where Codex here starts no shared background server."
+                )
+            )
+        );
+        facts.wsl = Some(WslFact {
+            distribution: None,
+            codex_home_on_windows: Some(PathBuf::from("/media/c/codex")),
+        });
+        assert!(said(&facts).2.ends_with(
+            " Codex's home, /media/c/codex, is on a Windows drive, where Codex here starts no \
+             shared background server."
+        ));
+    }
+
+    #[test]
+    fn a_windows_drive_wsl_mounts_is_named_as_windows_names_it() {
+        for (path, windows) in [
+            ("/mnt/c", Some(r"C:\")),
+            ("/mnt/c/Users/x/.codex", Some(r"C:\Users\x\.codex")),
+            ("/mnt/d/", Some(r"D:\")),
+            ("/mnt/cd/x", None),
+            ("/mnt/1/x", None),
+            ("/home/x/.codex", None),
+        ] {
+            assert_eq!(
+                on_windows(std::path::Path::new(path)).as_deref(),
+                windows,
+                "{path}"
+            );
+        }
+    }
+
+    // `codex_wsl`: `WSL_DISTRO_NAME` set, even empty, or `/proc/version` naming Microsoft.
+    #[test]
+    fn wsl_is_read_as_codex_reads_it_and_on_linux_alone() {
+        use crate::context::Environment;
+        let home = tempfile::tempdir().expect("a scratch home");
+        let codex = home.path().join("codex");
+        let read =
+            |os: Os, distribution: Option<&str>, host: &Arc<crate::host::memory::MemoryHost>| {
+                let mut pairs = vec![
+                    ("HOME", home.path().to_string_lossy().into_owned()),
+                    ("USERPROFILE", home.path().to_string_lossy().into_owned()),
+                    ("CODEX_HOME", codex.to_string_lossy().into_owned()),
+                ];
+                pairs.extend(distribution.map(|name| ("WSL_DISTRO_NAME", name.to_owned())));
+                let ctx = Context::read(&Environment::on(os, pairs), "cli")
+                    .with_memory_stores(host.clone());
+                wsl_fact(&ctx).map(|wsl| (wsl.distribution, wsl.codex_home_on_windows))
+            };
+        let host = crate::host::memory::MemoryHost::new();
+        assert_eq!(read(Os::Linux, None, &host), None);
+        assert_eq!(
+            read(Os::Linux, Some("Ubuntu"), &host),
+            Some((Some("Ubuntu".into()), None))
+        );
+        assert_eq!(read(Os::Linux, Some(""), &host), Some((None, None)));
+        for os in [Os::MacOs, Os::Windows] {
+            assert_eq!(read(os, Some("Ubuntu"), &host), None, "{os:?}");
+        }
+        host.runs_in_wsl();
+        host.mounts_a_windows_drive(home.path());
+        assert_eq!(
+            read(Os::Linux, None, &host),
+            Some((None, Some(codex.clone())))
+        );
+        assert_eq!(read(Os::Windows, None, &host), None);
     }
 
     // A fact of the system, not a fault: Windows' doctor states it, and stays in order.

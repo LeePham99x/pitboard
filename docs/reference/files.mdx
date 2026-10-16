@@ -250,6 +250,7 @@ A variable that names a folder must hold a full path: [`home_not_absolute`](/ref
 | `SHELL` | App | The login shell the app asks for its `PATH`. Unset or empty, your account's shell. |
 | `NO_COLOR` | Command line | Not empty: no colour in the output. For the status line, see [`statusline`](/reference/integration-commands#statusline). |
 | `XPC_SERVICE_NAME` | Command line | macOS: set by launchd. `com.datlechin.pitboard.renew` marks a run of daily renewal. |
+| `WSL_DISTRO_NAME` | Command line | Linux: set by WSL, even empty, as Codex 0.163.0 reads it. `pitboard doctor` says it runs inside WSL, as its `wsl` check. |
 | `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, each also in lower case | Both | The proxy for Pitboard's requests. See [Proxies](/reference/files#proxies). |
 
 ### Custom OAuth endpoint

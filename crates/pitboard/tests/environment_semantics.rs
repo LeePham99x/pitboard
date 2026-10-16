@@ -190,3 +190,36 @@ fn a_program_the_environment_names_is_the_one_the_command_line_runs() {
         "empty names nothing, so PATH is looked on, and nothing is there: {empty}"
     );
 }
+
+// Codex 0.163.0's Linux build takes `WSL_DISTRO_NAME` for WSL, and Linux's doctor does too.
+#[test]
+fn doctor_in_wsl_says_what_pitboard_switches_there() {
+    let (_scratch, home) = scratch();
+    let wsl = |envelope: serde_json::Value| {
+        envelope["data"]["checks"]
+            .as_array()
+            .expect("a list of checks")
+            .iter()
+            .find(|check| check["code"] == "wsl")
+            .cloned()
+    };
+    assert_eq!(wsl(doctor(&home, None, &[])), None);
+    let inside = wsl(doctor(
+        &home,
+        None,
+        &[("WSL_DISTRO_NAME", Path::new("Ubuntu"))],
+    ));
+    match OS {
+        Os::Linux => {
+            let inside = inside.expect("a wsl check");
+            assert_eq!(inside["level"], "ok");
+            assert_eq!(inside["detail"], "inside WSL, in Ubuntu");
+            assert_eq!(
+                inside["advice"],
+                "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
+                 installed on Windows keep their own logins, which Pitboard here does not switch."
+            );
+        }
+        Os::MacOs | Os::Windows => assert_eq!(inside, None),
+    }
+}
