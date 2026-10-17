@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Pitboard.Views;
 
@@ -95,6 +97,17 @@ internal static class Views
         [.. Visible<TextBlock>(root).Where(text => !InIcon(text, root)).Select(text => text.Text).Where(text => text.Length > 0)];
 
     public static string? Description(TextBox field) => (field.Description as TextBlock)?.Text;
+
+    // What shows its first keyboard accelerator as a tooltip and is no command: a panel then shows it wherever the pointer
+    // rests on it.
+    public static string[] StrayShortcuts(DependencyObject root) =>
+    [
+        .. Descendants(root).OfType<UIElement>()
+            .Where(element => element.KeyboardAccelerators.Count > 0
+                && element.KeyboardAcceleratorPlacementMode != KeyboardAcceleratorPlacementMode.Hidden
+                && element is not ButtonBase and not MenuFlyoutItemBase)
+            .Select(element => $"{element.GetType().Name} {(element as FrameworkElement)?.Name}"),
+    ];
 
     public static Button Button(DependencyObject root, string content) =>
         Visible<Button>(root).FirstOrDefault(button => button.Content as string == content)

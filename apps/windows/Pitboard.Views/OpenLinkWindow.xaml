@@ -16,6 +16,7 @@
       x:Name="Root"
       Padding="24"
       RowSpacing="24"
+      KeyboardAcceleratorPlacementMode="Hidden"
       AutomationProperties.AutomationId="account-picker"
       Loaded="OnLoaded">
     <Grid.KeyboardAccelerators>

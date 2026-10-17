@@ -40,6 +40,23 @@ public sealed class AccountSheetTests
         Assert.AreSame(up.Sheet, up.Dialogs.Open, "the sheet went before the model closed it");
     }
 
+    // Sign in was dimmed under an empty field whose placeholder read "work", with nothing to say why.
+    [UITestMethod]
+    public async Task TheNameFieldSaysUnderItselfThatSignInWaitsForAName()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with { Sheet = Add, SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code")) });
+        var field = up.Element<TextBox>("sheet.name");
+
+        Assert.AreEqual("Type a name for this account to sign in.", Views.Description(field));
+        Assert.IsTrue(AutomationProperties.GetIsRequiredForForm(field));
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled);
+
+        await up.Type("sheet.name", "work");
+
+        Assert.IsNull(Views.Description(field));
+        Assert.IsTrue(up.Sheet.IsPrimaryButtonEnabled);
+    }
+
     [UITestMethod]
     public async Task TheNameFieldOffersOnlyANameTheAccountDoesNotHave()
     {

@@ -49,6 +49,21 @@ public sealed class SheetPageTests
         Assert.AreEqual(new Intent.SignIn("claude", "third"), form.Start("claude", "third"));
     }
 
+    // Sign in was dimmed under an empty field whose placeholder read "work", with nothing to say why.
+    [TestMethod]
+    public void TheNameFieldSaysTheButtonWaitsForAName()
+    {
+        var form = new SheetPage.Form(Add, Items.AddAccount(), Running: false);
+        var rename = new SheetPage.Naming(new Sheet.Rename("claude", "personal"), Items.Rename("personal"));
+
+        Assert.AreEqual("Type a name for this account to sign in.", form.Note("claude", ""));
+        Assert.AreEqual("Type a name for this account to sign in.", form.Note("claude", " \t"));
+        Assert.IsNull(form.Note("claude", "work"));
+        Assert.AreEqual(form.Problem("my work"), form.Note("claude", "my work"));
+        Assert.AreEqual("Type a name for this account to rename.", rename.Note(""));
+        Assert.IsNull(rename.Note("personal"), "the name it has, which Rename waits to change");
+    }
+
     [TestMethod]
     public void SigningInAgainIsAsTheAccountItself()
     {

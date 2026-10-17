@@ -578,10 +578,7 @@ impl<'a> Seen<'a> {
     /// so, worked out from the moments alone: the machine's own time zone is the app's
     /// `LocalTime`'s to read, and nothing here reads it.
     pub(crate) fn clock(&self, at: i64) -> String {
-        let today = self.local.same_day(at, self.now).unwrap_or(false);
-        self.local
-            .clock(at, !today)
-            .unwrap_or_else(|_| words::utc_clock(at, self.now))
+        clock_of(self.local, at, self.now)
     }
 
     pub(crate) fn time_of_day(&self, minutes: u16) -> Option<String> {
@@ -688,6 +685,15 @@ impl<'a> Seen<'a> {
             .iter()
             .filter(|account| account.signed_in && account.label.is_none() && !account.unplaced)
     }
+}
+
+/// A moment as `local` says it, as [`Seen::clock`] does, as of `now`: doctor's checks say
+/// theirs as of when they are made.
+pub(crate) fn clock_of(local: &dyn LocalTime, at: i64, now: i64) -> String {
+    let today = local.same_day(at, now).unwrap_or(false);
+    local
+        .clock(at, !today)
+        .unwrap_or_else(|_| words::utc_clock(at, now))
 }
 
 /// Everything the model has to show, as of `now` in epoch seconds, numbered 0: the actor

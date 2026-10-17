@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
@@ -116,6 +117,26 @@ public sealed class MachinePageTests
         Assert.AreEqual(TextAlignment.Left, detail.TextAlignment);
         Assert.IsTrue(detail.IsTextSelectionEnabled);
         Assert.AreEqual(Bounds(name, row).Left, Bounds(advice, row).Left, 0.5);
+    }
+
+    // A detail's paths carry the marks that wrap them by folder, which TextBlock's own copy would keep.
+    [UITestMethod]
+    public async Task CopyingADetailGivesWhatItSays()
+    {
+        var copied = new List<string>();
+        var page = await Views.Navigated<MachinePage>(
+            Views.Context(new AppModel(new StandInModel(With(Snapshots.Read(1), TwoChecks))), copy: copied.Add));
+        var row = Views.Visible<ListViewItem>(page).ElementAt(1);
+        var detail = Views.Visible<TextBlock>(row).Single(text => text.IsTextSelectionEnabled);
+        Assert.AreNotEqual(TwoChecks.Lines[1].Detail, detail.Text, "the path is shown as it is");
+
+        detail.SelectAll();
+        var menu = (MenuFlyout)detail.ContextFlyout;
+        menu.ShowAt(detail);
+        await Views.Until(() => menu.IsOpen, "the detail's menu did not open");
+        new MenuFlyoutItemAutomationPeer((MenuFlyoutItem)menu.Items[0]).Invoke();
+
+        Assert.AreEqual(TwoChecks.Lines[1].Detail, copied.Single());
     }
 
     [UITestMethod]

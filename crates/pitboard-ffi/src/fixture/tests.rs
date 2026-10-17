@@ -2030,23 +2030,21 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     let again = titled(OS, "Sign In Again…", "Sign in again…");
     let now = titled(OS, "Warm Up Now", "Warm up now");
     let automatically = titled(OS, "Warm Up Automatically", "Warm up automatically");
+    // Windows warms up nothing, so a menu there leaves warm-ups out.
+    let warm: &[&str] = match OS {
+        Os::Windows => &[],
+        Os::MacOs | Os::Linux => &[&now, &automatically],
+    };
     assert_eq!(
         menus,
         [
             (
                 "work".into(),
-                titles(&[&again, "Rename…", &now, &automatically])
+                titles(&[&[again.as_str(), "Rename…"], warm].concat())
             ),
             (
                 "personal".into(),
-                titles(&[
-                    "Use personal",
-                    &again,
-                    "Rename…",
-                    &now,
-                    &automatically,
-                    "Forget…"
-                ])
+                titles(&[&["Use personal", &again, "Rename…"], warm, &["Forget…"]].concat())
             ),
         ]
     );
@@ -2366,6 +2364,72 @@ fn this_mac_shows_the_cores_checks() {
     assert_eq!(
         checks.summary.as_deref(),
         Some("One thing is worth looking at.")
+    );
+    model.shutdown();
+}
+
+/// A person's clock that is not the command line's: 12 hours, in UTC.
+struct Twelve;
+
+impl LocalTime for Twelve {
+    fn clock(&self, epoch: i64, with_weekday: bool) -> Result<String, PlatformError> {
+        let of_day = epoch.rem_euclid(86_400);
+        let (hours, minutes) = (of_day / 3600, of_day % 3600 / 60);
+        let half = if hours < 12 { "AM" } else { "PM" };
+        let time = format!("{}:{minutes:02} {half}", (hours + 11) % 12 + 1);
+        Ok(if with_weekday {
+            format!("{} {time}", &Utc.clock(epoch, true)?[..3])
+        } else {
+            time
+        })
+    }
+
+    fn same_day(&self, first: i64, second: i64) -> Result<bool, PlatformError> {
+        Utc.same_day(first, second)
+    }
+
+    fn date_and_time(&self, epoch: i64) -> Result<String, PlatformError> {
+        self.clock(epoch, true)
+    }
+
+    fn time_of_day(&self, minutes: u16) -> Result<String, PlatformError> {
+        Utc.time_of_day(minutes)
+    }
+}
+
+/// This PC said when Anthropic named the account in use in the command line's 24 hours,
+/// "as Anthropic said 05:48", under "Checked at 6:14 AM" on a PC that reads 12.
+#[test]
+fn this_pc_says_when_a_check_was_made_on_the_persons_clock() {
+    let launched = made(World::OneTool);
+    let told = Arc::new(Told::default());
+    let model = launched.model(
+        Arc::clone(&told) as Arc<dyn ModelListener>,
+        Arc::new(Twelve),
+    );
+    model.send(Intent::Start);
+    told.until("the accounts read", read_in);
+    model.send(Intent::PaneShown {
+        pane: Pane::Machine,
+    });
+    let shown = told.until("the checks made", |snapshot| {
+        !snapshot.machine.checks.lines.is_empty() && !snapshot.machine.checks.checking
+    });
+    let in_use = shown
+        .machine
+        .checks
+        .lines
+        .iter()
+        .find(|line| line.code == "in_use")
+        .expect("the account in use");
+    let said = in_use
+        .detail
+        .rsplit_once("as Anthropic said ")
+        .map(|(_, when)| when)
+        .unwrap_or_else(|| panic!("{in_use:?}"));
+    assert!(
+        said.ends_with(" AM") || said.ends_with(" PM"),
+        "{said} is not on the person's clock"
     );
     model.shutdown();
 }

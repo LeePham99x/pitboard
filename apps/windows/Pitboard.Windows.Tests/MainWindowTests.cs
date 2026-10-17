@@ -77,6 +77,25 @@ public sealed class MainWindowTests
     private static Rect Bounds(FrameworkElement element, UIElement within) =>
         element.TransformToVisual(within).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
 
+    // F6, Shift+F6 and Ctrl+W showed "F6" wherever the pointer rested over a page.
+    [UITestMethod]
+    public async Task NoShortcutShowsAsATooltipOverThePages()
+    {
+        var window = await Views.Activated(Made(Filled()));
+        try
+        {
+            foreach (var pane in Panes)
+            {
+                await Showing(window, pane);
+                Assert.AreEqual("", string.Join(", ", Views.StrayShortcuts(window.Content)), $"over {pane?.ToString() ?? "settings"}");
+            }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // As the WinUI Gallery's main window keeps.
     [UITestMethod]
     public async Task TheWindowIsNeverSmallerThan640By500()

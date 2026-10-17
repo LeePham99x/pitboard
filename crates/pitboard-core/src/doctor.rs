@@ -19,7 +19,7 @@ use crate::provider::codex::paths as codex;
 use crate::provider::{LoginKind, ProviderId};
 use crate::service::Stored;
 use crate::state::{Key, Park, State};
-use crate::{home, park, store, switch, time, words};
+use crate::{home, park, store, switch, words};
 use serde_json::{Value, json};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -1261,7 +1261,14 @@ fn run_claude_once(facts: &Facts) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
+    evaluate_with(facts, &crate::time::moment)
+}
+
+/// Every check, each moment it names written as `moment` writes it, given the moment and when
+/// the checks are made.
+pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) -> Vec<Check> {
     let mut checks = Vec::new();
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
     // tool either: a new machine is told what to do first, as it always was. A machine
@@ -1335,7 +1342,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             ),
         ),
     });
-    checks.extend(judge_in_use(facts));
+    checks.extend(judge_in_use(facts, moment));
 
     checks.push(ok(
         "slot",
@@ -1611,7 +1618,11 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         .filter(|p| p.provider == ProviderId::Codex)
         .filter(judged)
         .collect();
-    checks.extend(claude_parks.iter().map(|p| judge_park(p, facts.now)));
+    checks.extend(
+        claude_parks
+            .iter()
+            .map(|p| judge_park(p, facts.now, moment)),
+    );
     if let Some(refusal) = &facts.stuck {
         checks.push(warn(
             "interrupted_switch",
@@ -1705,12 +1716,13 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             &facts.codex,
             &codex_parks,
             facts.now,
+            moment,
         ));
     }
     if let (Some(desktop), Ok(state)) = (&facts.desktop, &facts.state) {
         checks.extend(match (facts.os, &desktop.root) {
             (Os::MacOs, _) | (Os::Linux, Ok(_)) => {
-                judge_desktop(facts.os, desktop, state, &facts.parks, facts.now)
+                judge_desktop(facts.os, desktop, state, &facts.parks, facts.now, moment)
             }
             (Os::Linux, Err(_)) | (Os::Windows, _) => vec![judge_desktop_off_macos(state)],
         });
@@ -1820,7 +1832,7 @@ fn judge_dormant(park: &ParkFact, now: i64) -> Option<Check> {
 /// said and is no warning; Claude Code's config naming another account is, since only a
 /// read that asks can say whether another login came with it. Nothing is said where nothing
 /// is recorded and no Claude Code account is enrolled.
-fn judge_in_use(facts: &Facts) -> Option<Check> {
+fn judge_in_use(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) -> Option<Check> {
     let (code, name) = ("in_use", "in use");
     let known = facts.in_use.as_ref()?;
     let state = facts.state.as_ref().ok()?;
@@ -1841,7 +1853,7 @@ fn judge_in_use(facts: &Facts) -> Option<Check> {
     let in_use = account.said("no account");
     let config =
         Stored::of(state, ProviderId::Claude, known.own_record.as_ref()).said("no account");
-    let when = time::moment(last.known_at, facts.now);
+    let when = moment(last.known_at, facts.now);
     let then = match &last.owner {
         Some(_) => format!("Anthropic named {in_use} {when}"),
         None => format!("Pitboard found no login stored {when}"),
@@ -2162,7 +2174,7 @@ fn lost_parks(facts: &Facts) -> Vec<&ParkFact> {
     }
 }
 
-fn judge_park(fact: &ParkFact, now: i64) -> Check {
+fn judge_park(fact: &ParkFact, now: i64, moment: &dyn Fn(i64, i64) -> String) -> Check {
     let code = account_code(
         fact.provider,
         "parked_login",
@@ -2211,7 +2223,7 @@ fn judge_park(fact: &ParkFact, now: i64) -> Check {
     // The column `pitboard status` shows, after this check's own words.
     let life = words::parked_life_column(at, now);
     if !park.restorable_at(now) {
-        let when = time::moment(at, now);
+        let when = moment(at, now);
         warn(code, name, format!("its parked login {life} {when}"), renew)
     } else if renewal_due(at, now) {
         warn(code, name, format!("its parked login {life}"), renew)
@@ -2873,6 +2885,7 @@ fn judge_codex(
     facts: &CodexFacts,
     parks: &[&ParkFact],
     now: i64,
+    moment: &dyn Fn(i64, i64) -> String,
 ) -> Vec<Check> {
     let mut checks = Vec::new();
     let enrolled = facts.enrolled > 0 || !parks.is_empty();
@@ -3065,7 +3078,7 @@ fn judge_codex(
 
     // Each Codex account, the way Claude Code's are judged, in this section and under this
     // section's codes.
-    checks.extend(parks.iter().map(|p| judge_park(p, now)));
+    checks.extend(parks.iter().map(|p| judge_park(p, now, moment)));
     checks.extend(parks.iter().filter_map(|p| judge_dormant(p, now)));
 
     checks.push(judge_codex_version(facts));
@@ -3149,6 +3162,7 @@ fn judge_desktop(
     state: &State,
     parks: &[ParkFact],
     now: i64,
+    moment: &dyn Fn(i64, i64) -> String,
 ) -> Vec<Check> {
     use crate::provider::folder::{Sidecar, Unfit, Unread};
     let mut checks = Vec::new();
@@ -3238,7 +3252,7 @@ fn judge_desktop(
             });
         }
     }
-    checks.extend(judge_desktop_login(facts, state, now));
+    checks.extend(judge_desktop_login(facts, state, now, moment));
     let in_use = state.account_in_use(ProviderId::Desktop).map(|a| a.key());
     for fact in parks.iter().filter(|p| p.provider == ProviderId::Desktop) {
         checks.push(judge_desktop_park(facts, fact, now));
@@ -3251,7 +3265,7 @@ fn judge_desktop(
             format!(
                 "a move of `{}`'s login was interrupted {}",
                 typed(&moving.label),
-                time::moment(moving.started_at, now)
+                moment(moving.started_at, now)
             ),
             "Keep Claude closed: the next change to a Claude Desktop account settles it first. \
              If it cannot, `pitboard abandon` keeps every folder and moves on.",
@@ -3266,7 +3280,7 @@ fn judge_desktop(
             "awaited sign-in",
             format!(
                 "Claude is signed out for a sign-in since {}, and `{put_back}` is parked",
-                time::moment(awaited.since, now)
+                moment(awaited.since, now)
             ),
             format!(
                 "Sign in inside Claude, quit it with Command-Q, then run `pitboard enroll {}`. \
@@ -3351,7 +3365,7 @@ fn judge_desktop(
             account(aside).is_some_and(|a| a.parked.is_some() || in_use.as_ref() == Some(&a.key()))
         };
         let said = |aside: &crate::state::Aside| {
-            let when = time::moment(aside.at, now);
+            let when = moment(aside.at, now);
             let typed = account(aside).map(|a| state.typed(&a.key()));
             match (aside.why, typed) {
                 (crate::state::SetAside::AnotherMachine, Some(typed)) => {
@@ -3372,7 +3386,7 @@ fn judge_desktop(
         let mut rest: Vec<String> = parts
             .iter()
             .filter_map(|aside| {
-                let when = time::moment(aside.at, now);
+                let when = moment(aside.at, now);
                 match (aside.why, account(aside).map(|a| state.typed(&a.key()))) {
                     (_, Some(typed)) => {
                         Some(format!("parts of `{typed}`'s login, set aside {when}"))
@@ -3421,7 +3435,12 @@ fn judge_desktop(
     checks
 }
 
-fn judge_desktop_login(facts: &DesktopFacts, state: &State, now: i64) -> Option<Check> {
+fn judge_desktop_login(
+    facts: &DesktopFacts,
+    state: &State,
+    now: i64,
+    moment: &dyn Fn(i64, i64) -> String,
+) -> Option<Check> {
     let known = facts.known.as_ref()?;
     let name = "Claude Desktop in use";
     let tool = ProviderId::Desktop;
@@ -3435,7 +3454,7 @@ fn judge_desktop_login(facts: &DesktopFacts, state: &State, now: i64) -> Option<
             "The next change to a Claude Desktop account reads it, with Claude closed.",
         ));
     };
-    let when = time::moment(last.known_at, now);
+    let when = moment(last.known_at, now);
     let who = Stored::of(state, tool, last.owner.as_ref());
     Some(match known.doubt {
         Some(crate::in_use::Doubt::LoginUnreadable) => warn(
@@ -3586,14 +3605,14 @@ pub struct Diagnosis {
     pub redaction: crate::redact::Sheet,
 }
 
-pub(crate) fn run(ctx: &Context) -> Diagnosis {
+pub(crate) fn run(ctx: &Context, moment: &dyn Fn(i64, i64) -> String) -> Diagnosis {
     if let Err(Error::HomeNotAbsolute { variable, path }) = home::check_absolute(ctx) {
         return unplaced(ctx, variable, &path);
     }
     let facts = gather(ctx);
     Diagnosis {
         redaction: redaction_for(ctx, &facts),
-        checks: evaluate(&facts),
+        checks: evaluate_with(&facts, moment),
         environment: json!({
             "config_file": facts.config_path,
             "storage_dir": facts.storage_dir,
@@ -3813,6 +3832,7 @@ mod tests {
     use super::*;
     use crate::schedule::Location;
     use crate::service::Permit;
+    use crate::time;
     use std::sync::Arc;
 
     /// What a mode looks like as access, the way a Unix system describes one.
@@ -3899,7 +3919,7 @@ mod tests {
         state
             .accounts
             .push(desktop_account("work", Some(folder_park("p", None))));
-        let checks = judge_desktop(Os::MacOs, &desktop(), &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &desktop(), &state, &[], NOW, &time::moment);
         assert!(!checks.is_empty());
         for check in checks {
             assert_eq!(
@@ -3941,7 +3961,7 @@ mod tests {
         );
         let mut facts = desktop();
         facts.one_volume = Some(false);
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW, &time::moment);
         let moved = said(&checks, "desktop_move");
         assert_eq!(moved.len(), 1, "{moved:?}");
         assert_eq!(moved[0].0, Level::Warn);
@@ -3963,7 +3983,7 @@ mod tests {
 
         state.moving.clear();
         facts.one_volume = Some(true);
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW, &time::moment);
         assert!(said(&checks, "desktop_move").is_empty());
         assert_eq!(said(&checks, "desktop_parks_folder")[0].0, Level::Ok);
     }
@@ -4012,7 +4032,7 @@ mod tests {
         });
         facts.parked_here = vec![("home-1".into(), Ok(true)), ("old-1".into(), Ok(true))];
         facts.build = Some("2.31226.1".into());
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW, &time::moment);
         let codes: Vec<&str> = checks.iter().map(|c| c.code).collect();
         assert_eq!(
             codes,
@@ -4069,7 +4089,7 @@ mod tests {
         facts.private = Some(crate::host::Private::Shared);
         facts.signed_out = true;
         facts.build = None;
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW, &time::moment);
         assert_eq!(
             said(&checks, "desktop_layout"),
             [(
@@ -4121,7 +4141,7 @@ mod tests {
             ),
         ] {
             facts.refused = Some(unfit);
-            let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
+            let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW, &time::moment);
             let folder = checks
                 .iter()
                 .find(|c| c.code == "desktop_data_folder")
@@ -4136,7 +4156,7 @@ mod tests {
         facts.settings = Some(Ok((Sidecar::Valid, true)));
         facts.root = Err("`HOME` names another folder than this account's own".into());
         facts.own_home = Some(PathBuf::from("/Users/dana"));
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW, &time::moment);
         let folder = checks
             .iter()
             .find(|c| c.code == "desktop_data_folder")
@@ -4177,7 +4197,14 @@ mod tests {
         std::fs::remove_file(m.ctx_home().join("claude/data/config.json")).expect("removed");
         let facts = desktop_facts(&m.ctx, &state).expect("an account is enrolled");
         assert_eq!(facts.settings, Some(Ok((Sidecar::None, false))));
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], switch::harness::NOW);
+        let checks = judge_desktop(
+            Os::MacOs,
+            &facts,
+            &state,
+            &[],
+            switch::harness::NOW,
+            &time::moment,
+        );
         assert_eq!(
             said(&checks, "desktop_settings"),
             [(Level::Ok, "no config.json yet".into())]
@@ -4196,7 +4223,7 @@ mod tests {
             std::path::Path::new("/Applications/Claude.app"),
             "2.31226.1",
         );
-        let diagnosis = run(&m.ctx);
+        let diagnosis = run(&m.ctx, &time::moment);
         let build = diagnosis
             .checks
             .iter()
@@ -4224,7 +4251,14 @@ mod tests {
         crate::host::fs::testing::make_private(&parks_dir).expect("parks open again");
         let facts = facts.expect("an account is enrolled");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, switch::harness::NOW);
+        let checks = judge_desktop(
+            Os::MacOs,
+            &facts,
+            &state,
+            &parks,
+            switch::harness::NOW,
+            &time::moment,
+        );
         let home = checks
             .iter()
             .find(|c| c.code == "desktop_parked_login" && c.name == "account desktop/home")
@@ -4263,7 +4297,14 @@ mod tests {
         });
         let facts = desktop_facts(&m.ctx, &state).expect("a folder set aside shows Claude Desktop");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, switch::harness::NOW);
+        let checks = judge_desktop(
+            Os::MacOs,
+            &facts,
+            &state,
+            &parks,
+            switch::harness::NOW,
+            &time::moment,
+        );
         let folder = checks
             .iter()
             .find(|c| c.code == "desktop_data_folder")
@@ -4333,7 +4374,7 @@ mod tests {
             },
         );
         let set_aside = |state: &State| {
-            let checks = judge_desktop(Os::MacOs, &desktop(), state, &[], NOW);
+            let checks = judge_desktop(Os::MacOs, &desktop(), state, &[], NOW, &time::moment);
             said(&checks, "desktop_set_aside")
         };
         assert!(set_aside(&state).is_empty(), "none set aside, nothing said");
@@ -4462,7 +4503,7 @@ mod tests {
             doubt: Some(crate::in_use::Doubt::NamedMoved),
             own_record: Some(state.accounts[0].owner()),
         });
-        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW, &time::moment);
         let login = said(&checks, "desktop_login");
         let warned = crate::service::Warning::InUseUnconfirmed {
             tool: ProviderId::Desktop,
@@ -4756,7 +4797,7 @@ mod tests {
 
     /// Codex's section for a machine with no Codex accounts parked.
     fn codex_checks(codex: &CodexFacts) -> Vec<Check> {
-        judge_codex(crate::host::OS, None, codex, &[], NOW)
+        judge_codex(crate::host::OS, None, codex, &[], NOW, &time::moment)
     }
 
     /// A machine whose Codex is signed in, with its login where it should be.
@@ -6871,6 +6912,21 @@ mod tests {
             .collect()
     }
 
+    /// The app says a moment on the person's own clock, which the command line's 24 hours
+    /// are not, so a front end can write each moment a check names.
+    #[test]
+    fn each_moment_a_check_names_is_written_as_the_front_end_writes_it() {
+        use crate::switch::harness::{NOW, machine};
+        let m = machine("doctor-in-use-moment");
+        let diagnosis = crate::service::Pitboard::new(m.ctx.clone())
+            .doctor_with(&|at, now| format!("at {at} of {now}"));
+
+        assert_eq!(
+            check(&diagnosis.checks, "in_use").detail,
+            format!("`here`, as Anthropic said at {NOW} of {NOW}")
+        );
+    }
+
     /// The account in use is the one Anthropic last named for the login stored, known by
     /// that login's fingerprint, and doctor says when it was named. Claude Code's config
     /// naming another, once a read has found the login is still the one named, is said, and
@@ -7200,9 +7256,12 @@ mod tests {
             ..with_codex()
         };
         let advice = |os| {
-            check(&judge_codex(os, None, &keyring, &[], NOW), "codex_backend")
-                .advice
-                .clone()
+            check(
+                &judge_codex(os, None, &keyring, &[], NOW, &time::moment),
+                "codex_backend",
+            )
+            .advice
+            .clone()
         };
         for os in [Os::MacOs, Os::Linux] {
             assert_eq!(
@@ -7512,7 +7571,7 @@ mod tests {
     fn a_codex_login_anybody_can_read_or_nobody_can_parse_is_said() {
         let mut codex = with_codex();
         codex.auth_access = Some(mode(0o644));
-        let checks = judge_codex(Os::Linux, None, &codex, &[], NOW);
+        let checks = judge_codex(Os::Linux, None, &codex, &[], NOW, &time::moment);
         let file = check(&checks, "codex_auth_file");
         assert_eq!(file.level, Level::Warn);
         assert!(file.detail.contains("mode 644"), "{}", file.detail);
@@ -7520,7 +7579,7 @@ mod tests {
 
         codex.auth_file = PathBuf::from(r"C:\Users\dana\.codex\auth.json");
         codex.auth_access = Some(open_to_users());
-        let checks = judge_codex(Os::Windows, Some(SID), &codex, &[], NOW);
+        let checks = judge_codex(Os::Windows, Some(SID), &codex, &[], NOW, &time::moment);
         let file = check(&checks, "codex_auth_file");
         assert_eq!(file.level, Level::Warn);
         let [reset, grant] =
@@ -8584,7 +8643,11 @@ mod tests {
         host.runs_on(crate::host::Floor::Below { build: 22631 });
         host.runs_with(crate::host::Elevation::Unknown);
         let ctx = Context::for_command_line(&env).with_memory_stores(host);
-        let codes: Vec<&str> = run(&ctx).checks.iter().map(|c| c.code).collect();
+        let codes: Vec<&str> = run(&ctx, &time::moment)
+            .checks
+            .iter()
+            .map(|c| c.code)
+            .collect();
         assert_eq!(codes, ["system_too_old", "elevated", "homes"]);
     }
 
@@ -8671,7 +8734,7 @@ mod tests {
             let env: Environment = pairs.iter().copied().collect();
             let ctx = Context::for_command_line(&env)
                 .with_memory_stores(crate::host::memory::MemoryHost::new());
-            let diagnosis = run(&ctx);
+            let diagnosis = run(&ctx, &time::moment);
             let checks: Vec<(&str, Level, &str)> = diagnosis
                 .checks
                 .iter()

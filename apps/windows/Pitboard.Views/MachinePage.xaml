@@ -5,7 +5,23 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:core="using:Pitboard.Core"
     xmlns:local="using:Pitboard.Views"
+    xmlns:shown="using:Pitboard.Windows"
     NavigationCacheMode="Required">
+  <Page.Resources>
+    <!-- A detail's own copy would keep the marks that wrap its paths; this one copies what it says. -->
+    <MenuFlyout x:Key="DetailMenu" Opening="OnDetailMenuOpening">
+      <MenuFlyoutItem Text="Copy" KeyboardAcceleratorTextOverride="Ctrl+C" Click="OnCopyDetail">
+        <MenuFlyoutItem.Icon>
+          <SymbolIcon Symbol="Copy" />
+        </MenuFlyoutItem.Icon>
+      </MenuFlyoutItem>
+      <MenuFlyoutItem Text="Select all" KeyboardAcceleratorTextOverride="Ctrl+A" Click="OnSelectAllDetail">
+        <MenuFlyoutItem.Icon>
+          <SymbolIcon Symbol="SelectAll" />
+        </MenuFlyoutItem.Icon>
+      </MenuFlyoutItem>
+    </MenuFlyout>
+  </Page.Resources>
   <Grid Padding="0,16,0,0" RowSpacing="24">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Sides">
@@ -104,9 +120,15 @@
                 AutomationProperties.Name="{x:Bind SpokenLevel}" />
             <StackPanel Grid.Column="1" Spacing="2">
               <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyTextBlockStyle}" />
-              <TextBlock Text="{x:Bind Detail}" Style="{StaticResource SecondaryTextBlockStyle}" IsTextSelectionEnabled="True" />
               <TextBlock
-                  Text="{x:Bind Advice}"
+                  Text="{x:Bind shown:PathText.Shown(Detail)}"
+                  Style="{StaticResource SecondaryTextBlockStyle}"
+                  IsTextSelectionEnabled="True"
+                  ContextFlyout="{StaticResource DetailMenu}"
+                  SelectionFlyout="{x:Null}"
+                  PreviewKeyDown="OnDetailKeyDown" />
+              <TextBlock
+                  Text="{x:Bind shown:PathText.Shown(Advice)}"
                   Visibility="{x:Bind local:MachinePage.Said(Advice)}"
                   Style="{StaticResource SecondaryCaptionTextBlockStyle}" />
             </StackPanel>

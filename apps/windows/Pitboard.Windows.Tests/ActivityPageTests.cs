@@ -80,6 +80,56 @@ public sealed class ActivityPageTests
         }
     }
 
+    private static readonly ActivityShown Measured = new(
+        Lines:
+        [
+            new ActivityLine(0, "10/17/2026 5:48 AM", "Switch", "work", "Done", Done: true, AskedBy: "Pitboard app"),
+            new ActivityLine(1, "10/14/2026 6:48 AM", "Login in use changed", "work", "Signed in outside", Done: false, AskedBy: "Command line"),
+            new ActivityLine(2, "9/16/2026 6:48 AM", "Enrol", "codex/spare", "Done", Done: true, AskedBy: "Pitboard app"),
+        ],
+        Empty: null);
+
+    private static TextBlock[] Cells(Page page) => [.. Views.Visible<ListViewItem>(page).SelectMany(Views.Visible<TextBlock>)];
+
+    // In a window 1100 epx wide, "Login in use changed" and "Signed in outside" each took two lines in columns of 90 epx.
+    [UITestMethod]
+    public async Task EachCellReadsOnOneLineWhereThePageHasRoom()
+    {
+        var page = await Shown(With(Measured), width: 765);
+        string Tall()
+        {
+            var cells = Cells(page);
+            var line = cells.FirstOrDefault(cell => cell.Text == "Switch")?.ActualHeight ?? 0;
+            return string.Join(", ", cells.Where(cell => line == 0 || cell.ActualHeight > line + 0.5).Select(cell => cell.Text));
+        }
+
+        await Views.Until(() => Cells(page).Length == 15 && Tall() == "", () => $"on more than one line: {Tall()}");
+    }
+
+    // Narrower than every cell needs, each column gives up room and wraps, and none runs into the next.
+    [UITestMethod]
+    public async Task ANarrowTableWrapsEachColumnInItsOwnRoom()
+    {
+        var page = await Shown(With(Measured with
+        {
+            Lines = [.. Measured.Lines, new ActivityLine(3, "10/13/2026 6:48 AM", "Automatic switch not made", "an account with a long name", "Signed in outside", Done: false, AskedBy: "Command line")],
+        }), width: 740);
+        string Overlapping()
+        {
+            var said = new List<string>();
+            foreach (var row in Views.Visible<ListViewItem>(page))
+            {
+                var cells = Views.Visible<TextBlock>(row).Select(cell => Bounds(cell, row)).OrderBy(bounds => bounds.Left).ToArray();
+                said.AddRange(cells.Zip(cells.Skip(1)).Where(pair => pair.First.Right > pair.Second.Left + 0.5).Select(pair => $"{pair.First} over {pair.Second}"));
+                said.AddRange(cells.Where(bounds => bounds.Right > row.ActualWidth + 0.5).Select(bounds => $"{bounds} past {row.ActualWidth}"));
+            }
+
+            return string.Join("; ", said);
+        }
+
+        await Views.Until(() => Views.Visible<ListViewItem>(page).Count() == 4 && Overlapping() == "", () => $"cells overlap: {Overlapping()}");
+    }
+
     [UITestMethod]
     public async Task ANarrowPageStacksEachChangeUnderItsDate()
     {

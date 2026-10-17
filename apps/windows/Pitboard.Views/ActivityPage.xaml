@@ -8,20 +8,16 @@
     xmlns:toolkit="using:CommunityToolkit.WinUI"
     NavigationCacheMode="Required">
   <Page.Resources>
-    <!-- The table's columns, which its headers share; the account takes what is left. -->
-    <GridLength x:Key="DateColumnWidth">170</GridLength>
-    <GridLength x:Key="ChangeColumnWidth">90</GridLength>
-    <GridLength x:Key="ResultColumnWidth">90</GridLength>
-    <GridLength x:Key="AskedByColumnWidth">110</GridLength>
-    <!-- Microsoft's list item templates: a table's columns, each wrapping as text grows. -->
+    <!-- Microsoft's list item templates: a table's columns, which the page sizes to what they hold, each wrapping where the
+         page is narrower than that. -->
     <DataTemplate x:Key="TableLine" x:DataType="core:ActivityLine">
       <Grid ColumnSpacing="12">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="{StaticResource DateColumnWidth}" />
-          <ColumnDefinition Width="{StaticResource ChangeColumnWidth}" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="{StaticResource ResultColumnWidth}" />
-          <ColumnDefinition Width="{StaticResource AskedByColumnWidth}" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <TextBlock Text="{x:Bind Date}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
         <TextBlock Grid.Column="1" Text="{x:Bind Change}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
@@ -135,11 +131,11 @@
       <ListView.Header>
         <Grid x:Name="Columns" Padding="16,0,12,4" ColumnSpacing="12">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="{StaticResource DateColumnWidth}" />
-            <ColumnDefinition Width="{StaticResource ChangeColumnWidth}" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="{StaticResource ResultColumnWidth}" />
-            <ColumnDefinition Width="{StaticResource AskedByColumnWidth}" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <TextBlock Text="Date" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
           <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
@@ -160,5 +156,9 @@
         Visibility="{x:Bind ViewModel.ShowsEmpty, Mode=OneWay}"
         Title="{x:Bind ViewModel.EmptyTitle, Mode=OneWay}"
         Detail="{x:Bind ViewModel.EmptyDetail, Mode=OneWay}" />
+    <!-- Measures each cell's text where the page's text size applies, taking no room. -->
+    <Canvas Grid.Row="1" IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw">
+      <TextBlock x:Name="Ruler" Opacity="0" AutomationProperties.AccessibilityView="Raw" />
+    </Canvas>
   </Grid>
 </Page>

@@ -347,16 +347,17 @@ fn offers(os: Os, account: &Account, action: Option<&ItemAction>, busy: bool) ->
 }
 
 /// What warming up an account is, as the core's last word on it says, where it can be warmed
-/// up: a Claude Code account enrolled under a name.
+/// up: a Claude Code account enrolled under a name, on a system that warms up accounts.
 fn warm_choice<'a>(
     seen: &'a Seen,
     account: &Account,
 ) -> Option<&'a pitboard_core::duty::warm::Choice> {
     let qualified = account.qualified.as_deref()?;
-    seen.state
-        .warm
-        .overview
-        .as_ref()?
+    let overview = seen.state.warm.overview.as_ref()?;
+    if overview.halted == Some(pitboard_core::duty::warm::Halt::Unbuilt) {
+        return None;
+    }
+    overview
         .accounts
         .iter()
         .find(|choice| choice.qualified == qualified)

@@ -377,3 +377,44 @@ fn a_halt_is_said_under_the_setting() {
         )
     );
 }
+
+/// Windows warms up nothing, so the settings were left to change and every row's menu offered
+/// Warm Up Automatically, which a context menu leaves out where it can never apply. The
+/// settings say why, dimmed, and a row says nothing of a warm-up that is not made.
+#[test]
+fn where_nothing_is_ever_warmed_up_nothing_offers_it() {
+    let mut unbuilt = overview(true, Standing::Due);
+    unbuilt.halted = Some(Halt::Unbuilt);
+    let mut machine = reading(unbuilt.clone());
+    machine.warming = Ok(WarmUp::Stands(Box::new(unbuilt)));
+    let model = started(&mut machine);
+    let shown = model.shown();
+    let warm = &shown.machine.warm;
+    assert!(!warm.enabled, "the hours and the switches can be changed");
+    assert_eq!(
+        warm.accounts
+            .iter()
+            .map(|account| (
+                account.title.as_str(),
+                account.on,
+                account.standing.as_deref()
+            ))
+            .collect::<Vec<_>>(),
+        [("personal", true, None)],
+        "a switch shows what is kept, and no warm-up to come"
+    );
+    let item = shown
+        .sections
+        .iter()
+        .flat_map(|section| &section.accounts)
+        .find(|item| item.title == "personal")
+        .expect("personal");
+    assert_eq!(item.warm_note, None);
+    assert!(
+        item.offers
+            .iter()
+            .all(|offer| !offer.title.starts_with("Warm")),
+        "{:?}",
+        item.offers
+    );
+}
