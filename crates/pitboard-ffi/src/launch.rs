@@ -1207,16 +1207,17 @@ impl AppCore {
             .unwrap_or_default()
     }
 
-    /// Every check `pitboard doctor` makes. `None` where this build may do nothing on its
-    /// system (`pitboard_core::release`), which makes no check, as `pitboard doctor` there
-    /// makes none. A home that is not a full path is doctor's own to say, as its `homes`
-    /// check, failed, and nothing else.
-    pub(crate) fn doctor(&self) -> Option<Vec<Check>> {
+    /// Every check `pitboard doctor` makes, each moment one names on the person's clock as
+    /// `local` says it. `None` where this build may do nothing on its system
+    /// (`pitboard_core::release`), which makes no check, as `pitboard doctor` there makes
+    /// none. A home that is not a full path is doctor's own to say, as its `homes` check,
+    /// failed, and nothing else.
+    pub(crate) fn doctor(&self, local: &dyn crate::LocalTime) -> Option<Vec<Check>> {
         pitboard_core::release::check().ok()?;
         let checks = self
             .core()
             .core
-            .doctor()
+            .doctor_with(&|at, now| crate::present::clock_of(local, at, now))
             .checks
             .into_iter()
             .map(|c| Check {
@@ -1579,7 +1580,9 @@ mod tests {
             assert!(core.whole("nobody") && !core.moving("nobody"));
             assert!(installed(&core).is_empty(), "{variable}");
             assert_eq!(core.command_line(), FoundCommandLine::Nowhere);
-            let checks = core.doctor().expect("doctor's own to say");
+            let checks = core
+                .doctor(&crate::present::testing::Utc)
+                .expect("doctor's own to say");
             let homes = checks
                 .iter()
                 .find(|check| check.code == "homes")

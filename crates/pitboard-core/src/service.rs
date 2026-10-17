@@ -1030,7 +1030,14 @@ impl Pitboard {
     }
 
     pub fn doctor(&self) -> Diagnosis {
-        doctor::run(&self.ctx)
+        self.doctor_with(&crate::time::moment)
+    }
+
+    /// The same checks, each moment one names written as `moment` writes it, given the moment
+    /// and when the checks are made: an app's clock, where the command line's is
+    /// [`crate::time::moment`].
+    pub fn doctor_with(&self, moment: &dyn Fn(i64, i64) -> String) -> Diagnosis {
+        doctor::run(&self.ctx, moment)
     }
 
     /// The same report without asking anyone: the last numbers Pitboard measured, and whose

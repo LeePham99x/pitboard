@@ -30,8 +30,8 @@ use super::machine::Scheduled;
 use super::preferences::Preferences;
 use super::state::{Answer, Cadence, Job, Msg, QuitOutcome, split};
 use super::{
-    AppControl, EarlierPreferences, ModelListener, Notifications, QuitQuestion, Snapshot,
-    WindowsLaunch,
+    AppControl, EarlierPreferences, LocalTime, ModelListener, Notifications, QuitQuestion,
+    Snapshot, WindowsLaunch,
 };
 use crate::account_windows::records::{self, Records};
 use crate::{AppCore, Holding, Remedy, SignInSession};
@@ -167,13 +167,14 @@ impl RecordsFile {
 }
 
 impl Lanes {
-    /// Starts the lanes over `core`, `apps` and `notifications`, answering to `answers`,
-    /// giving an app as long to quit as `cadence` says, with what the model keeps as
-    /// `keeping` says.
+    /// Starts the lanes over `core`, `apps`, `notifications` and the person's clock,
+    /// `local_time`, answering to `answers`, giving an app as long to quit as `cadence` says,
+    /// with what the model keeps as `keeping` says.
     pub(crate) fn open(
         core: Arc<AppCore>,
         apps: Arc<dyn AppControl>,
         notifications: Arc<dyn Notifications>,
+        local_time: Arc<dyn LocalTime>,
         keeping: Keeping,
         cadence: Cadence,
         answers: &Sender<Msg>,
@@ -182,6 +183,7 @@ impl Lanes {
             core,
             apps,
             notifications,
+            local_time,
             earlier: keeping.earlier,
             windows: keeping.windows,
             quit_within: cadence.quit_within,
@@ -511,6 +513,8 @@ pub(crate) struct Worker {
     pub(crate) core: Arc<AppCore>,
     pub(crate) apps: Arc<dyn AppControl>,
     pub(crate) notifications: Arc<dyn Notifications>,
+    /// The person's clock, which doctor's checks say their moments on.
+    pub(crate) local_time: Arc<dyn LocalTime>,
     pub(crate) earlier: Option<EarlierPreferences>,
     pub(crate) windows: Option<RecordsFile>,
     pub(crate) quit_within: Duration,
@@ -754,7 +758,7 @@ impl Worker {
                 renewals: core.renew(),
             },
             Job::Check => Answer::Checked {
-                checks: core.doctor(),
+                checks: core.doctor(self.local_time.as_ref()),
             },
             Job::ReadLog { limit } => Answer::Logged {
                 changes: core.log(limit),
@@ -929,6 +933,7 @@ mod tests {
             core,
             apps,
             notifications: Arc::new(Posted::default()),
+            local_time: Arc::new(crate::present::testing::Utc),
             earlier: None,
             windows: None,
             quit_within: Duration::from_millis(50),
@@ -1362,6 +1367,7 @@ mod tests {
             world.core(),
             StandInApps::new(&[], true),
             Arc::new(Posted::default()),
+            Arc::new(crate::present::testing::Utc),
             Keeping {
                 earlier: None,
                 windows: None,

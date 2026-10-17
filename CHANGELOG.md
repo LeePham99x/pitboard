@@ -33,6 +33,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **This Mac** says the times its checks name on your Mac's clock, as **Checked at** does,
+  instead of always in 24 hours.
 - Pitboard reads and writes Claude Code's `~/.claude.json` where an empty `.config.json` sits
   in Claude Code's config directory, as Claude Code does.
 - `pitboard uninstall` and `pitboard doctor` name the Pitboard directory in use, such as one

@@ -702,9 +702,9 @@ pub trait Notifications: Send + Sync {
 }
 
 /// The person's own clock, as the app's system formats it: their locale, and whether they read
-/// 12 or 24 hours. Asked as a snapshot is made, on the model's own thread, which every method
-/// answers at once without waiting on anything. Where one throws, the command line's form is
-/// said instead.
+/// 12 or 24 hours. Asked as a snapshot is made, on the model's own thread, and as doctor's
+/// checks are made, on the lane that makes them, which every method answers at once without
+/// waiting on anything. Where one throws, the command line's form is said instead.
 #[uniffi::export(with_foreign)]
 pub trait LocalTime: Send + Sync {
     /// The time of `epoch`, in epoch seconds, as a clock shows it: "14:05", "2:05 PM". With
@@ -878,6 +878,7 @@ impl PitboardModel {
             core,
             platform.apps,
             platform.notifications,
+            Arc::clone(&platform.local_time),
             lanes::Keeping {
                 earlier: platform.earlier,
                 windows: platform
