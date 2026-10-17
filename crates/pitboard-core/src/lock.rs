@@ -162,9 +162,8 @@ impl Drop for Guard {
     }
 }
 
-fn age(path: &Path) -> Option<Duration> {
-    let mtime = std::fs::metadata(path).ok()?.modified().ok()?;
-    SystemTime::now().duration_since(mtime).ok()
+fn age(path: &Path, now: SystemTime) -> Option<Duration> {
+    now.duration_since(mtime(path).ok()?).ok()
 }
 
 fn mtime(path: &Path) -> io::Result<SystemTime> {
@@ -197,7 +196,7 @@ pub(crate) fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<G
         match crate::host::fs::create_dir(permit, &path) {
             Ok(()) => return start(permit, path, timing).map_err(LockError::Io),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                if abandoned(&path, timing) {
+                if abandoned(&path, timing, SystemTime::now()) {
                     let _ = crate::host::fs::remove_dir(permit, &path);
                     continue;
                 }
@@ -212,50 +211,33 @@ pub(crate) fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<G
     Err(LockError::Busy)
 }
 
-/// Whether the lock at `path` has gone untouched past `timing`'s staleness, which is when
-/// Claude Code would take it too.
-fn abandoned(path: &Path, timing: Timing) -> bool {
-    age(path).is_some_and(|a| a > timing.stale)
+// Untouched past its staleness at `now`, which is when Claude Code takes it too.
+fn abandoned(path: &Path, timing: Timing, now: SystemTime) -> bool {
+    age(path, now).is_some_and(|a| a > timing.stale)
 }
 
 fn start(permit: Permit, path: PathBuf, timing: Timing) -> io::Result<Guard> {
     // What the filesystem actually stored for the directory we just made. Every later beat
     // compares against this, and replaces it with what it stores next.
-    let mut held = mtime(&path)?;
+    let held = mtime(&path)?;
     let stop: Stop = Arc::new((Mutex::new(false), Condvar::new()));
     let compromised = Arc::new(AtomicBool::new(false));
     let beat = {
         let (path, stop, compromised) = (path.clone(), Arc::clone(&stop), Arc::clone(&compromised));
         thread::spawn(move || {
             let (flag, wake) = &*stop;
-            let mut stopped = flag.lock().unwrap_or_else(PoisonError::into_inner);
-            loop {
+            let mut stopped = Some(flag.lock().unwrap_or_else(PoisonError::into_inner));
+            let kept = keep(permit, &path, timing, held, |every| {
                 // Checks the flag before waiting and after every wakeup, spurious or not.
                 let (next, _) = wake
-                    .wait_timeout_while(stopped, timing.heartbeat, |stop| !*stop)
+                    .wait_timeout_while(stopped.take()?, every, |stop| !*stop)
                     .unwrap_or_else(PoisonError::into_inner);
-                stopped = next;
-                if *stopped {
-                    return;
-                }
-                // Look before touching. A directory that is gone, or whose mtime is not the
-                // one this guard last stored, is not this guard's lock any more: something
-                // aged it out and took it, and is writing under it right now. Touching it
-                // then would renew somebody else's lock.
-                match mtime(&path) {
-                    Ok(found) if found == held => {}
-                    _ => {
-                        compromised.store(true, Ordering::Release);
-                        return;
-                    }
-                }
-                match touch(permit, &path, SystemTime::now()) {
-                    Ok(stored) => held = stored,
-                    Err(_) => {
-                        compromised.store(true, Ordering::Release);
-                        return;
-                    }
-                }
+                let released = *next;
+                stopped = Some(next);
+                (!released).then(SystemTime::now)
+            });
+            if !kept {
+                compromised.store(true, Ordering::Release);
             }
         })
     };
@@ -266,6 +248,32 @@ fn start(permit: Permit, path: PathBuf, timing: Timing) -> io::Result<Guard> {
         beat: Some(beat),
         compromised,
     })
+}
+
+// `due` waits out each interval and gives the time to touch at, or None once released: the
+// heartbeat's clock, which a test runs through stale windows at once. False once the lock
+// stopped being ours.
+fn keep(
+    permit: Permit,
+    path: &Path,
+    timing: Timing,
+    mut held: SystemTime,
+    mut due: impl FnMut(Duration) -> Option<SystemTime>,
+) -> bool {
+    while let Some(now) = due(timing.heartbeat) {
+        // Look before touching. A directory that is gone, or whose mtime is not the one this
+        // guard last stored, is not this guard's lock any more: something aged it out and took
+        // it, and is writing under it right now. Touching it then would renew somebody else's
+        // lock.
+        if mtime(path).ok() != Some(held) {
+            return false;
+        }
+        match touch(permit, path, now) {
+            Ok(stored) => held = stored,
+            Err(_) => return false,
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -377,8 +385,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(abandoned(&lock, WRITE));
-        assert!(!abandoned(&lock, REFRESH));
+        assert!(abandoned(&lock, WRITE, SystemTime::now()));
+        assert!(!abandoned(&lock, REFRESH, SystemTime::now()));
     }
 
     /// Releasing wakes the heartbeat rather than waiting out its interval, here an hour.
@@ -414,36 +422,31 @@ mod tests {
             });
         }
 
-        assert!(age(&lock).unwrap() < QUICK.stale);
+        assert!(age(&lock, SystemTime::now()).unwrap() < QUICK.stale);
         assert!(!g.compromised(), "nobody else touched it");
     }
 
-    // Each of Claude Code's two timings, twenty times shorter, kept past three of its stale
-    // windows and never taken for another's: what RF-C5 and RF-C5r measured at full length
-    // against proper-lockfile on Windows.
+    // Each of Claude Code's two timings, kept past three of its stale windows on a clock the test
+    // drives: touched with at least half the window to spare, never old enough for Claude Code or
+    // acquire to take, and never taken for another's. What RF-C5 and RF-C5r measured against
+    // proper-lockfile on Windows. On the wall clock, twenty times shorter, a runner that ran a
+    // beat more than 375 ms late failed it (runs 38898431888 and 39015107289).
     #[test]
     fn each_heartbeat_outlives_its_stale_window() {
-        let shorter = |timing: Timing| Timing {
-            stale: timing.stale / 20,
-            heartbeat: timing.heartbeat / 20,
-            ..timing
-        };
-        thread::scope(|scope| {
-            for timing in [shorter(WRITE), shorter(REFRESH)] {
-                scope.spawn(move || {
-                    let (_dir, t) = scratch();
-                    let g = acquire(Permit::for_a_test(), &t, timing).expect("acquired");
-                    let lock = PathBuf::from(format!("{}.lock", t.display()));
-                    let held = Instant::now();
-                    while held.elapsed() < timing.stale * 3 {
-                        assert!(!abandoned(&lock, timing), "{timing:?}");
-                        assert!(!g.compromised(), "{timing:?}");
-                        thread::sleep(timing.heartbeat / 5);
-                    }
-                    assert!(acquire(Permit::for_a_test(), &t, QUICK).is_err());
-                });
-            }
-        });
+        for timing in [WRITE, REFRESH] {
+            let (_dir, t) = scratch();
+            let lock = PathBuf::from(format!("{}.lock", t.display()));
+            std::fs::create_dir(&lock).unwrap();
+            let taken = mtime(&lock).unwrap();
+            let mut now = taken;
+            let kept = keep(Permit::for_a_test(), &lock, timing, taken, |every| {
+                assert!(every <= timing.stale / 2, "{timing:?}");
+                now += every;
+                assert!(!abandoned(&lock, timing, now), "{timing:?}");
+                (now.duration_since(taken).unwrap() <= timing.stale * 3).then_some(now)
+            });
+            assert!(kept, "{timing:?}");
+        }
     }
 
     /// The half of proper-lockfile's protocol this omitted, and the reason it matters. A
