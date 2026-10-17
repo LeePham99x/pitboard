@@ -1,17 +1,25 @@
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
+using Windows.System;
+using Windows.UI.Core;
 
 namespace Pitboard.Views;
 
 public sealed partial class MachinePage : Page
 {
+    private readonly MenuFlyout _detailMenu;
+    private Action<string> _copy = _ => { };
+
     public MachinePage()
     {
         InitializeComponent();
+        _detailMenu = (MenuFlyout)Resources["DetailMenu"];
         Lines.ContainerContentChanging += NameLine;
         Loaded += (_, _) => ViewModel?.Listen();
         Unloaded += (_, _) => ViewModel?.Stop();
@@ -47,7 +55,9 @@ public sealed partial class MachinePage : Page
         base.OnNavigatedTo(e);
         if (ViewModel is null)
         {
-            ViewModel = new MachineViewModel(((PaneContext)e.Parameter).Model);
+            var context = (PaneContext)e.Parameter;
+            ViewModel = new MachineViewModel(context.Model);
+            _copy = context.Copy;
             Bindings.Update();
         }
 
@@ -66,4 +76,27 @@ public sealed partial class MachinePage : Page
     }
 
     private void OnCheckAgain(object sender, RoutedEventArgs args) => ViewModel?.Check();
+
+    private void OnDetailKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        var control = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down);
+        if (control && args.Key is (VirtualKey.C or VirtualKey.Insert) && sender is TextBlock { SelectedText.Length: > 0 } detail)
+        {
+            args.Handled = true;
+            _copy(PathText.Copied(detail.SelectedText));
+        }
+    }
+
+    private void OnDetailMenuOpening(object sender, object args) =>
+        _detailMenu.Items[0].IsEnabled = _detailMenu.Target is TextBlock { SelectedText.Length: > 0 };
+
+    private void OnCopyDetail(object sender, RoutedEventArgs args)
+    {
+        if (_detailMenu.Target is TextBlock detail)
+        {
+            _copy(PathText.Copied(detail.SelectedText));
+        }
+    }
+
+    private void OnSelectAllDetail(object sender, RoutedEventArgs args) => (_detailMenu.Target as TextBlock)?.SelectAll();
 }
