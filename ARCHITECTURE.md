@@ -835,7 +835,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     only a build for tests reads, and where the app or that command line links a SQLite
     other than the system's `/usr/lib/libsqlite3.dylib`. `scripts/build-number.sh` gives
     it the `CFBundleVersion` Sparkle orders updates by, with room for a beta below its
-    release.
+    release. A beta's `CFBundleShortVersionString` is its X.Y.Z alone, as Apple documents
+    the key, and the app shows the whole version from its own Info.plist key,
+    `PitboardVersion`.
 - `packaging/`: the templates a release fills and publishes, and the tap's other files.
   The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.

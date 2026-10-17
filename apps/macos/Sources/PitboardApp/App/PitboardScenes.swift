@@ -39,6 +39,10 @@ public struct PitboardScenes: Scene {
         }
         .defaultSize(width: 760, height: 560)
         .commands {
+            // The standard item shows a beta's CFBundleShortVersionString, its X.Y.Z alone.
+            CommandGroup(replacing: .appInfo) {
+                Button("About Pitboard") { AppVersion.showAboutPanel() }
+            }
             // Nothing here makes a document: what is new here is an account, from any pane.
             CommandGroup(replacing: .newItem) {
                 Button("Add Account…") { model.send(.presentSheet(sheet: .add(provider: nil))) }

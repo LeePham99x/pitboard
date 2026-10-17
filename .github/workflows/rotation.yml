@@ -78,6 +78,7 @@ jobs:
             plist=$app/Contents/Info.plist
             /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $STAGING_ID" "$plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $2" "$plist"
+            /usr/libexec/PlistBuddy -c "Set :PitboardVersion $2" "$plist"
             /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $3" "$plist"
             /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $(cat "$RUNNER_TEMP/keys/$4.pub")" "$plist"
             /usr/libexec/PlistBuddy -c "Set :SUFeedURL $STAGING_FEED" "$plist"
