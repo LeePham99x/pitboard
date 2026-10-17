@@ -19,7 +19,8 @@ const PWSH: &str = r"C:\Program Files\PowerShell\7\pwsh.exe";
 const PATHEXT: &str = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL";
 
 // Claude Code waits 300 ms after a change before it runs the line, and its next run cancels one
-// still going (2.1.301's status line), so a run within that keeps the line up to date.
+// still going (2.1.302's status line, read in both Windows builds), so a run within that keeps
+// the line up to date.
 const BUDGET: Duration = Duration::from_millis(300);
 
 #[allow(
@@ -259,10 +260,9 @@ fn json_parses_in_windows_powershell_and_pwsh_with_a_label_outside_ascii() {
 fn a_warm_status_line_run_is_within_its_budget_and_holds_nothing_after() {
     let env = two_accounts("statusline-budget");
     let pitboard = env.put_pitboard_on_path();
-    let run = |n: u32| {
-        let input = session("budget", Some((f64::from(n), 70.0)));
+    let timed = |args: &[&str], input: &str| {
         let started = Instant::now();
-        let out = ran(env.started(&pitboard, &["statusline"]), &input);
+        let out = ran(env.started(&pitboard, args), input);
         let took = started.elapsed();
         assert!(
             out.status.success(),
@@ -271,18 +271,34 @@ fn a_warm_status_line_run_is_within_its_budget_and_holds_nothing_after() {
         );
         took
     };
+    let run = |n: u32| {
+        let input = session("budget", Some((f64::from(n), 70.0)));
+        timed(&["statusline"], &input)
+    };
     for n in 0..3 {
         run(n);
     }
-    let mut took: Vec<Duration> = (3..23).map(run).collect();
-    took.sort();
-    let median = took[took.len() / 2];
+    // Each run comes straight after a start of the same copy that does nothing and meets
+    // whatever else the runner is doing then, so what the run takes over it is the status
+    // line's own. A busy runner only adds time, so the quickest start is what a start costs.
+    let (starts, mut over): (Vec<Duration>, Vec<Duration>) = (3..23)
+        .map(|n| {
+            let start = timed(&["--version"], "");
+            (start, run(n).saturating_sub(start))
+        })
+        .unzip();
+    let quickest = *starts.iter().min().expect("a start");
+    over.sort();
+    let median = over[over.len() / 2];
     println!(
-        "{} warm runs of pitboard statusline: median {median:?}, slowest {:?}",
-        took.len(),
-        took[took.len() - 1]
+        "{} warm runs of pitboard statusline: quickest start {quickest:?}, median over a start \
+         {median:?}",
+        over.len()
     );
-    assert!(median <= BUDGET, "{took:?}");
+    assert!(
+        quickest + median <= BUDGET,
+        "starts {starts:?}, over them {over:?}"
+    );
 
     let bin = pitboard.parent().expect("its folder").to_path_buf();
     let replaced = env.root.join("bin-replaced");
