@@ -414,7 +414,7 @@ pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
     fixed(path).map(|info| parts(info.dwProductVersionMS, info.dwProductVersionLS))
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(feature = "test-support")]
 pub(crate) fn file_version(path: &Path) -> Option<[u16; 4]> {
     fixed(path).map(|info| parts(info.dwFileVersionMS, info.dwFileVersionLS))
 }
@@ -453,8 +453,7 @@ pub(crate) fn version_string(path: &Path, name: &str) -> Option<String> {
     )
 }
 
-/// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
-/// starts one.
+// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it starts one.
 pub(crate) fn run_within(
     _: crate::service::Permit,
     _command: std::process::Command,
