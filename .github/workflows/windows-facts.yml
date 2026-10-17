@@ -321,6 +321,9 @@ jobs:
               -GatedLibrary (Join-Path $env:GITHUB_WORKSPACE 'target\release\pitboard_ffi.dll') -UpdateKey $env:UPDATE_TEST_KEY `
               -Version $env:VERSION -FileVersion $env:FILE_VERSION
             & (Join-Path $scripts 'check-windows-msi.ps1') -Msi $msi -Folder $image -MsiVersion $msis[$kind] -CommandLine $commandLine
+            $ours = @(Get-ChildItem -LiteralPath $image -Recurse -File |
+              Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll', '.msix' } | ForEach-Object FullName)
+            & (Join-Path $scripts 'verify-windows-signatures.ps1') -Path $ours -Mode unsigned
             Write-Output "Built $msi, version $($msis[$kind])."
           }
       - name: The zip and the probes
@@ -347,10 +350,11 @@ jobs:
         run: >
           ./.github/scripts/pack-session-bundle.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'session')
           -Name "session-build-$env:TRIPLE" -Out (Join-Path $env:RUNNER_TEMP 'sealed') -Age $env:AGE -Recipient $env:KEY
-      # The encrypted file alone.
+      # Overwritten, so a leg run again can upload its bundle again.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: session-build-${{ matrix.triple }}
           path: ${{ runner.temp }}/sealed/session-build-${{ matrix.triple }}.zip.age
           if-no-files-found: error
           retention-days: 1
+          overwrite: true
