@@ -917,6 +917,14 @@ jobs:
             echo "the rehearsal asks for a repository secret, so it can be given one" >&2
             exit 1
           fi
+      # windows-facts.yml runs on whatever branch it is dispatched on, and its session job builds a
+      # bundle that leaves the runner.
+      - name: The runner facts and the session bundle name no repository secret
+        run: |
+          if grep -q 'secrets\.' .github/workflows/windows-facts.yml; then
+            echo "windows-facts.yml asks for a repository secret, so it can be given one" >&2
+            exit 1
+          fi
 
   # The usepitboard.com site in website/. A pull request that changes none of the files its
   # build and tests read, listed in `touched`, skips the steps and passes. The build reads the

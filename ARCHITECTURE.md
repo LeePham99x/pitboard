@@ -856,7 +856,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
-  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners.
+  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners, or with
+    `session` builds the session bundle.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `actions/rust` installs the toolchain and, unless a job turns it off, restores the Cargo
     cache; nothing `release.yml` runs restores one. `actions/windows-builds` makes the builds

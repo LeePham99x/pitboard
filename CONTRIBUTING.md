@@ -316,6 +316,25 @@ signatures. They run on CI's runners only.
 one that changes the probe, its helpers or the script dispatches it on its branch and names
 the run. `ARCHITECTURE.md` records what it measured.
 
+With `-f session=true -f age-recipient=<age public key>`, the workflow builds the session
+bundle for [the session machine](AGENTS.md#the-session-machine) instead. Only the owner
+dispatches it, on the draft Release PR, and `.github/scripts/session-gate.sh` refuses a tag, a
+Pitboard version before 1.0.0-beta.1 and the cfg. Each machine's bundle holds its MSI as a
+beta with no signer ships it. The ARM64 one adds the zip, a second MSI one higher in
+ProductVersion's fourth field, which installs over the first, `pitboard-probe` and
+`Pitboard.Probe`. `pack-session-bundle.ps1` lists every file in `SHA256SUMS`, zips the bundle
+and encrypts it with age to that key, and `test-windows-release.ps1` tests it with a stand-in
+for age. GitHub keeps the two artifacts a day. Download and decrypt them on the Mac, delete
+them from GitHub, and copy each folder to the session machine:
+
+```sh
+gh run download <run id> -n session-build-aarch64-pc-windows-msvc \
+  -n session-build-x86_64-pc-windows-msvc
+age -d -i <age identity file> -o <name>.zip <name>/<name>.zip.age
+gh api repos/datlechin/pitboard/actions/runs/<run id>/artifacts --jq '.artifacts[].id' |
+  xargs -I{} gh api -X DELETE repos/datlechin/pitboard/actions/artifacts/{}
+```
+
 ## The Windows app
 
 The Windows app is C# in `apps/windows`, over the core's C# bindings. The
