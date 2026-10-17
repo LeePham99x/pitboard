@@ -49,10 +49,7 @@ struct MenuBarContent: View {
             }
         }
         Section {
-            Button("About Pitboard") {
-                NSApp.activate()
-                NSApp.orderFrontStandardAboutPanel(nil)
-            }
+            Button("About Pitboard") { AppVersion.showAboutPanel() }
             Link("Pitboard Help", destination: Links.documentation)
             Button("Quit Pitboard") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")

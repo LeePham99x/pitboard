@@ -72,4 +72,30 @@ final class SparkleUpdater: NSObject, Updates, SPUStandardUserDriverDelegate {
         let version = update.displayVersionString
         Task { @MainActor in self.waiting = version }
     }
+
+    nonisolated func standardUserDriverRequestsVersionDisplayer() -> (any SUVersionDisplay)? {
+        VersionDisplay()
+    }
+}
+
+// Sparkle's alerts otherwise name a beta by its CFBundleShortVersionString, its X.Y.Z alone.
+private final class VersionDisplay: NSObject, SUVersionDisplay {
+    func formatUpdateVersion(
+        fromUpdate update: SUAppcastItem,
+        andBundleDisplayVersion copy: AutoreleasingUnsafeMutablePointer<NSString>,
+        withBundleVersion bundleVersion: String
+    ) -> String {
+        let shown = AppVersion.inSparkle(
+            update: (update.displayVersionString, update.versionString),
+            copy: (copy.pointee as String, bundleVersion))
+        copy.pointee = shown.copy as NSString
+        return shown.update
+    }
+
+    func formatBundleDisplayVersion(
+        _ bundleDisplayVersion: String, withBundleVersion bundleVersion: String,
+        matchingUpdate: SUAppcastItem?
+    ) -> String {
+        AppVersion.whole() ?? bundleDisplayVersion
+    }
 }

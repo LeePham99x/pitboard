@@ -24,12 +24,12 @@ struct UpdatesSettings: View {
                     } label: {
                         Text(
                             updates.waiting.map { "Pitboard \($0) is ready to install." }
-                                ?? version)
+                                ?? AppVersion.named())
                     }
                 }
             } else {
                 Section {
-                    LabeledContent("Version", value: version)
+                    LabeledContent("Version", value: AppVersion.named())
                 } footer: {
                     // Without this, a build with no update key would look broken.
                     Text(
@@ -42,11 +42,5 @@ struct UpdatesSettings: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private var version: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? ""
-        return short.isEmpty ? "Pitboard" : "Pitboard \(short)"
     }
 }

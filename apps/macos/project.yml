@@ -72,6 +72,7 @@ settings:
     DEVELOPMENT_TEAM: ""
     # `scripts/build-app.sh` writes the release's version into the built app.
     MARKETING_VERSION: 0.0.0
+    PITBOARD_VERSION: 0.0.0
     CURRENT_PROJECT_VERSION: 1
   configs:
     # A debug build answers its own scheme and has a Share menu entry of its own, so a

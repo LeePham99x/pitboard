@@ -23,6 +23,9 @@ app=apps/macos/build/Pitboard.app
 # Sparkle decides what is newer by CFBundleVersion, so it counts up with the version
 # rather than staying at whatever the project says.
 build=$(./apps/macos/scripts/build-number.sh "$version")
+# Apple documents CFBundleShortVersionString as three integers, so a beta's is its X.Y.Z
+# alone. The app shows the whole version, from PitboardVersion.
+short=${version%%-*}
 
 # This clears apps/macos/build and makes it again, so nothing from a previous build survives.
 # Never with --fixture: a fixture is a world for a debug build and the UI tests to launch
@@ -76,7 +79,7 @@ xcodebuild -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -configuratio
     -clonedSourcePackagesDirPath apps/macos/build/SourcePackages \
     -onlyUsePackageVersionsFromResolvedFile -quiet \
     ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-    MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
+    MARKETING_VERSION="$short" CURRENT_PROJECT_VERSION="$build" PITBOARD_VERSION="$version" \
     CODE_SIGNING_ALLOWED=NO build
 ditto apps/macos/build/DerivedData/Build/Products/Release/Pitboard.app "$app"
 sparkle=$app/Contents/Frameworks/Sparkle.framework
@@ -107,6 +110,18 @@ for scheme in \
         exit 1
     }
 done
+for bundle in "$app" "$appex"; do
+    said=$(plutil -extract CFBundleShortVersionString raw "$bundle/Contents/Info.plist")
+    [ "$said" = "$short" ] || {
+        echo "$bundle says it is $said, not $short" >&2
+        exit 1
+    }
+done
+said=$(plutil -extract PitboardVersion raw "$app/Contents/Info.plist" || true)
+[ "$said" = "$version" ] || {
+    echo "the app shows ${said:-no version}, not $version" >&2
+    exit 1
+}
 # Xcode compiles AppIcon.icon into Assets.car for macOS 26 and later, and into AppIcon.icns
 # for earlier systems, in the app and in the extension, whose own icon the Share menu shows.
 for bundle in "$app" "$appex"; do
