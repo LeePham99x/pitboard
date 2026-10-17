@@ -87,6 +87,23 @@ public sealed class OpenLinkWindowTests
         }
     }
 
+    // Esc showed "Esc" wherever the pointer rested over the window.
+    [UITestMethod]
+    public async Task EscShowsAsNoTooltip()
+    {
+        var window = await Views.Activated(new OpenLinkWindow(_ => { }, _ => { }, _ => { }));
+        try
+        {
+            window.Follow(Choose(3, armed: true));
+
+            Assert.AreEqual("", string.Join(", ", Views.StrayShortcuts(window.Content)));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     [UITestMethod]
     public async Task CancellingOrClosingDismissesTheLink()
     {
