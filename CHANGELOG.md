@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-10-18
+
+### Added
+
+- The command line runs on Windows 11 24H2 and later, on x64 and ARM64, and switches Claude Code
+  and Codex accounts there.
+- The Windows app switches Claude Code and Codex accounts from the notification area, and installs
+  per user from an MSI for x64 or ARM64.
+
 ### Changed
 
 - **Breaking:** `pitboard uninstall` refuses with `pitboard_open` while the Pitboard app is open,
@@ -15,28 +24,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - `pitboard use` and **Use** put an account's login in place where nothing is signed in to
-  Claude Code or Codex yet, as on a new PC after adding the first account, instead of refusing
+  Claude Code or Codex yet, as on a new computer after adding the first account, instead of refusing
   with `live_credential_absent`.
-- Pitboard reads Claude Code's `settings.json` and `.claude.json` where they start with a byte
-  order mark, as Windows PowerShell 5.1 writes one, and a `settings.json` in UTF-16, as Claude
-  Code does, instead of missing the `env` that turns Credential Manager on.
-- On Windows, `pitboard doctor` and **This PC** say whether Claude Code runs the status line in
-  PowerShell 7 or Windows PowerShell, and which one, instead of PowerShell alone.
-- On Windows, where Claude Code left its login in Credential Manager in pieces nobody can join,
-  `pitboard doctor`, **This PC** and a refused switch say that Claude Code cannot read it either,
-  and that `claude auth logout`, then a sign-in, clears it.
 - The app's notice that a Claude Code or Codex login was replaced outside Pitboard points at the
   account's **Sign In Again…** button instead of naming a command.
-- On Windows, **Start when you sign in to Windows** shows off, and says so, where Settings > Apps >
-  Startup turned Pitboard off, instead of showing on while Windows does not start it.
-- On Windows, removing Pitboard deletes its notification registration under
-  `HKCU\Software\Classes`, which outlived the removal.
-- On Windows, updating the app replaces `pitboard.exe` where it is, instead of leaving none for
-  about 2 seconds, in which Claude Code's status line found no `pitboard`.
-- `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
-  new PC with nothing enrolled no longer reads as broken.
-- `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex
-  has run for the first time.
+- `pitboard doctor`, **This Mac** and **This PC** warn instead of failing where Claude Code has
+  never run, so a new computer with nothing enrolled no longer reads as broken.
+- `pitboard doctor`, **This Mac** and **This PC** show Codex's checks once Pitboard finds `codex`,
+  before Codex has run for the first time.
 
 ## [0.15.0] - 2026-10-17
 
@@ -926,7 +921,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard keeps an audit log of every change it makes.
 - The account index is schema 3, with one parked login per account and its expiry.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/datlechin/pitboard/compare/v0.15.0...v1.0.0-beta.1
 [0.15.0]: https://github.com/datlechin/pitboard/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/datlechin/pitboard/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/datlechin/pitboard/compare/v0.12.0...v0.13.0
