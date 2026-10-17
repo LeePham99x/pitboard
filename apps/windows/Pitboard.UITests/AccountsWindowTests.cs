@@ -85,7 +85,7 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.OpenMenu(launched.Row("claude/personal"));
+        Launched.OpenMenu(launched.Row("claude/personal"));
         launched.Invoke("Rename…");
         var name = launched.Field("sheet.name");
         Launched.Type(name, "work");
@@ -104,13 +104,13 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
         var row = launched.Row("claude/personal");
 
-        launched.OpenMenu(row);
+        Launched.OpenMenu(row);
         launched.Invoke("Forget…");
         launched.Named("Forget");
         launched.Invoke("Cancel");
         Assert.IsTrue(row.IsAvailable, "forgotten after Cancel");
 
-        launched.OpenMenu(row);
+        Launched.OpenMenu(row);
         launched.Invoke("Forget…");
         launched.Invoke("Forget");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("account.claude/personal")), "personal is still listed");
@@ -122,10 +122,25 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.OpenMenu(launched.Row("claude/work"));
+        Launched.OpenMenu(launched.Row("claude/work"));
         launched.Named("Rename…");
 
         Assert.IsTrue(launched.Gone(found => found.ByName("Forget…")), "the account in use offers Forget…");
+        Keyboard.Type(VirtualKeyShort.ESCAPE);
+    }
+
+    // The other tests ask for a row's menu through UI Automation.
+    [TestMethod]
+    public void ARightClickOpensTheRowsMenu()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
+        var window = launched.OpenWindow();
+        var row = launched.Row("claude/work");
+        Foreground.Require(window);
+
+        launched.RightClick(row);
+
+        launched.Find(found => found.ByAutomationId("window.claude.ai/work"), "work's window item");
         Keyboard.Type(VirtualKeyShort.ESCAPE);
     }
 
