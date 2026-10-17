@@ -874,9 +874,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
     `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
     unless a rotation names the release, `windows-update-sign.sh` signs a Windows release's
-    MSIs and checks each signature with the public key, and `test-release.py` tests the
-    seven, the app's `build-number.sh` and the cargo-binstall metadata in
-    `crates/pitboard/Cargo.toml`.
+    MSIs and checks each signature with the public key, `session-gate.sh` refuses what the
+    session bundle is never built from, and `test-release.py` tests the eight, the app's
+    `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
