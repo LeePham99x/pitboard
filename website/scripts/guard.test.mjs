@@ -8,6 +8,7 @@ import {
   bannedFromDocs,
   checkImage,
   checkPage,
+  checkSigningPolicy,
   checkVersions,
   pngFacts,
   wordPattern,
@@ -219,6 +220,23 @@ test("finds two releases on one site", () => {
         ["b.html", one("0.11.0")],
       ]),
     ).length,
+    1,
+  );
+});
+
+test("needs the code signing policy on the home page and the download page", () => {
+  const policy = `<a href="https://docs.usepitboard.com/install/code-signing-policy">Code signing policy</a>`;
+  const pages = (home, download) =>
+    new Map([
+      ["index.html", checkPage("index.html", page(home), rules)],
+      ["download.html", checkPage("download.html", page(download), rules)],
+    ]);
+  assert.deepEqual(checkSigningPolicy(pages(policy, policy)), []);
+  assert.deepEqual(checkSigningPolicy(pages(policy, "")), [
+    "download.html has no Code signing policy link",
+  ]);
+  assert.equal(
+    checkSigningPolicy(pages(policy.replace("Code signing policy", "Signing"), policy)).length,
     1,
   );
 });
