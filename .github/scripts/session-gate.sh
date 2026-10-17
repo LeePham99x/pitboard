@@ -1,9 +1,5 @@
 #!/bin/sh
-# Refuses what windows-facts.yml's session job never builds the session bundle from: a ref that is
-# not a branch, a Pitboard version before 1.0.0-beta.1, a build opened with the cfg, and a key that
-# is not an age public key. Then prints, as key=value lines, the version, the numbers
-# windows-versions.sh gives it, and msi-b: the MSI number one higher in its fourth field, which
-# upgrades the first as the next beta's does. Reads RUSTFLAGS and CARGO_ENCODED_RUSTFLAGS.
+# The session bundle is the beta candidate as it ships: a branch at 1.0.0-beta.1 or later, no cfg, an age key.
 set -eu
 
 if [ "$#" -ne 3 ]; then
@@ -43,7 +39,7 @@ refuse_cfg() {
 refuse_cfg RUSTFLAGS "${RUSTFLAGS-}"
 refuse_cfg CARGO_ENCODED_RUSTFLAGS "${CARGO_ENCODED_RUSTFLAGS-}"
 
-# Never printed: a secret key pasted in its place would reach the run's log.
+# A refusal never prints it: a secret key pasted in its place would reach the run's log.
 not_a_key() {
   echo "the key given is not an age public key, which age-keygen prints as age1 and 58" \
     "characters of Bech32's alphabet: the session bundle leaves the runner only encrypted" >&2
@@ -59,3 +55,4 @@ file=$(printf '%s\n' "$numbers" | sed -n 's/^file=//p')
 echo "version=$version"
 printf '%s\n' "$numbers"
 echo "msi-b=${file%.*}.$((${file##*.} + 1))"
+echo "recipient=$key"

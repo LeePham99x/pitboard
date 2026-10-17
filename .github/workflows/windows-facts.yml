@@ -189,12 +189,7 @@ jobs:
           path: ${{ runner.temp }}/runner-facts.json
           if-no-files-found: warn
 
-  # The session bundle for the session machine AGENTS.md describes. Each machine's MSI is built as
-  # release.yml builds a beta's with no signer, from the Release publish and the zip's pitboard.exe,
-  # with an update key no private key was made for, so the job names no secret. windows-11-arm adds
-  # the zip, an MSI one number higher, which upgrades the first as the next beta's does, and both
-  # probes. The repository is public, so each bundle leaves the runner only encrypted to the owner's
-  # age key, and is kept a day.
+  # The repository is public, so the bundle leaves the runner only encrypted to the owner's age key.
   session:
     if: inputs.session
     name: session (${{ matrix.os }})
@@ -235,14 +230,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The key comes from the event, not env:, whose values the log prints: a secret key pasted in
+      # its place must never reach the log.
       - name: A branch at 1.0.0-beta.1 or later, no cfg, and the owner's age key
         id: gate
         env:
           REF: ${{ github.ref }}
-          KEY: ${{ inputs.age-recipient }}
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          sh .github/scripts/session-gate.sh "$REF" "$version" "$KEY" >> "$GITHUB_OUTPUT"
+          key=$(pwsh -NoProfile -Command $'(Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs.\'age-recipient\'' | tr -d '\r')
+          sh .github/scripts/session-gate.sh "$REF" "$version" "$key" >> "$GITHUB_OUTPUT"
       - name: age, from its release, checked against the SHA-256 pinned here
         id: age
         shell: pwsh
@@ -266,27 +263,9 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/windows/global.json
-      # An x64 Rust that the ARM64 image ran under emulation would build x64 libraries.
-      - name: Rust builds for this runner's machine
-        env:
-          TRIPLE: ${{ matrix.triple }}
-        run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "Rust's host is $host"
-          test "$host" = "$TRIPLE"
-      - name: pitboard_ffi.dll and pitboard_share_ffi.dll, and their bindings
-        run: |
-          cargo build --locked --release -p pitboard-ffi
-          cargo build --locked --release -p pitboard-share-ffi
-          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
-          cargo run --locked --release -p uniffi-bindgen-csharp -- \
-            --library target/release/pitboard_ffi.dll \
-            --out-dir apps/windows/Pitboard.Core/Generated \
-            --config crates/pitboard-ffi/uniffi.toml --no-format
-          cargo run --locked --release -p uniffi-bindgen-csharp -- \
-            --library target/release/pitboard_share_ffi.dll \
-            --out-dir apps/windows/Pitboard.Share.Core/Generated \
-            --config crates/pitboard-share-ffi/uniffi.toml --no-format
+      - uses: ./.github/actions/windows-app-libraries
+        with:
+          triple: ${{ matrix.triple }}
       - name: Pitboard.exe, published as a release with no signer publishes it
         working-directory: apps/windows
         env:
@@ -337,6 +316,9 @@ jobs:
               -GatedLibrary (Join-Path $env:GITHUB_WORKSPACE 'target\release\pitboard_ffi.dll') -UpdateKey $env:UPDATE_TEST_KEY `
               -Version $env:VERSION -FileVersion $env:FILE_VERSION
             & (Join-Path $scripts 'check-windows-msi.ps1') -Msi $msi -Folder $image -MsiVersion $msis[$kind] -CommandLine $commandLine
+            $ours = @(Get-ChildItem -LiteralPath $image -Recurse -File |
+              Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll', '.msix' } | ForEach-Object FullName)
+            & (Join-Path $scripts 'verify-windows-signatures.ps1') -Path $ours -Mode unsigned
             Write-Output "Built $msi, version $($msis[$kind])."
           }
       - name: The zip and the probes
@@ -359,14 +341,15 @@ jobs:
         env:
           TRIPLE: ${{ matrix.triple }}
           AGE: ${{ steps.age.outputs.exe }}
-          KEY: ${{ inputs.age-recipient }}
+          KEY: ${{ steps.gate.outputs.recipient }}
         run: >
           ./.github/scripts/pack-session-bundle.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'session')
           -Name "session-build-$env:TRIPLE" -Out (Join-Path $env:RUNNER_TEMP 'sealed') -Age $env:AGE -Recipient $env:KEY
-      # The encrypted file alone.
+      # Overwritten, so a leg run again can upload its bundle again.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: session-build-${{ matrix.triple }}
           path: ${{ runner.temp }}/sealed/session-build-${{ matrix.triple }}.zip.age
           if-no-files-found: error
           retention-days: 1
+          overwrite: true

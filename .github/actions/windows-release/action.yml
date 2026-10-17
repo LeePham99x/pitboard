@@ -2,8 +2,8 @@ name: Windows release
 description: >
   Builds pitboard.exe for this runner's machine as a release ships it, packs it as
   pitboard-v<version>-<triple>.zip in the runner's temporary dist folder, and checks the
-  pitboard.exe inside. release.yml builds its Windows zips with this, and CI every pull
-  request's.
+  pitboard.exe inside. release.yml builds its Windows zips with this, CI every pull
+  request's, and windows-facts.yml the session bundle's.
 
 inputs:
   triple:

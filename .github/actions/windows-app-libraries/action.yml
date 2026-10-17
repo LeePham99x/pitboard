@@ -1,0 +1,37 @@
+name: Windows app libraries
+description: >
+  Builds pitboard_ffi.dll and pitboard_share_ffi.dll for this runner's machine as a release
+  builds them, in target/release, and generates their C# bindings into the app's projects.
+  release.yml's app-windows-build and windows-facts.yml's session job build the app over them.
+
+inputs:
+  triple:
+    description: The target triple of this runner's machine.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # An x64 Rust that the ARM64 image ran under emulation would build x64 libraries.
+    - name: Rust builds for this runner's machine
+      shell: bash
+      env:
+        TRIPLE: ${{ inputs.triple }}
+      run: |
+        host=$(rustc -vV | sed -n 's/^host: //p')
+        echo "Rust's host is $host"
+        test "$host" = "$TRIPLE"
+    - name: pitboard_ffi.dll and pitboard_share_ffi.dll, and their bindings
+      shell: bash
+      run: |
+        cargo build --locked --release -p pitboard-ffi
+        cargo build --locked --release -p pitboard-share-ffi
+        mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
+        cargo run --locked --release -p uniffi-bindgen-csharp -- \
+          --library target/release/pitboard_ffi.dll \
+          --out-dir apps/windows/Pitboard.Core/Generated \
+          --config crates/pitboard-ffi/uniffi.toml --no-format
+        cargo run --locked --release -p uniffi-bindgen-csharp -- \
+          --library target/release/pitboard_share_ffi.dll \
+          --out-dir apps/windows/Pitboard.Share.Core/Generated \
+          --config crates/pitboard-share-ffi/uniffi.toml --no-format
