@@ -200,7 +200,7 @@ public sealed class AccountWindowTests
 
     internal static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
     {
-        launched.OpenMenu(launched.Row(qualified));
+        Launched.OpenMenu(launched.Row(qualified));
         var label = qualified[(qualified.IndexOf('/', StringComparison.Ordinal) + 1)..];
         launched.Find(found => found.ByAutomationId($"window.{site}/{label}"), "the row's window item").Patterns.Invoke.Pattern.Invoke();
     }

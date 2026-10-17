@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Drawing;
 using System.Text;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Conditions;
+using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 using FlaUI.UIA3;
 
@@ -205,19 +207,51 @@ internal sealed class Launched : IDisposable
     // Through UI Automation, which reaches a field however the foreground stands.
     public static void Type(TextBox field, string text) => field.Patterns.Value.Pattern.SetValue(text);
 
-    // A row's shortcut menu, the row scrolled to first as a person would. Where a click cannot reach Pitboard, UI
-    // Automation asks for the menu as the menu key does.
-    public void OpenMenu(AutomationElement row)
+    // A row's shortcut menu, asked for through UI Automation as the menu key asks. A click went to the point codex/main
+    // had before it scrolled into view, below windows-2025's fold, and opened no menu (runs 39015107289, 39016117183).
+    public static void OpenMenu(AutomationElement row)
     {
-        row.Patterns.ScrollItem.PatternOrDefault?.ScrollIntoView();
-        if (Foreground.Takes(Window("Pitboard")))
-        {
-            row.RightClick();
-            return;
-        }
-
+        Reveal(row);
         var native = ((UIA3FrameworkAutomationElement)row.FrameworkAutomationElement).NativeElement;
         ((Interop.UIAutomationClient.IUIAutomationElement3)native).ShowContextMenu();
+    }
+
+    // As a person right-clicks it, once UI Automation finds the row itself at the point the click goes to.
+    public void RightClick(AutomationElement row)
+    {
+        Reveal(row);
+        var point = Point.Empty;
+        if (!Retry.WhileFalse(
+                () => row.TryGetClickablePoint(out point) && Holds(row, Automation.FromPoint(point)),
+                Shortly, TimeSpan.FromMilliseconds(100), ignoreException: true).Result)
+        {
+            throw new AssertFailedException($"UI Automation found no {row.AutomationId} at its own point within {Shortly}: {Shown()}");
+        }
+
+        Mouse.RightClick(point);
+    }
+
+    // Scrolled into view as a person would, and on screen once the list has moved it there.
+    private static void Reveal(AutomationElement row)
+    {
+        row.Patterns.ScrollItem.PatternOrDefault?.ScrollIntoView();
+        if (!Retry.WhileTrue(() => row.IsOffscreen, Shortly, TimeSpan.FromMilliseconds(100), ignoreException: true).Result)
+        {
+            throw new AssertFailedException($"{row.AutomationId} stayed off screen for {Shortly} after scrolling into view");
+        }
+    }
+
+    private static bool Holds(AutomationElement scope, AutomationElement? found)
+    {
+        for (var at = found; at is not null; at = at.Parent)
+        {
+            if (at.Equals(scope))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public TextBox Field(string automationId) => Find(found => found.ByAutomationId(automationId), automationId).AsTextBox();
