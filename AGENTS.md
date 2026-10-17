@@ -14,17 +14,20 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   cookies.
 - Never run `claude`, `claude auth login`, `codex login` or `codex logout` against a real
   home. They replace or revoke the login stored there.
+  [The session machine](#the-session-machine) is the exception.
 - Never start, quit or signal Claude (`com.anthropic.claudefordesktop`) from a test or a
   script. A test's Claude is the stand-in under its own scratch `Claude.app`.
 - Never run a `pitboard` built from a branch against your real home. Build first, then point
   `HOME`, `PITBOARD_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` at a fresh directory, since
   Cargo and rustup read `HOME` too.
+  [The session machine](#the-session-machine) is the exception.
 - Never check a branch build against a real Claude on a macOS account that holds logins.
   Use a user account made for it: with `HOME` elsewhere, a build finds no Claude Desktop.
 - Never start an app you built outside a fixture. Run a debug build's executable with
   `PITBOARD_FIXTURE` and those four homes set, as
   [Run the debug build](CONTRIBUTING.md#run-the-debug-build) shows. A release build reads no
   fixture, so never start one you built.
+  [The session machine](#the-session-machine) is the exception.
 - Never start a built app with `open`, Finder, a link, the Share menu or `launchctl setenv`.
   Launch Services passes on none of the variables, so the app starts on the real home.
 - From a test or a script, never write to `~/.claude`, `~/.claude.json`, `~/.codex` or
@@ -38,7 +41,7 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Tests never touch launchd, systemd, `/usr/local/bin`, `/Applications` or
   `~/Library/LaunchAgents`.
 - Never load claude.ai or chatgpt.com, or sign in to either, from a test, a script or a
-  branch build.
+  branch build. [The session machine](#the-session-machine) is the exception.
 - Never read, copy or delete anything under `~/Library/WebKit/com.usepitboard.Pitboard`,
   where the account windows keep real sign-ins.
 - Never open a `pitboard://` or `pitboard-debug://` link against a real home. It starts
@@ -87,6 +90,7 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never write to, overwrite or delete a Credential Manager item that holds a real login:
   `Claude Code-credentials`, every `Claude Code-credentials-<hash>` and each piece of them,
   Codex's `cli|*` and `secrets|*` targets, and anything under `Codex MCP Credentials`.
+  [The session machine](#the-session-machine) is the exception.
 - Never use `cmdkey /delete`, `vaultcmd` or PowerShell's credential modules on those names.
   Tests write only `pitboard-citest-*` items or the slot hashed from their own folder.
 - A build for tests refuses, before `CredReadW`, `CredWriteW` or `CredDeleteW`, every name of
@@ -96,12 +100,14 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never read, copy, rewrite or delete `%USERPROFILE%\.claude`, `%USERPROFILE%\.claude.json`,
   `%USERPROFILE%\.codex`, `%ProgramData%\OpenAI\Codex`, `C:\Program Files\ClaudeCode`, or
   the `%LOCALAPPDATA%\Pitboard` of an account that holds real logins.
+  [The session machine](#the-session-machine) is the exception.
 - Never read, list, write or delete anything under `%APPDATA%\Claude`, `%APPDATA%\Claude-3p`
   or `%LOCALAPPDATA%\AnthropicClaude` from a test, a script or the probe. Claude Desktop keeps
   its program and its sign-in there, and Pitboard leaves them alone on Windows.
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
   logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
-  behind a Scoop shim, but as `runner-facts.ps1` does on a runner, below.
+  behind a Scoop shim, but as `runner-facts.ps1` does on a runner, below, and the session
+  bundle's MSI does on [the session machine](#the-session-machine).
 - Never use WSL to reach a real Windows login. When the ChatGPT app's WSL mode hands the
   Windows `CODEX_HOME` to a Linux codex, a Linux build run in WSL with that home writes the
   Windows login.
@@ -111,11 +117,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   folders, set after building, as [Run the Windows debug build](CONTRIBUTING.md#run-the-windows-debug-build)
   shows. A Release build reads no fixture, and its data folder, icon and notifications ignore
   scratch homes: only CI's UI test of the release gate starts one, and only at 0.x, where it
-  refuses.
+  refuses. [The session machine](#the-session-machine) is the exception.
 - Never start a built `Pitboard.exe` or `PitboardShare.exe` from Explorer, Start, a shortcut,
   `start`, `Invoke-Item`, a notification, the share sheet or a `pitboard://` or
-  `pitboard-debug://` link, on any account but the session machine's throwaway ones. Each
-  passes the account's own variables, and so its real homes.
+  `pitboard-debug://` link, on any account but [the session machine's](#the-session-machine)
+  throwaway ones. Each passes the account's own variables, and so its real homes.
 - Never read, copy or delete `%LOCALAPPDATA%\Pitboard App` or `Pitboard App Debug` on an
   account that holds real logins. Their WebView2 profiles hold real sign-ins.
 - Never load claude.ai or chatgpt.com in an account window of a Debug, fixture or session
@@ -123,12 +129,13 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never let a test, a fixture or a Debug build register with Windows: no
   `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
   no package and no certificate in a store. Only a Release build installed by an MSI
-  registers, and `Pitboard.Probe` on the session machine.
+  registers, and `Pitboard.Probe` on [the session machine](#the-session-machine).
 - Never give `Pitboard.exe`, `pitboard.exe` or a process they start a package identity. Only
   `PitboardShare.exe` carries an `<msix>` manifest element.
 - Never install an MSI built from a branch on an account that holds real logins, or on a CI
-  runner, which only extracts one with `msiexec /a`. Install it only in the session machine's
-  throwaway accounts, and remove it before the session ends.
+  runner, which only extracts one with `msiexec /a`. Install it only in
+  [the session machine's](#the-session-machine) throwaway accounts, and remove it before the
+  session ends.
 - Never install a release's MSI on a CI runner, and never install a release's MSI or zip on a
   machine that holds logins from a test or a script.
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
@@ -172,8 +179,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `--version`. Never copy one of those changes, or `test-as-standard-user.ps1`'s, into a
   script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
-  probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
-  public, so anyone signed in to GitHub can download an artifact.
+  probe's redacted reports and the session bundle encrypted to the owner's age key. No workflow
+  uploads an opened `pitboard.exe` unencrypted: the repository is public, so anyone signed in
+  to GitHub can download an artifact.
 - Bun and `proper-lockfile` reach a runner only from Bun's release zip, checked against the
   SHA-256 `windows-facts.yml` pins or is given with the version, and from the committed
   `bun.lock` with install scripts off.
@@ -182,11 +190,39 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   throwaway user runs `credman-names --leak-check` before its password changes or it is
   removed.
 - Never run `claude.exe` or `codex.exe` to read a fact. Read the build as bytes on a Mac or
-  Linux, as `pitboard-conformance` does.
+  Linux, as `pitboard-conformance` does. [The session machine](#the-session-machine) runs them
+  only for what no reading of a build settles.
 - Never measure a running tool on a Windows machine that holds logins. Use one kept for it,
-  with throwaway accounts and scratch homes.
+  with throwaway accounts and scratch homes, or [the session machine](#the-session-machine).
 - Never trust a test certificate on a machine, or register a sparse package signed with one,
-  outside a disposable runner or a throwaway account on the session machine.
+  outside a disposable runner or a throwaway account on
+  [the session machine](#the-session-machine).
+
+### The session machine
+
+The session machine is a Windows 11 for Arm virtual machine on the owner's Mac that holds
+throwaway Windows, Claude and ChatGPT accounts and nothing else. It measures what no runner
+can, and is the one exception to the rules that point here. In its throwaway accounts, to be
+measured: the session bundle's MSI installs into `%LOCALAPPDATA%\Programs` and puts `bin` on
+the user `PATH`, the app starts from Start and at sign-in, Pitboard starts Claude Code's and
+Codex's sign-ins, and Pitboard, `claude`, `claude auth login` and `codex` read and write the
+accounts' own homes and Credential Manager items.
+
+- The session bundle is built only by `windows-facts.yml`'s `session` job, which only the
+  owner dispatches, on the draft Release PR. It leaves the runner only encrypted with age to
+  the owner's key, and is deleted from GitHub once downloaded, a day at most. It reaches the
+  session machine from the owner's Mac, never by a download there with a GitHub sign-in, and
+  is deleted from both after the session. Never install it anywhere else.
+- Never run the session on a machine or an account that has ever held a real login, or over
+  RDP or OpenSSH. Only the owner signs in, by hand, at the console. It ends with the revert the
+  owner chose.
+- Never sign in to the session's throwaway Claude or ChatGPT accounts from a machine or browser
+  profile that holds a real login.
+- Record names, attributes, byte lengths, timings and error codes only, never a token, a blob,
+  a user name, a SID or the MachineGuid. Never copy a Process Monitor log, a debug log, a
+  screenshot or `doctor --json` output off the session machine.
+- Never install Claude Desktop on the session machine, and never use `cmdkey /delete`,
+  `vaultcmd` or PowerShell's credential modules there either.
 
 ## Check a change
 

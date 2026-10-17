@@ -1,6 +1,6 @@
 # Tests package-windows.ps1, check-windows-build.ps1 and verify-windows-signatures.ps1 against a
 # pitboard.exe built without the cfg and without test-support, as CI's windows job builds one in
-# target/gated.
+# target/gated, and pack-session-bundle.ps1 with a stand-in for age.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -188,6 +188,72 @@ $tree = & cargo tree --locked --manifest-path $manifest -e features --target $Tr
 if ($LASTEXITCODE -ne 0) { throw "cargo tree exited $LASTEXITCODE" }
 if ($tree -notmatch 'feature "(test-support|fixture)"') { throw "the -Release check's pattern finds no feature for tests in: $tree" }
 Write-Output 'ok: the -Release check''s pattern finds test-support through the dev-dependency'
+
+# A stand-in for age that keeps what it was asked and writes age's header for an X25519 key before
+# the zip, or with STAND_IN_AGE_PLAIN the zip alone.
+$pack = Join-Path $PSScriptRoot 'pack-session-bundle.ps1'
+$standIn = Join-Path $work 'age.ps1'
+Set-Content -LiteralPath $standIn -Value @'
+Set-Content -LiteralPath $env:STAND_IN_AGE_ASKED -Value ($args -join ' ')
+$header = if ($env:STAND_IN_AGE_PLAIN) { '' } else { "age-encryption.org/v1`n-> X25519 stand-in`n" }
+[IO.File]::WriteAllBytes($args[-2], [byte[]]([Text.Encoding]::ASCII.GetBytes($header) + [IO.File]::ReadAllBytes($args[-1])))
+exit 0
+'@
+$key = 'age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p'
+$env:STAND_IN_AGE_ASKED = Join-Path $work 'age-asked.txt'
+function New-Bundle([string] $Under, [string[]] $Files) {
+    $folder = Join-Path $work $Under
+    foreach ($file in $Files) {
+        $path = Join-Path $folder $file
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+        [IO.File]::WriteAllText($path, $file)
+    }
+    $folder
+}
+$files = 'zip/pitboard.zip', 'msi/Pitboard-b.msi', 'msi/Pitboard-a.msi', 'probe/Pitboard.Probe/Pitboard.Probe.exe'
+$sorted = 'msi/Pitboard-a.msi', 'msi/Pitboard-b.msi', 'probe/Pitboard.Probe/Pitboard.Probe.exe', 'zip/pitboard.zip'
+
+$bundle = New-Bundle 'session' $files
+$sealedDir = Join-Path $work 'sealed'
+$sealed = & $pack -Folder $bundle -Name 'session-build-test' -Out $sealedDir -Age $standIn -Recipient $key
+$zipped = Join-Path $sealedDir 'session-build-test.zip'
+if ($sealed -cne "$zipped.age") { throw "pack-session-bundle.ps1 printed $sealed" }
+$left = @(Get-ChildItem -LiteralPath $sealedDir -Force | ForEach-Object Name)
+if (($left -join ', ') -cne 'session-build-test.zip.age') { throw "pack-session-bundle.ps1 left $($left -join ', ')" }
+$asked = (Get-Content -LiteralPath $env:STAND_IN_AGE_ASKED -Raw).Trim()
+if ($asked -cne "--encrypt --recipient $key --output $zipped.age $zipped") { throw "age was asked: $asked" }
+$sums = @(Get-Content -LiteralPath (Join-Path $bundle 'SHA256SUMS'))
+if ($sums.Count -ne $sorted.Count) { throw "SHA256SUMS has $($sums.Count) lines: $($sums -join '; ')" }
+for ($i = 0; $i -lt $sorted.Count; $i++) {
+    $hash = (Get-FileHash -LiteralPath (Join-Path $bundle $sorted[$i]) -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($sums[$i] -cne "$hash  $($sorted[$i])") { throw "SHA256SUMS line $($i + 1) is '$($sums[$i])', not '$hash  $($sorted[$i])'" }
+}
+$header = "age-encryption.org/v1`n-> X25519 stand-in`n"
+$bytes = [IO.File]::ReadAllBytes($sealed)
+$inner = Join-Path $work 'session-build-test.zip'
+[IO.File]::WriteAllBytes($inner, [byte[]]($bytes[$header.Length..($bytes.Length - 1)]))
+$archive = [IO.Compression.ZipFile]::OpenRead($inner)
+try { $names = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
+$expected = @(@($sorted) + 'SHA256SUMS' | ForEach-Object { "session-build-test/$_" })
+if (($names -join ', ') -cne ($expected -join ', ')) { throw "the session bundle's zip holds $($names -join ', ')" }
+Write-Output 'ok: the session bundle is summed, zipped with / and handed to age, and only age''s file is left'
+
+$summed = @{ Folder = $bundle; Name = 'session-build-test'; Out = (Join-Path $work 'summed'); Age = $standIn; Recipient = $key }
+Assert-Refused 'a session bundle summed already' $summed 'holds a SHA256SUMS already' $pack
+$spaced = @{ Folder = (New-Bundle 'spaced' @('msi/Pitboard a.msi')); Name = 'session-build-test'; Out = (Join-Path $work 'spaced-out'); Age = $standIn; Recipient = $key }
+Assert-Refused 'a session bundle with a space in a name' $spaced 'has a space in its name' $pack
+$plainDir = Join-Path $work 'plain-out'
+$plain = @{ Folder = (New-Bundle 'plain' $files); Name = 'session-build-test'; Out = $plainDir; Age = $standIn; Recipient = $key }
+try {
+    $env:STAND_IN_AGE_PLAIN = '1'
+    Assert-Refused 'an age that writes the zip unencrypted' $plain 'does not read as encrypted to an X25519 key' $pack
+} finally {
+    $env:STAND_IN_AGE_PLAIN = $null
+}
+$left = @(Get-ChildItem -LiteralPath $plainDir -Force | ForEach-Object Name)
+if ($left) { throw "pack-session-bundle.ps1 refused, and left $($left -join ', ')" }
+Write-Output 'ok: nothing is left of a session bundle age did not encrypt'
+$env:STAND_IN_AGE_ASKED = $null
 
 Remove-Item -Recurse -Force -LiteralPath $work
 Write-Output 'Every case passed.'

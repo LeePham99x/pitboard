@@ -23,6 +23,7 @@ WINDOWS_APPCAST = REPO / ".github" / "scripts" / "windows-appcast.py"
 WINDOWS_VERSIONS = REPO / ".github" / "scripts" / "windows-versions.sh"
 WINDOWS_UPDATE_KEY = REPO / ".github" / "scripts" / "windows-update-key.sh"
 WINDOWS_UPDATE_SIGN = REPO / ".github" / "scripts" / "windows-update-sign.sh"
+SESSION_GATE = REPO / ".github" / "scripts" / "session-gate.sh"
 WINDOWS_APP = REPO / "apps" / "windows" / "Pitboard.App" / "Pitboard.App.csproj"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
@@ -58,6 +59,10 @@ NO_BUILD_NUMBER = (
 NO_WINDOWS_VERSIONS = (
     "has no Windows version numbers: it takes X.Y.Z or X.Y.Z-beta.N, with X and Y at most 255, "
     "Z at most 65535 and N from 1 to 999"
+)
+ONLY_FROM_A_BETA = (
+    "the session bundle is built only from a branch whose Pitboard version is 1.0.0-beta.1 or "
+    "later"
 )
 
 
@@ -830,6 +835,95 @@ class WindowsVersions(unittest.TestCase):
 
     def test_it_takes_one_argument(self):
         done = run(WINDOWS_VERSIONS)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class SessionGate(unittest.TestCase):
+    BRANCH = "refs/heads/release-1.0.0-beta.1"
+    # The example in age's README, as age-keygen prints a public key.
+    KEY = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+
+    def gated(self, ref, version, key=KEY, **flags):
+        env = {
+            name: value
+            for name, value in os.environ.items()
+            if name not in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")
+        }
+        env.update(flags)
+        return subprocess.run(
+            ["sh", SESSION_GATE, ref, version, key], capture_output=True, text=True, env=env
+        )
+
+    def assertRefused(self, done, said):
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertEqual(done.stdout, "")
+        self.assertIn(said, done.stderr)
+
+    def test_a_branch_before_1_0_0_beta_1_is_refused(self):
+        for version in ("0.14.0", "0.14.3", "0.99.0"):
+            with self.subTest(version=version):
+                done = self.gated("refs/heads/windows-ws-session-bundle", version)
+                self.assertRefused(done, f"Pitboard is {version} on this branch: {ONLY_FROM_A_BETA}")
+
+    def test_a_tag_or_another_ref_is_refused(self):
+        for ref in ("refs/tags/v1.0.0-beta.1", "refs/pull/300/merge", "refs/heads/", ""):
+            with self.subTest(ref=ref):
+                self.assertRefused(self.gated(ref, "1.0.0-beta.1"), ONLY_FROM_A_BETA)
+
+    def test_a_version_windows_cannot_number_is_refused(self):
+        for version in ("1.0.0-rc1", "1.0", "", "1.0.0-beta.1\n0.1.0"):
+            with self.subTest(version=version):
+                self.assertRefused(self.gated(self.BRANCH, version), NO_WINDOWS_VERSIONS)
+
+    def test_a_build_opened_with_the_cfg_is_refused(self):
+        opened = {
+            "RUSTFLAGS": "-C target-feature=+crt-static --cfg pitboard_unreleased_windows",
+            "CARGO_ENCODED_RUSTFLAGS": "--cfg\x1fpitboard_unreleased_windows",
+        }
+        for name, flags in opened.items():
+            with self.subTest(name=name):
+                done = self.gated(self.BRANCH, "1.0.0-beta.1", **{name: flags})
+                self.assertRefused(done, f"{name} opens the build to Windows before its release")
+
+    def test_a_key_that_is_not_an_age_public_key_is_refused_and_never_printed(self):
+        for key in (
+            "",
+            self.KEY[:-1],
+            self.KEY + "q",
+            self.KEY.upper(),
+            # 1, b, i and o are not in Bech32's alphabet; a plugin's key holds a 1 after its name.
+            self.KEY[:-1] + "b",
+            "age1tag1" + self.KEY[8:],
+            "AGE-SECRET-KEY-1QYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQSZQGPQYQS3R2",
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+            f"{self.KEY}\n{self.KEY}",
+        ):
+            with self.subTest(key=key):
+                done = self.gated(self.BRANCH, "1.0.0-beta.1", key)
+                self.assertRefused(done, "is not an age public key")
+                if key:
+                    self.assertNotIn(key, done.stderr)
+
+    def test_a_branch_at_a_beta_or_later_gives_both_msis_their_numbers(self):
+        for version, msi, file, msi_b in (
+            ("1.0.0-beta.1", "1.0.0.1", "1.0.0.1", "1.0.0.2"),
+            ("1.1.0-beta.2", "1.1.0.2", "1.1.0.2", "1.1.0.3"),
+            ("1.0.0", "1.0.0", "1.0.0.1000", "1.0.0.1001"),
+        ):
+            with self.subTest(version=version):
+                done = self.gated(
+                    self.BRANCH, version, RUSTFLAGS="-C target-feature=+crt-static"
+                )
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stderr, "")
+                self.assertEqual(
+                    done.stdout,
+                    f"version={version}\nmsi={msi}\nfile={file}\npackage={file}\nmsi-b={msi_b}\n",
+                )
+
+    def test_it_takes_three_arguments(self):
+        done = run(SESSION_GATE, self.BRANCH, "1.0.0-beta.1")
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 
