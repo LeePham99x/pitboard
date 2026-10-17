@@ -172,7 +172,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
         WorkingText.Text = text.Progress ?? "";
-        Describe(NameField, form.Problem(NameField.Text));
+        Describe(NameField, form.Note(_tool, NameField.Text));
         ShowMissing(form.NotFound(_tool));
         Message.Text = form.Message(_tool);
         PrimaryButtonText = form.Confirm(_tool);
@@ -192,7 +192,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Message.Text = text.Message;
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
-        Describe(NameField, naming.Problem(NameField.Text));
+        Describe(NameField, naming.Note(NameField.Text));
         PrimaryButtonText = text.Confirm;
         SecondaryButtonText = "";
         DefaultButton = ContentDialogButton.Primary;
@@ -329,6 +329,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
             _tool = tool;
             Message.Text = form.Message(tool);
             PrimaryButtonText = form.Confirm(tool);
+            Describe(NameField, form.Note(tool, NameField.Text));
             ShowMissing(form.NotFound(tool));
             Enable();
         }
@@ -355,8 +356,8 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     {
         Describe(NameField, _page switch
         {
-            SheetPage.Form form => form.Problem(NameField.Text),
-            SheetPage.Naming naming => naming.Problem(NameField.Text),
+            SheetPage.Form form => form.Note(_tool, NameField.Text),
+            SheetPage.Naming naming => naming.Note(NameField.Text),
             _ => null,
         });
         Edited();

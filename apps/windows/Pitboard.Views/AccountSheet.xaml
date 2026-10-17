@@ -54,6 +54,7 @@
           x:Name="NameField"
           Header="Name"
           AutomationProperties.AutomationId="sheet.name"
+          AutomationProperties.IsRequiredForForm="True"
           TextChanged="OnNameChanged" />
       <StackPanel x:Name="Working" Orientation="Horizontal" Spacing="8">
         <ProgressRing Width="20" Height="20" IsActive="True" AutomationProperties.AccessibilityView="Raw" />
