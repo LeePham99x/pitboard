@@ -56,7 +56,6 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never put an `install.ps1` in a release or in `website/`, or a zone rule that names one.
   Pitboard for Windows installs from the release's own files, Scoop, winget and
   cargo-binstall.
-- Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
 - An agent never dispatches a workflow but `windows-facts.yml`, only on its own branch, and
