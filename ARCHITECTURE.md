@@ -863,7 +863,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     cache; nothing `release.yml` runs restores one. `actions/windows-builds` makes the builds
     both Windows workflows start from.
   - `actions/windows-release` builds, zips and checks `pitboard.exe` for `release.yml` from
-    1.0.0, and for CI on every pull request.
+    1.0.0, for CI on every pull request, and for `windows-facts.yml`'s session bundle.
+    `actions/windows-app-libraries` builds the Windows app's two libraries and their bindings
+    for `release.yml` and the session bundle.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`

@@ -268,27 +268,9 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/windows/global.json
-      # An x64 Rust that the ARM64 image ran under emulation would build x64 libraries.
-      - name: Rust builds for this runner's machine
-        env:
-          TRIPLE: ${{ matrix.triple }}
-        run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "Rust's host is $host"
-          test "$host" = "$TRIPLE"
-      - name: pitboard_ffi.dll and pitboard_share_ffi.dll, and their bindings
-        run: |
-          cargo build --locked --release -p pitboard-ffi
-          cargo build --locked --release -p pitboard-share-ffi
-          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
-          cargo run --locked --release -p uniffi-bindgen-csharp -- \
-            --library target/release/pitboard_ffi.dll \
-            --out-dir apps/windows/Pitboard.Core/Generated \
-            --config crates/pitboard-ffi/uniffi.toml --no-format
-          cargo run --locked --release -p uniffi-bindgen-csharp -- \
-            --library target/release/pitboard_share_ffi.dll \
-            --out-dir apps/windows/Pitboard.Share.Core/Generated \
-            --config crates/pitboard-share-ffi/uniffi.toml --no-format
+      - uses: ./.github/actions/windows-app-libraries
+        with:
+          triple: ${{ matrix.triple }}
       - name: Pitboard.exe, published as a release with no signer publishes it
         working-directory: apps/windows
         env:
