@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-17
+
 ### Added
 
 - Inside WSL, `pitboard doctor` says that Pitboard switches the Claude Code and Codex installed
@@ -20,16 +22,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   documentation](https://docs.rs/pitboard-core/0.15.0/pitboard_core/) shows the new one.
 - **Breaking:** Some failures get a code of their own: `live_login_refused` where `pitboard use`
   said `session_expired` for a login Anthropic no longer accepts, `account_on_hold` where it said
-  `identity_unverifiable` or `renewal_failed`, and cause and stale `refused` where they said
+  `identity_unverifiable` or `renewal_failed`, and `refused` where `error.cause` and `stale` said
   `server_error`. Branch on the new codes where a script reads the old ones.
 - **Add Account** offers every tool Pitboard handles, and says under a tool it cannot find what
   to install, with a link, instead of failing once you click **Sign In**.
 - The app looks for Claude Code and Codex each time **Add Account** or **Sign In Again** opens
   and when Pitboard comes to the front, so a tool installed while it runs is found.
-
-### Security
-
-- Pitboard's HTTPS uses rustls 0.23.46, which fixes RUSTSEC-2026-0346, -0347, -0348 and -0349.
 
 ### Fixed
 
@@ -79,6 +77,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `claude`.
 - On Linux, `pitboard doctor` notes the Claude Desktop accounts in a Pitboard directory brought
   from a Mac, which nothing there changes, instead of failing its Claude data folder check.
+
+### Security
+
+- Pitboard's HTTPS uses rustls 0.23.46, which fixes RUSTSEC-2026-0346, -0347, -0348 and -0349.
 
 ## [0.14.0] - 2026-10-14
 
@@ -893,7 +895,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard keeps an audit log of every change it makes.
 - The account index is schema 3, with one parked login per account and its expiry.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/datlechin/pitboard/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/datlechin/pitboard/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/datlechin/pitboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/datlechin/pitboard/compare/v0.11.0...v0.12.0
