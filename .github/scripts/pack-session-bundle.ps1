@@ -1,14 +1,9 @@
-# Packs one machine's session bundle for windows-facts.yml's session job: writes SHA256SUMS over every
-# file in -Folder, zips the folder as <Name>.zip, encrypts that with age to the owner's public key as
-# <Name>.zip.age in -Out, and prints that file's path. The zip is gone before it returns, and it hands
-# on nothing that does not read as age's encryption to an X25519 key.
+# Hands on nothing age did not encrypt to an X25519 key.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidatePattern('^session-build-[a-z0-9_-]+$')] [string] $Name,
     [Parameter(Mandatory)] [string] $Out,
-    # age.exe from the release windows-facts.yml pins.
     [Parameter(Mandatory)] [string] $Age,
-    # The owner's public key, which session-gate.sh checked.
     [Parameter(Mandatory)] [string] $Recipient
 )
 $ErrorActionPreference = 'Stop'
@@ -49,7 +44,6 @@ try {
     }
     & $Age --encrypt --recipient $Recipient --output $sealed $zip
     if ($LASTEXITCODE -ne 0) { throw "age exited $LASTEXITCODE" }
-    # age's version line, then the first recipient's stanza.
     $expected = "age-encryption.org/v1`n-> X25519 "
     $head = [byte[]]::new($expected.Length)
     $stream = [IO.File]::OpenRead($sealed)

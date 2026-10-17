@@ -278,9 +278,7 @@ fn a_warm_status_line_run_is_within_its_budget_and_holds_nothing_after() {
     for n in 0..3 {
         run(n);
     }
-    // Each run comes straight after a start of the same copy that does nothing and meets
-    // whatever else the runner is doing then, so what the run takes over it is the status
-    // line's own. A busy runner only adds time, so the quickest start is what a start costs.
+    // A busy runner only adds time, so the quickest start is what a start costs.
     let (starts, mut over): (Vec<Duration>, Vec<Duration>) = (3..23)
         .map(|n| {
             let start = timed(&["--version"], "");

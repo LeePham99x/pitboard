@@ -189,12 +189,7 @@ jobs:
           path: ${{ runner.temp }}/runner-facts.json
           if-no-files-found: warn
 
-  # The session bundle for the session machine AGENTS.md describes. Each machine's MSI is built as
-  # release.yml builds a beta's with no signer, from the Release publish and the zip's pitboard.exe,
-  # with an update key no private key was made for, so the job names no secret. windows-11-arm adds
-  # the zip, an MSI one number higher, which upgrades the first as the next beta's does, and both
-  # probes. The repository is public, so each bundle leaves the runner only encrypted to the owner's
-  # age key, and is kept a day.
+  # The repository is public, so the bundle leaves the runner only encrypted to the owner's age key.
   session:
     if: inputs.session
     name: session (${{ matrix.os }})

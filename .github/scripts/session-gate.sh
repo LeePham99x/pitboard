@@ -1,9 +1,5 @@
 #!/bin/sh
-# Refuses what windows-facts.yml's session job never builds the session bundle from: a ref that is
-# not a branch, a Pitboard version before 1.0.0-beta.1, a build opened with the cfg, and a key that
-# is not an age public key. Then prints, as key=value lines, the version, the numbers
-# windows-versions.sh gives it, and msi-b: the MSI number one higher in its fourth field, which
-# upgrades the first as the next beta's does. Reads RUSTFLAGS and CARGO_ENCODED_RUSTFLAGS.
+# The session bundle is the beta candidate as it ships: a branch at 1.0.0-beta.1 or later, no cfg, an age key.
 set -eu
 
 if [ "$#" -ne 3 ]; then
