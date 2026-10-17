@@ -59,7 +59,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
-- An agent never dispatches a workflow but `windows-facts.yml`, and only on its own branch.
+- An agent never dispatches a workflow but `windows-facts.yml`, only on its own branch, and
+  never with `session` set.
 - Never sign with a signer's release policy or production credentials outside `release.yml`
   on a `v*` tag. Test signing uses the signer's test policy or sandbox.
 - Never let a job that runs on a pull request or by hand reach the `release`,
