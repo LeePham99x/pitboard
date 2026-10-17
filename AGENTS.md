@@ -210,10 +210,11 @@ Codex's sign-ins, and Pitboard, `claude`, `claude auth login` and `codex` read a
 accounts' own homes and Credential Manager items.
 
 - The session bundle is built only by `windows-facts.yml`'s `session` job, which only the
-  owner dispatches, on the draft Release PR. It leaves the runner only encrypted with age to
-  the owner's key, and is deleted from GitHub once downloaded, a day at most. It reaches the
-  session machine from the owner's Mac, never by a download there with a GitHub sign-in, and
-  is deleted from both after the session. Never install it anywhere else.
+  owner dispatches, on the draft pull request that holds `Release <version>`
+  ([Prepare a release](RELEASING.md#prepare-a-release)). It leaves the runner only encrypted
+  with age to the owner's key, and is deleted from GitHub once downloaded, a day at most. It
+  reaches the session machine from the owner's Mac, never by a download there with a GitHub
+  sign-in, and is deleted from both after the session. Never install it anywhere else.
 - Never run the session on a machine or an account that has ever held a real login, or over
   RDP or OpenSSH. Only the owner signs in, by hand, at the console. It ends with the revert the
   owner chose.

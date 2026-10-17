@@ -308,8 +308,8 @@ app execution aliases in the job user's own profile, since a fresh standard user
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
 `pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1`,
-`check-windows-build.ps1` and `verify-windows-signatures.ps1`, which checks a release's
-signatures. They run on CI's runners only.
+`check-windows-build.ps1`, `verify-windows-signatures.ps1`, which checks a release's
+signatures, and `pack-session-bundle.ps1`. They run on CI's runners only.
 
 `gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
 `pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:
@@ -318,22 +318,29 @@ the run. `ARCHITECTURE.md` records what it measured.
 
 With `-f session=true -f age-recipient=<age public key>`, the workflow builds the session
 bundle for [the session machine](AGENTS.md#the-session-machine) instead. Only the owner
-dispatches it, on the draft Release PR, and `.github/scripts/session-gate.sh` refuses a tag, a
-Pitboard version before 1.0.0-beta.1 and the cfg. Each machine's bundle holds its MSI as a
-beta with no signer ships it. The ARM64 one adds the zip, a second MSI one higher in
-ProductVersion's fourth field, which installs over the first, `pitboard-probe` and
-`Pitboard.Probe`. `pack-session-bundle.ps1` lists every file in `SHA256SUMS`, zips the bundle
-and encrypts it with age to that key, and `test-windows-release.ps1` tests it with a stand-in
-for age. GitHub keeps the two artifacts a day. Download and decrypt them on the Mac, delete
-them from GitHub, and copy each folder to the session machine:
+dispatches it, on the draft pull request that holds `Release <version>`
+([Prepare a release](RELEASING.md#prepare-a-release)). `.github/scripts/session-gate.sh`
+refuses anything but a branch at 1.0.0-beta.1 or later, the cfg, and a key that is not an age
+public key. Each machine's bundle holds its MSI as a beta with no signer ships it. The ARM64
+one adds the zip, a second MSI one higher in ProductVersion's fourth field, which installs
+over the first, `pitboard-probe` and `Pitboard.Probe`. `pack-session-bundle.ps1` lists every
+file in `SHA256SUMS`, zips the bundle and encrypts it with age to that key. GitHub keeps the
+two artifacts a day. Download, decrypt and unzip them on the Mac, then delete them from
+GitHub:
 
 ```sh
 gh run download <run id> -n session-build-aarch64-pc-windows-msvc \
   -n session-build-x86_64-pc-windows-msvc
-age -d -i <age identity file> -o <name>.zip <name>/<name>.zip.age
+for name in session-build-aarch64-pc-windows-msvc session-build-x86_64-pc-windows-msvc; do
+  age -d -i <age identity file> -o "$name.zip" "$name/$name.zip.age" && rm -r "$name" &&
+    unzip -q "$name.zip" && rm "$name.zip"
+done
 gh api repos/datlechin/pitboard/actions/runs/<run id>/artifacts --jq '.artifacts[].id' |
   xargs -I{} gh api -X DELETE repos/datlechin/pitboard/actions/artifacts/{}
 ```
+
+Copy both folders, each with its `SHA256SUMS` at the root, to the session machine, and delete
+them from the Mac after the session.
 
 ## The Windows app
 
