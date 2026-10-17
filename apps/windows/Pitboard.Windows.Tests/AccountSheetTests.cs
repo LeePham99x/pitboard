@@ -243,9 +243,10 @@ public sealed class AccountSheetTests
         Assert.IsFalse(bar.IsOpen, "Claude Code is here");
 
         up.Element<RadioButtons>("sheet.tool").SelectedIndex = 1;
+        await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
+        Assert.IsNull(Views.Description(up.Element<TextBox>("sheet.name")), "a name asked for where Sign in waits for the CLI");
         await up.Type("sheet.name", "third");
 
-        await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
         Assert.AreEqual(missing.Title, bar.Title);
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in to a tool not here");
         new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(up.Element<HyperlinkButton>("sheet.missing.link")).Invoke();

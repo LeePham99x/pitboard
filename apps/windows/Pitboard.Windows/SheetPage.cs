@@ -62,14 +62,15 @@ public abstract record SheetPage
 
         public string? Problem(string typed) => PitboardFfiMethods.CheckName(Sheet, typed).Problem;
 
-        // What the name field says under itself: why what is typed cannot be a name, or that the button waits for one.
-        public string? Note(string tool, string typed) => Problem(typed) ?? Needed(typed, Confirm(tool));
+        // What the name field says under itself: why what is typed cannot be a name, or that Sign In waits for one alone.
+        public string? Note(string tool, string typed) => Problem(typed) ?? (Ready(tool) ? Needed(typed, Confirm(tool)) : null);
 
         // Null while Sign In cannot be pressed.
         public Intent? Start(string tool, string typed) =>
-            !Text.Saving && !Running && NotFound(tool) is null && PitboardFfiMethods.CheckName(Sheet, typed).Name is { } name
-                ? new Intent.SignIn(tool, name)
-                : null;
+            Ready(tool) && PitboardFfiMethods.CheckName(Sheet, typed).Name is { } name ? new Intent.SignIn(tool, name) : null;
+
+        // All Sign In waits for is a name.
+        private bool Ready(string tool) => !Text.Saving && !Running && NotFound(tool) is null;
 
         private SheetTool? Chosen(string tool) => Text.Tools.FirstOrDefault(offered => offered.Code == tool);
     }

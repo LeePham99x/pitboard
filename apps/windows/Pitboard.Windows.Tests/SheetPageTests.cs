@@ -64,6 +64,21 @@ public sealed class SheetPageTests
         Assert.IsNull(rename.Note("personal"), "the name it has, which Rename waits to change");
     }
 
+    // Without Claude Code, the field asked for a name while Sign in waited for the tool, which the bar under it says.
+    [TestMethod]
+    public void TheNameFieldAsksForANameOnlyWhenSignInWaitsForNothingElse()
+    {
+        var form = new SheetPage.Form(
+            Add, Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex", Items.CodexCliMissing())),
+            Running: false);
+
+        Assert.IsNull(form.Note("codex", ""), "a tool Pitboard did not find");
+        Assert.AreEqual(form.Problem("a/b"), form.Note("codex", "a/b"), "what is wrong with what is typed");
+        Assert.IsNull((form with { Running = true }).Note("claude", ""), "a second sign-in");
+        Assert.IsNull((form with { Text = form.Text with { Saving = true } }).Note("claude", ""), "while saving");
+        Assert.AreEqual("Type a name for this account to sign in.", form.Note("claude", ""));
+    }
+
     [TestMethod]
     public void SigningInAgainIsAsTheAccountItself()
     {
