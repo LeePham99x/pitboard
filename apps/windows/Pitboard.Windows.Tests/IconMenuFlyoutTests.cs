@@ -182,7 +182,7 @@ public sealed class IconMenuFlyoutTests
             chosen);
     }
 
-    // Shots 20 and 26 of 16 October 2026: rows were taller in one opening of the menu than in another.
+    // Rows were taller in one opening of the menu than in another.
     [UITestMethod]
     public void EachRowIsPaddedAsAMouseOpenedMenu()
     {

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
@@ -43,6 +44,31 @@ public sealed partial class WindowChromeTests
             {
                 window.Close();
             }
+        }
+    }
+
+    // The WinUI Gallery's TitleBarHelper: over content extended into the title bar, the caption buttons kept black glyphs
+    // on dark after a switch of mode while Pitboard ran.
+    [UITestMethod]
+    public async Task TheMainWindowsCaptionButtonsFollowItsTheme()
+    {
+        var window = await Views.Activated(MainWindowTests.Made(Snapshots.Read(1)));
+        try
+        {
+            var root = (FrameworkElement)window.Content;
+            var bar = window.AppWindow.TitleBar;
+            foreach (var (theme, glyph) in new[] { (ElementTheme.Dark, Colors.White), (ElementTheme.Light, Colors.Black), (ElementTheme.Dark, Colors.White) })
+            {
+                root.RequestedTheme = theme;
+
+                await Views.Until(() => bar.ButtonForegroundColor == glyph, () => $"the caption's glyphs are {bar.ButtonForegroundColor} in {theme}");
+                Assert.AreEqual(glyph, bar.ButtonHoverForegroundColor, $"{theme}");
+                Assert.AreEqual(theme == ElementTheme.Dark ? (byte)255 : (byte)0, bar.ButtonHoverBackgroundColor?.R, $"{theme}");
+            }
+        }
+        finally
+        {
+            window.Close();
         }
     }
 

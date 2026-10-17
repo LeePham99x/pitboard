@@ -121,7 +121,7 @@ public sealed class ModelTests
         Renewal: new RenewalShown(
             Renewing: false, Note: "Renew every parked login that is due.",
             About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
-        Checks: new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this Mac…"),
+        Checks: new ChecksShown(Lines: [], Summary: null, Level: Level.Ok, Checking: false, Checked: null, Waiting: "Checking this Mac…"),
         Activity: new ActivityShown(
             Lines: [], Empty: new EmptyList(Title: "No Activity", Detail: "Pitboard lists every change it makes here.")),
         CommandLine: new CommandLineShown(
@@ -653,8 +653,8 @@ public sealed class ModelTests
                 Renewing: false, Note: "Renewed one.",
                 About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
             Checks = new ChecksShown(
-                Lines: [keychain], Summary: "1 broken: do not switch accounts until fixed.", Checking: false,
-                Checked: "Checked at 14:05", Waiting: null),
+                Lines: [keychain], Summary: "1 broken: do not switch accounts until fixed.", Level: Level.Fail,
+                Checking: false, Checked: "Checked at 14:05", Waiting: null),
             Activity = new ActivityShown(Lines: [switched], Empty: null),
             CommandLine = new CommandLineShown(
                 Found: new FoundCommandLine.Bundled(Path: "/usr/local/bin/pitboard"),

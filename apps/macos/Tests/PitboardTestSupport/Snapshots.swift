@@ -58,7 +58,8 @@ package func snapshot(
                 scheduledIn: nil, note: nil, failed: nil),
             renewal: RenewalShown(renewing: false, note: "", about: ""),
             checks: ChecksShown(
-                lines: [], summary: nil, checking: false, checked: nil, waiting: nil),
+                lines: [], summary: nil, level: .ok, checking: false, checked: nil,
+                waiting: nil),
             activity: ActivityShown(lines: [], empty: nil),
             commandLine: CommandLineShown(
                 found: nil, inTerminal: nil, updateNote: nil, offersLink: false,

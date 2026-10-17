@@ -1334,8 +1334,7 @@ mod tests {
         assert!(message.contains("command line"), "{message}");
     }
 
-    // Shot 19 of 16 October 2026: "the credential store could not be read: ..." in an error
-    // InfoBar.
+    // "the credential store could not be read: ..." stood in an error InfoBar.
     #[test]
     fn a_core_failure_without_an_app_sentence_starts_with_a_capital_and_ends_with_a_period() {
         use pitboard_core::error::Error;

@@ -148,6 +148,8 @@ pub struct ChecksShown {
     /// Over them, the last line of `pitboard doctor`, so the two never disagree, once there
     /// are checks to head.
     pub summary: Option<String>,
+    // the worst of the checks, which the line over them shows in its colour and symbol
+    pub level: Level,
     /// A check is under way: Check Again holds back, and the line over the checks shows it.
     pub checking: bool,
     /// When the checks shown were made, beside the line over them, once nothing is checking:
@@ -508,6 +510,7 @@ fn checks(seen: &Seen) -> ChecksShown {
             })
             .collect(),
         summary: any.then(|| crate::doctor_summary(&machine.checks)),
+        level: crate::doctor_level(&machine.checks),
         checking,
         checked: machine
             .checked_at
@@ -566,7 +569,7 @@ fn command_line(seen: &Seen) -> CommandLineShown {
 
 #[cfg(test)]
 mod tests {
-    use super::CheckLine;
+    use super::{CheckLine, ChecksShown};
     use crate::launch::Check;
     use crate::present::present_on;
     use crate::present::testing::{
@@ -612,7 +615,7 @@ mod tests {
             .range_label
     }
 
-    // The summary said 06:00 to 22:00 beside time pickers in AM and PM (shot 12).
+    // The summary said 06:00 to 22:00 beside time pickers in AM and PM.
     #[test]
     fn the_range_is_said_on_the_persons_clock() {
         assert_eq!(hours(6 * 60, 22 * 60, &Twelve), "6:00 AM to 10:00 PM");
@@ -638,7 +641,7 @@ mod tests {
         assert_eq!(hours(0, 24 * 60, &Unreadable), "All day");
     }
 
-    fn lines(checks: &[(&str, &str, Level, &str, &str)]) -> Vec<CheckLine> {
+    fn checks(checks: &[(&str, &str, Level, &str, &str)]) -> ChecksShown {
         let mut state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
         state.machine.checks = checks
             .iter()
@@ -650,10 +653,43 @@ mod tests {
                 advice: advice.into(),
             })
             .collect();
-        present_on(Os::Windows, &state, 0, &Utc)
-            .machine
-            .checks
-            .lines
+        present_on(Os::Windows, &state, 0, &Utc).machine.checks
+    }
+
+    fn lines(shown: &[(&str, &str, Level, &str, &str)]) -> Vec<CheckLine> {
+        checks(shown).lines
+    }
+
+    // The line over the checks is as bad as the worst of them, in its colour as in its words.
+    #[test]
+    fn the_line_over_the_checks_takes_the_worst_level() {
+        let level = |levels: &[Level]| {
+            let shown: Vec<_> = levels
+                .iter()
+                .map(|&level| ("state", "accounts", level, "", ""))
+                .collect();
+            let shown = checks(&shown);
+            (shown.level, shown.summary)
+        };
+        assert_eq!(
+            level(&[Level::Ok, Level::Ok]),
+            (
+                Level::Ok,
+                Some("Everything Pitboard checks is in order.".into())
+            )
+        );
+        assert_eq!(
+            level(&[Level::Warn, Level::Ok]),
+            (Level::Warn, Some("One thing is worth looking at.".into()))
+        );
+        assert_eq!(
+            level(&[Level::Ok, Level::Fail, Level::Warn]),
+            (
+                Level::Fail,
+                Some("1 broken: do not switch accounts until fixed.".into())
+            )
+        );
+        assert_eq!(level(&[]), (Level::Ok, None));
     }
 
     fn names(checks: &[(&str, &str)]) -> Vec<String> {
@@ -664,7 +700,7 @@ mod tests {
         lines(&checks).into_iter().map(|line| line.name).collect()
     }
 
-    // Doctor names a check for a terminal's table: "account personal", "config file" (shot 05).
+    // Doctor names a check for a terminal's table: "account personal", "config file".
     #[test]
     fn each_check_is_named_in_sentence_case() {
         assert_eq!(
@@ -763,7 +799,7 @@ mod tests {
         );
     }
 
-    // A terminal marks a command with backticks; an app shows them as typed (shot 03).
+    // A terminal marks a command with backticks; an app shows them as typed.
     #[test]
     fn no_check_line_says_a_backtick() {
         let shown = lines(&[

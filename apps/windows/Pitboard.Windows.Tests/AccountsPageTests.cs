@@ -86,7 +86,7 @@ public sealed class AccountsPageTests
     }
 
     // A ListView over a CollectionViewSource follows the view's current item, which starts on a row, so twoTools opened
-    // with a row selected that nobody chose (after-shot 43).
+    // with a row selected that nobody chose.
     [UITestMethod]
     public async Task NoRowIsSelectedUntilOneIsChosen()
     {

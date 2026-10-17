@@ -11,7 +11,7 @@ public sealed class MachineViewModelTests
             new CheckLine(0, "claude", "Claude Code", Level.Ok, "Passed", "2.1.299", Advice: null),
             new CheckLine(1, "parked_login", "Account personal", Level.Warn, "Worth looking at", "Lapses in 2 days", "Use it to renew it."),
         ],
-        Summary: "One thing is worth looking at.", Checking: false, Checked: "Checked at 09:00", Waiting: null);
+        Summary: "One thing is worth looking at.", Level: Level.Warn, Checking: false, Checked: "Checked at 09:00", Waiting: null);
 
     private static Snapshot With(ulong revision, ChecksShown checks)
     {
@@ -37,28 +37,24 @@ public sealed class MachineViewModelTests
         Assert.HasCount(2, shown.Lines);
         Assert.IsTrue(shown.HasSummary);
         Assert.AreEqual("One thing is worth looking at.", shown.Summary);
-        Assert.AreEqual(Level.Warn, shown.Worst);
+        Assert.AreEqual(Level.Warn, shown.Level);
         Assert.AreEqual("Checked at 09:00", shown.Checked);
         Assert.IsTrue(shown.CanCheck);
         Assert.IsFalse(shown.Waiting);
     }
 
+    // The summary's level is the model's, as its words are, whatever the app would make of the lines.
     [TestMethod]
-    public void TheWorstLevelIsTheSummarys()
+    public void TheSummarysLevelIsTheModels()
     {
-        static Level Worst(params Level[] levels) =>
-            Over(Checked with { Lines = [.. levels.Select((level, at) => Checked.Lines[0] with { Id = (ulong)at, Level = level })] }).Shown.Worst;
-
-        Assert.AreEqual(Level.Ok, Worst(Level.Ok, Level.Ok));
-        Assert.AreEqual(Level.Warn, Worst(Level.Warn, Level.Ok));
-        Assert.AreEqual(Level.Fail, Worst(Level.Ok, Level.Fail, Level.Warn));
-        Assert.AreEqual(Level.Ok, Worst());
+        Assert.AreEqual(Level.Fail, Over(Checked with { Level = Level.Fail }).Shown.Level);
+        Assert.AreEqual(Level.Ok, Over(Checked with { Level = Level.Ok }).Shown.Level);
     }
 
     [TestMethod]
     public void BeforeTheFirstCheckItSaysItIsChecking()
     {
-        var (shown, _, _) = Over(new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this PC…"));
+        var (shown, _, _) = Over(new ChecksShown(Lines: [], Summary: null, Level: Level.Ok, Checking: false, Checked: null, Waiting: "Checking this PC…"));
 
         Assert.IsTrue(shown.Waiting);
         Assert.AreEqual("Checking this PC…", shown.WaitingText);
@@ -78,10 +74,10 @@ public sealed class MachineViewModelTests
         Assert.AreEqual("", shown.Checked);
 
         told.Clear();
-        app.Apply(With(3, Checked with { Lines = [Checked.Lines[0]], Summary = "Everything looks right." }));
+        app.Apply(With(3, Checked with { Lines = [Checked.Lines[0]], Summary = "Everything looks right.", Level = Level.Ok }));
 
-        Assert.AreEqual("Lines, Worst, HasSummary, Summary, Checking, CanCheck, Checked", string.Join(", ", told));
-        Assert.AreEqual(Level.Ok, shown.Worst);
+        Assert.AreEqual("Lines, HasSummary, Summary, Level, Checking, CanCheck, Checked", string.Join(", ", told));
+        Assert.AreEqual(Level.Ok, shown.Level);
     }
 
     [TestMethod]

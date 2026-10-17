@@ -10,7 +10,6 @@ using Launcher = Windows.System.Launcher;
 
 namespace Pitboard.App;
 
-// Makes the model and what shows it, and the main window when the model asks for it.
 public partial class App : Application, IIconTargets
 {
     private readonly AppStart _start;

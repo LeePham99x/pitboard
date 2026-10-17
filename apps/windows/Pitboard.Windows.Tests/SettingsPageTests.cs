@@ -240,6 +240,28 @@ public sealed class SettingsPageTests
         Assert.Contains(new Intent.SetWarmRange(360, 1260), model.Sent);
     }
 
+    // The toolkit's own sample gives a card in ItemsHeader or ItemsFooter the style of the expander's items.
+    [UITestMethod]
+    public async Task TheWarmUpsHoursAndNoteAreCardsAsItsAccountsAre()
+    {
+        var page = await Shown(new AppModel(new StandInModel(With(1, machine => machine with { Warm = TwoWarmed }))));
+        await Expand(page, "settings.warm", "personal · Max");
+        var account = Card(Views.Element<ToggleSwitch>(page, "settings.warm.claude/personal"));
+
+        foreach (var (name, card) in new[]
+        {
+            ("From", Card(Views.Element<TimePicker>(page, "settings.warmFrom"))),
+            ("To", Card(Views.Element<TimePicker>(page, "settings.warmTo"))),
+            ("the note", Card(Said(page, "Pitboard warms up Claude Code accounts only."))),
+        })
+        {
+            Assert.AreEqual(account.Padding, card.Padding, name);
+            Assert.AreEqual(account.MinHeight, card.MinHeight, name);
+            Assert.AreEqual(account.BorderThickness, card.BorderThickness, name);
+            Assert.AreEqual(account.CornerRadius, card.CornerRadius, name);
+        }
+    }
+
     [UITestMethod]
     public async Task RenewalSaysHowOftenAndWhereAndRenewsNow()
     {
@@ -394,7 +416,7 @@ public sealed class SettingsPageTests
         Assert.AreEqual(new Uri("https://github.com/datlechin/pitboard/issues"), opened.Single());
     }
 
-    // A switch sat about 100 epx in from its card's edge with "Off" after it (shots 06 and 33). Windows Settings puts it at
+    // A switch sat about 100 epx in from its card's edge with "Off" after it. Windows Settings puts it at
     // the edge with its state before it, as the SettingsCard's own toggle style does.
     [UITestMethod]
     public async Task EachSwitchIsAtItsCardsRightEdgeWithItsStateBeforeIt()

@@ -4128,18 +4128,21 @@ Microsoft's documentation.
   the NavigationView page (updated 2 October 2026) recommends 12 epx margins for the content
   in Minimal and 24 otherwise, and navigates its frame only to a page not shown already. So
   `MainWindow` sets no `Header`: each page carries its title as a Level1 heading, its content
-  24 epx under it and the sides the window sets from `DisplayModeChanged`, and the lists and
-  the settings' scroll viewer reach the window's edges and pad what they hold, which keeps a
-  scroll bar at the edge. Its pages are kept (`NavigationCacheMode.Required`), with no back
-  stack (`MainWindowTests`).
+  24 epx under it and the sides the window sets from `DisplayModeChanged`, whose thicknesses
+  `Styles.xaml` holds, and the lists and the settings' scroll viewer reach the window's edges
+  and pad what they hold, which keeps a scroll bar at the edge. Its pages are kept
+  (`NavigationCacheMode.Required`), with no back stack (`MainWindowTests`).
 - `AppWindowTitleBar.PreferredTheme`'s reference gives `Legacy` as its default, and WinUI's
   window class carries no icon. So `WindowChrome` gives every window of Pitboard's
   `UseDefaultAppMode` and the app's icon (`WindowChromeTests`,
   `LifecycleTests.TheAccountAndOpenLinkWindowsCarryPitboardsIcon`).
-  Whether the main window's caption buttons, over content extended into the title bar,
-  follow a switch of mode while Pitboard runs is still to be read in pitboard-win; they
-  stayed black on dark before (shots 21, 23 and 24 of 16 October 2026). The WinUI Gallery
-  sets their colours from `ActualThemeChanged` in its `TitleBarHelper`.
+  The WinUI Gallery's `TitleBarHelper` (`WinUIGallery/Helpers/TitleBarHelper.cs`, read on 17
+  October 2026) sets the caption buttons' glyph and hover colours from the content's
+  `ActualTheme`, on `Loaded` and `ActualThemeChanged`, because `AppWindowTitleBar` does not
+  change them when the mode changes while the app runs, and WinUI's own TableView sample says
+  the system draws them black whatever the content's theme. So `WindowChrome` does the same
+  for a window whose content extends into its title bar, the main window
+  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`).
 - Microsoft's Manage app windows page (updated 14 October 2026) gives a window that belongs
   to another an owner window, set through Win32 interop, and the WinUI Gallery's
   `ModalWindow.xaml.cs` sets it with `SetWindowLongPtr(GWLP_HWNDPARENT)`. An owned window
@@ -4187,9 +4190,9 @@ Microsoft's documentation.
   `DialogHostTests.OnlyOneContentDialogShowsAtATime` holds it on the runners.
 - The WinUI Gallery's `ContentDialogPage` gives each dialog it makes its page's
   `ActualTheme`, and an Add account sheet opened after a switch to dark while Pitboard ran
-  drew light under white text, where one opened in dark was right (shots 25 and 28 of 16
-  October 2026). So `DialogHost` gives every dialog its window content's theme and follows
-  `ActualThemeChanged` while it is up (`DialogHostTests.ADialogTakesItsWindowsThemeAndFollowsIt`).
+  drew light under white text, where one opened in dark was right. So `DialogHost` gives every
+  dialog its window content's theme and follows `ActualThemeChanged` while it is up
+  (`DialogHostTests.ADialogTakesItsWindowsThemeAndFollowsIt`).
 - An exception that ends a `DispatcherQueue` callback fails fast in `CoreMessagingXP.dll` and
   reaches no handler. So `Ui.Guarded` wraps each callback the app hands `TryEnqueue`, and
   writes what ended it, with the `RestrictedDescription` C#/WinRT keeps WinUI's words in,
@@ -4210,20 +4213,19 @@ Microsoft's documentation.
   updated 8 July 2026).
 - WinUI 2.3.9's `Themes/generic.xaml` sizes a ContentDialog's `BackgroundElement` between
   `ContentDialogMinWidth` (320) and `ContentDialogMaxWidth` (548), so the Add account sheet
-  was as wide as its widest line and changed width with the tool picked (shots 13 and 15 of
-  16 October 2026). `AccountSheet` sets its own `ContentDialogMinWidth` to the maximum, the
-  lightweight styling Microsoft's XAML styles page describes, and keeps one width
+  was as wide as its widest line and changed width with the tool picked. `AccountSheet` sets
+  its own `ContentDialogMinWidth` to the maximum, the lightweight styling Microsoft's XAML
+  styles page describes, and keeps one width
   (`AccountSheetTests.TheSheetKeepsOneWidthWhateverItShows`).
 - The same `generic.xaml` shows a TextBox's `Description` in `DescriptionPresenter`, a
   ContentPresenter with no `TextWrapping`, so a note given as a string stays on one line: the
-  code field's ran past the sheet's edge (after-shot 17 of 16 October 2026). `AccountSheet`
-  gives each field's note as a TextBlock that wraps
-  (`AccountSheetTests.ACodeNoteLongerThanItsFieldWrapsUnderIt`).
+  code field's ran past the sheet's edge. `AccountSheet` gives each field's note as a
+  TextBlock that wraps (`AccountSheetTests.ACodeNoteLongerThanItsFieldWrapsUnderIt`).
 - The code WinUI 2.3.9's XAML compiler writes for a OneWay `x:Bind` function calls it again,
   as a path in its argument changes, only for a value that is not null (`AccountRow.g.cs`,
   `Update_Account_Item_Plan`). So a row the list gave an account without a plan kept the tag
-  of the account before (after-shot 21), and a function there takes the account item, which is
-  never null (`AccountRowTests.ARowGivenAnAccountWithoutAPlanHasNoTag`). The same compiler
+  of the account before, and a function there takes the account item, which is never null
+  (`AccountRowTests.ARowGivenAnAccountWithoutAPlanHasNoTag`). The same compiler
   stops on WMC9999 where a template's `x:Bind` names both a member of its `x:DataType` and an
   element its page names: it goes to warn and finds no resources for the warning
   (`BindPathListener.ResolveNameOnRoot` in microsoft-ui-xaml's main, read on 16 October 2026).
@@ -4231,7 +4233,7 @@ Microsoft's documentation.
 - A Selector's `IsSynchronizedWithCurrentItem` is null by default, which keeps its selection on
   a collection view's current item ([Selector.IsSynchronizedWithCurrentItem](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.selector.issynchronizedwithcurrentitem)).
   The Accounts page groups its rows through a CollectionViewSource, so twoTools opened with a
-  row selected that nobody chose (after-shot 43). Its list sets it false
+  row selected that nobody chose. Its list sets it false
   (`AccountsPageTests.NoRowIsSelectedUntilOneIsChosen`).
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`, the WinUI of Windows App SDK 2.5.1.
   `ContentDialog_Partial.cpp`: Esc clicks the close button where it is enabled and
@@ -4249,13 +4251,13 @@ Microsoft's documentation.
   closed and opened again for a screen reader to hear the new content
   ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25
   June 2026). So the sheet's failure bar closes and opens again for each new failure, and a
-  code the tool refused is an error InfoBar under the code field, where plain text was (shot
-  18). A new failure gives focus back to the field it is about, as the sheet's opening does,
-  so the default button is the one Enter presses.
+  code the tool refused is an error InfoBar under the code field, where plain text was. A new
+  failure gives focus back to the field it is about, as the sheet's opening does, so the
+  default button is the one Enter presses.
 - WinUI 2.3.9's `Themes/generic.xaml`, in the Windows App SDK 2.5.1 package: the InfoBar's
   close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
-  `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This
-  PC's summary repeat so they line up with the rows under them.
+  `ListViewItem` is padded `16,0,12,0`, which only the Activity page's column headers repeat,
+  so they line up with the rows under them.
 - `Shell_NotifyIconW` and `NOTIFYICONDATAW` (Microsoft Learn, updated 1 July 2025 and 20
   November 2024): `NIM_SETVERSION` follows every `NIM_ADD`; under `NOTIFYICON_VERSION_4` the
   event is `lParam`'s low word and the point `wParam`'s two words, the icon's upper-left
@@ -4292,10 +4294,10 @@ Microsoft's documentation.
   opened its menu (`MenuFlyoutItemBase_Partial.cpp` at `winui3/release/2.5.1`), and WinUI
   2.3.9's `Themes/generic.xaml` pads it `11,8,11,9` otherwise and `11,4,11,5` then.
   `WM_CONTEXTMENU` from the notification area names no device, so the icon's rows were
-  taller in one opening than in another (shots 20 and 26 of 16 October 2026).
-  `IconMenuFlyout` gives each row `MenuFlyoutItemThemePaddingNarrow`, which the template
-  binds the row's padding to outside that state, so every opening draws the rows a mouse
-  would (`IconMenuFlyoutTests.EachRowIsPaddedAsAMouseOpenedMenu`).
+  taller in one opening than in another. `IconMenuFlyout` gives each row
+  `MenuFlyoutItemThemePaddingNarrow`, which the template binds the row's padding to outside
+  that state, so every opening draws the rows a mouse would
+  (`IconMenuFlyoutTests.EachRowIsPaddedAsAMouseOpenedMenu`).
 - The .NET SDK 10.0.401 numbers an `ApplicationIcon` 32512, `IDI_APPLICATION`'s number, and
   copies it into the apphost on any system (dotnet/runtime v10.0.13,
   `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj

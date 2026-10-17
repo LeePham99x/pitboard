@@ -3,7 +3,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// The checks pitboard doctor makes of this PC, as the This PC page binds them.
 public sealed partial class MachineViewModel(AppModel model) : INotifyPropertyChanged
 {
     private ChecksShown? _shown;
@@ -18,11 +17,7 @@ public sealed partial class MachineViewModel(AppModel model) : INotifyPropertyCh
 
     public string Summary => Checks.Summary ?? "";
 
-    // What the summary's colour and symbol say: the worst of the checks.
-    public Level Worst =>
-        Checks.Lines.Any(line => line.Level == Level.Fail) ? Level.Fail
-        : Checks.Lines.Any(line => line.Level == Level.Warn) ? Level.Warn
-        : Level.Ok;
+    public Level Level => Checks.Level;
 
     public bool Checking => Checks.Checking;
 
@@ -74,12 +69,17 @@ public sealed partial class MachineViewModel(AppModel model) : INotifyPropertyCh
 
         if (!Structural.Equal(checks.Lines, before.Lines))
         {
-            Tell(nameof(Lines), nameof(Worst));
+            Tell(nameof(Lines));
         }
 
         if (checks.Summary != before.Summary)
         {
             Tell(nameof(HasSummary), nameof(Summary));
+        }
+
+        if (checks.Level != before.Level)
+        {
+            Tell(nameof(Level));
         }
 
         if (checks.Checking != before.Checking)

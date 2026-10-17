@@ -3,7 +3,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// Pitboard's log as the Activity page binds it, newest first, whichever front end made each change.
 public sealed partial class ActivityViewModel(AppModel model) : INotifyPropertyChanged
 {
     private ActivityShown? _shown;

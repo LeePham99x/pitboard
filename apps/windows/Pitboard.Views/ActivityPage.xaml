@@ -8,15 +8,20 @@
     xmlns:toolkit="using:CommunityToolkit.WinUI"
     NavigationCacheMode="Required">
   <Page.Resources>
+    <!-- The table's columns, which its headers share; the account takes what is left. -->
+    <GridLength x:Key="DateColumnWidth">170</GridLength>
+    <GridLength x:Key="ChangeColumnWidth">90</GridLength>
+    <GridLength x:Key="ResultColumnWidth">90</GridLength>
+    <GridLength x:Key="AskedByColumnWidth">110</GridLength>
     <!-- Microsoft's list item templates: a table's columns, each wrapping as text grows. -->
     <DataTemplate x:Key="TableLine" x:DataType="core:ActivityLine">
       <Grid ColumnSpacing="12">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="170" />
-          <ColumnDefinition Width="90" />
+          <ColumnDefinition Width="{StaticResource DateColumnWidth}" />
+          <ColumnDefinition Width="{StaticResource ChangeColumnWidth}" />
           <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="90" />
-          <ColumnDefinition Width="110" />
+          <ColumnDefinition Width="{StaticResource ResultColumnWidth}" />
+          <ColumnDefinition Width="{StaticResource AskedByColumnWidth}" />
         </Grid.ColumnDefinitions>
         <TextBlock Text="{x:Bind Date}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
         <TextBlock Grid.Column="1" Text="{x:Bind Change}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
@@ -60,15 +65,14 @@
       </Grid>
     </DataTemplate>
   </Page.Resources>
-  <!-- NavigationView's guidance: 24 epx sides, 12 in Minimal, which the main window sets. -->
   <Grid x:Name="Root" Padding="0,16,0,0" RowSpacing="24">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Sides">
         <VisualState x:Name="Wide" />
         <VisualState x:Name="Minimal">
           <VisualState.Setters>
-            <Setter Target="PageHeader.Margin" Value="12,0,12,0" />
-            <Setter Target="Lines.Padding" Value="12,0,12,16" />
+            <Setter Target="PageHeader.Margin" Value="{StaticResource PageHeaderMarginMinimal}" />
+            <Setter Target="Lines.Padding" Value="{StaticResource PageContentPaddingMinimal}" />
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
@@ -90,7 +94,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <Grid x:Name="PageHeader" Margin="24,0,24,0" ColumnSpacing="12">
+    <Grid x:Name="PageHeader" Margin="{StaticResource PageHeaderMargin}" ColumnSpacing="12">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
@@ -120,7 +124,7 @@
     <ListView
         x:Name="Lines"
         Grid.Row="1"
-        Padding="24,0,24,16"
+        Padding="{StaticResource PageContentPadding}"
         SelectionMode="None"
         ItemsSource="{x:Bind ViewModel.Lines, Mode=OneWay}"
         ItemTemplate="{StaticResource TableLine}"
@@ -131,11 +135,11 @@
       <ListView.Header>
         <Grid x:Name="Columns" Padding="16,0,12,4" ColumnSpacing="12">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="170" />
-            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="{StaticResource DateColumnWidth}" />
+            <ColumnDefinition Width="{StaticResource ChangeColumnWidth}" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="90" />
-            <ColumnDefinition Width="110" />
+            <ColumnDefinition Width="{StaticResource ResultColumnWidth}" />
+            <ColumnDefinition Width="{StaticResource AskedByColumnWidth}" />
           </Grid.ColumnDefinitions>
           <TextBlock Text="Date" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
           <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
