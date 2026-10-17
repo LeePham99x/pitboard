@@ -908,23 +908,18 @@ jobs:
           $found | Format-Table -AutoSize
           if ($found) { exit 1 }
       # The update key rehearsal ships bundles that really do update themselves, so it must
-      # never be able to reach the real key, the real certificate or the real feed. A job that
-      # never asks for a repository secret cannot be handed one, and that is worth knowing on
-      # the pull request that changes it rather than the month after.
-      - name: The update key rehearsal names no repository secret
+      # never be able to reach the real key, the real certificate or the real feed.
+      # windows-facts.yml runs on whatever branch it is dispatched on, and its session job ships
+      # a bundle off the runner. A workflow that never names secrets cannot be handed one, and
+      # that is worth knowing on the pull request that changes it rather than the month after.
+      - name: The update key rehearsal, the runner facts and the session bundle name no repository secret
         run: |
-          if grep -q 'secrets\.' .github/workflows/rotation.yml; then
-            echo "the rehearsal asks for a repository secret, so it can be given one" >&2
-            exit 1
-          fi
-      # windows-facts.yml runs on whatever branch it is dispatched on, and its session job builds a
-      # bundle that leaves the runner.
-      - name: The runner facts and the session bundle name no repository secret
-        run: |
-          if grep -q 'secrets\.' .github/workflows/windows-facts.yml; then
-            echo "windows-facts.yml asks for a repository secret, so it can be given one" >&2
-            exit 1
-          fi
+          for workflow in rotation.yml windows-facts.yml; do
+            if grep -qw secrets ".github/workflows/$workflow"; then
+              echo "$workflow names secrets, so it can be given one" >&2
+              exit 1
+            fi
+          done
 
   # The usepitboard.com site in website/. A pull request that changes none of the files its
   # build and tests read, listed in `touched`, skips the steps and passes. The build reads the
