@@ -89,7 +89,8 @@ public sealed class SettingsTests
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("settings.autoSwitchStanding")));
     }
 
-    // The fixture's personal is on for warm-ups, and Claude Code on Windows reads no token handed to it, so Settings says why none runs.
+    // The fixture's personal is on for warm-ups, and Claude Code on Windows reads no token handed to it, so Settings says why none
+    // runs, and dims what would change one.
     [TestMethod]
     public void WarmingUpAccounts()
     {
@@ -100,7 +101,10 @@ public sealed class SettingsTests
             Says(launched, "Pitboard is not warming up accounts: warm-ups are not available on Windows", TimeSpan.FromSeconds(30)),
             "Settings does not say why nothing is warmed up");
         Expand(launched, "settings.warm");
-        Assert.AreEqual(ToggleState.On, State(Control(launched, "settings.warm.claude/personal")));
+        var personal = Control(launched, "settings.warm.claude/personal");
+        Assert.AreEqual(ToggleState.On, State(personal));
+        Assert.IsFalse(personal.IsEnabled, "personal's warm-up can be turned off");
+        Assert.IsFalse(Control(launched, "settings.warmFrom").IsEnabled, "the hours can be changed");
     }
 
     [TestMethod]

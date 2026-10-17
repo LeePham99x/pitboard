@@ -52,7 +52,8 @@ pub struct WarmShown {
     pub standing: Option<String>,
     /// What is said under them: what a warm-up does and what it never does.
     pub note: String,
-    /// Whether anything here can be changed: once the core has said what it is.
+    /// Whether anything here can be changed: once the core has said what it is, and not on
+    /// Windows, where nothing is warmed up.
     pub enabled: bool,
 }
 
@@ -67,7 +68,8 @@ pub struct WarmAccountShown {
     pub plan: Option<String>,
     /// Whether it is warmed up.
     pub on: bool,
-    /// Where its warm-up stands, while it is turned on: "Warms up again at 22:50".
+    /// Where its warm-up stands, while it is turned on and one can be made: "Warms up again
+    /// at 22:50".
     pub standing: Option<String>,
 }
 
@@ -257,6 +259,8 @@ fn warm(seen: &Seen) -> WarmShown {
     let overview = state.warm.overview.as_ref();
     let range = overview.map_or(pitboard_core::duty::warm::Range::DEFAULT, |o| o.range);
     let clock = |at| seen.clock(at);
+    // Windows warms up nothing, which is worth saying before anything is turned on.
+    let unbuilt = overview.is_some_and(|overview| overview.halted == Some(Halt::Unbuilt));
     let accounts: Vec<WarmAccountShown> = overview
         .map(|overview| {
             overview
@@ -271,16 +275,20 @@ fn warm(seen: &Seen) -> WarmShown {
                         .find(|account| account.qualified.as_deref() == Some(&choice.qualified))
                         .and_then(|account| account.plan.clone()),
                     on: choice.on,
-                    standing: choice.standing.as_ref().map(|standing| {
-                        words::capitalised(&pitboard_core::words::warm_standing(standing, &clock))
-                    }),
+                    standing: choice
+                        .standing
+                        .as_ref()
+                        .filter(|_| !unbuilt)
+                        .map(|standing| {
+                            words::capitalised(&pitboard_core::words::warm_standing(
+                                standing, &clock,
+                            ))
+                        }),
                 })
                 .collect()
         })
         .unwrap_or_default();
     let unreadable = state.warm.unreadable.as_deref().map(words::capitalised);
-    // Windows warms up nothing, which is worth saying before anything is turned on.
-    let unbuilt = overview.is_some_and(|overview| overview.halted == Some(Halt::Unbuilt));
     let standing = unreadable.or_else(|| {
         overview
             .filter(|_| state.warm.any_on() || unbuilt)
@@ -311,16 +319,12 @@ fn warm(seen: &Seen) -> WarmShown {
         .unwrap_or_else(|| range.to_string()),
         accounts,
         standing,
-        note: if unbuilt {
-            "Pitboard keeps what you turn on here, and warms up nothing on this PC.".into()
-        } else {
-            "Pitboard starts the five-hour period of each account turned on as soon as the last \
-             one resets, within these hours, while the app is open, so it resets as early as it \
-             can. Claude Code sends one short request with that account's own login. Pitboard \
-             warms up Claude Code accounts only, and none with a limit used up."
-                .into()
-        },
-        enabled: overview.is_some(),
+        note: "Pitboard starts the five-hour period of each account turned on as soon as the last \
+               one resets, within these hours, while the app is open, so it resets as early as it \
+               can. Claude Code sends one short request with that account's own login. Pitboard \
+               warms up Claude Code accounts only, and none with a limit used up."
+            .into(),
+        enabled: overview.is_some() && !unbuilt,
     }
 }
 
@@ -885,18 +889,20 @@ mod tests {
                  where Claude Code does not read the access token a warm-up hands it."
             )
         );
-        assert_eq!(
-            windows.note,
-            "Pitboard keeps what you turn on here, and warms up nothing on this PC."
-        );
+        assert!(!windows.enabled, "dimmed: nothing here can work");
 
         state.warm.overview = Some(overview(None));
         let mac = present_on(Os::MacOs, &state, 0, &Utc).machine.warm;
         assert_eq!(mac.standing, None, "nothing is turned on");
+        assert!(mac.enabled);
         assert!(
             mac.note.starts_with("Pitboard starts the five-hour period"),
             "{}",
             mac.note
+        );
+        assert_eq!(
+            windows.note, mac.note,
+            "what a warm-up does, dimmed with the rest"
         );
     }
 }

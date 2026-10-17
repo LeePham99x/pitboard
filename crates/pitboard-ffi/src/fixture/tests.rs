@@ -2030,23 +2030,21 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     let again = titled(OS, "Sign In Again…", "Sign in again…");
     let now = titled(OS, "Warm Up Now", "Warm up now");
     let automatically = titled(OS, "Warm Up Automatically", "Warm up automatically");
+    // Windows warms up nothing, so a menu there leaves warm-ups out.
+    let warm: &[&str] = match OS {
+        Os::Windows => &[],
+        Os::MacOs | Os::Linux => &[&now, &automatically],
+    };
     assert_eq!(
         menus,
         [
             (
                 "work".into(),
-                titles(&[&again, "Rename…", &now, &automatically])
+                titles(&[&[again.as_str(), "Rename…"], warm].concat())
             ),
             (
                 "personal".into(),
-                titles(&[
-                    "Use personal",
-                    &again,
-                    "Rename…",
-                    &now,
-                    &automatically,
-                    "Forget…"
-                ])
+                titles(&[&["Use personal", &again, "Rename…"], warm, &["Forget…"]].concat())
             ),
         ]
     );
