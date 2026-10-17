@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
 using Pitboard.Views;
+using Windows.Foundation;
 
 namespace Pitboard.Windows.Tests;
 
@@ -55,6 +56,43 @@ public sealed class AccountSheetTests
 
         Assert.IsNull(Views.Description(field));
         Assert.IsTrue(up.Sheet.IsPrimaryButtonEnabled);
+    }
+
+    // The dialog focuses its first control as it loads, at times after Opened, so the tool picker had focus in some launches.
+    [UITestMethod]
+    public async Task OnlyTheNameFieldTakesFocusAsTheSheetOpens()
+    {
+        var given = new List<DependencyObject>();
+        var dialogsOwn = false;
+        void Getting(object? sender, GettingFocusEventArgs args) => given.Add(args.NewFocusedElement);
+        FocusManager.GettingFocus += Getting;
+        try
+        {
+            await using var up = await Up.Over(
+                Snapshots.Read(1) with
+                {
+                    Sheet = Add,
+                    SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
+                },
+                sheet => ((UIElement)sheet.Content).AddHandler(
+                    UIElement.GettingFocusEvent,
+                    new TypedEventHandler<UIElement, GettingFocusEventArgs>(
+                        (_, args) => dialogsOwn |= args.NewFocusedElement is not TextBox field
+                            || AutomationProperties.GetAutomationId(field) != "sheet.name"),
+                    handledEventsToo: true));
+            var name = up.Element<TextBox>("sheet.name");
+
+            await Views.Until(() => dialogsOwn && given.Contains(name), "the dialog gave no focus of its own, or the name field none");
+            await Views.Drained();
+
+            Assert.AreSame(name, FocusManager.GetFocusedElement(up.Sheet.XamlRoot));
+            var elsewhere = given.Where(element => element != name && Look.Ancestor<AccountSheet>(element) == up.Sheet).ToArray();
+            Assert.IsEmpty(elsewhere, $"focus went to {string.Join(", ", elsewhere.Select(element => element.GetType().Name))}");
+        }
+        finally
+        {
+            FocusManager.GettingFocus -= Getting;
+        }
     }
 
     [UITestMethod]
@@ -518,14 +556,17 @@ public sealed class AccountSheetTests
 
         public AccountSheet Sheet => (AccountSheet)Dialogs.Open!;
 
-        public static async Task<Up> Over(Snapshot snapshot)
+        // Attached before the dialog lays out, so a test sees what it does as it opens.
+        public static async Task<Up> Over(Snapshot snapshot, Action<AccountSheet>? watch = null)
         {
             var model = new StandInModel(snapshot);
             var app = new AppModel(model);
             var content = await Views.Shown(new Grid());
             var dialogs = new DialogHost(() => content.XamlRoot);
             var opened = new List<Uri>();
-            var up = new Up(model, app, dialogs, new WindowSheets(app, dialogs, opened.Add), opened);
+            var sheets = new WindowSheets(app, dialogs, opened.Add);
+            watch?.Invoke(sheets.Shown!);
+            var up = new Up(model, app, dialogs, sheets, opened);
             await Views.Until(() => dialogs.Open is AccountSheet { IsLoaded: true }, "no sheet");
             return up;
         }

@@ -1,6 +1,7 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
+using FlaUI.Core.Tools;
 using FlaUI.Core.WindowsAPI;
 
 namespace Pitboard.UITests;
@@ -234,7 +235,7 @@ public sealed class AccountsWindowTests
         launched.Row("claude/work");
     }
 
-    // The window goes to the accounts, where the sheet comes up.
+    // The window goes to the accounts, where the sheet comes up with focus in its name field, not the tool picker.
     [TestMethod]
     public void CtrlNAddsAnAccountFromAnyPane()
     {
@@ -246,6 +247,11 @@ public sealed class AccountsWindowTests
         Foreground.Require(window);
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_N);
         launched.Field("sheet.name");
+        launched.Find(found => found.ByAutomationId("sheet.tool.codex"), "sheet.tool.codex");
+        string Focused() => launched.Automation.FocusedElement()?.Properties.AutomationId.ValueOrDefault ?? "";
+        Assert.IsTrue(
+            Retry.WhileFalse(() => Focused() == "sheet.name", TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(100)).Result,
+            $"the sheet opened with the focus on '{Focused()}'");
         launched.Find(found => found.ByName("Add account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
         launched.Invoke("Cancel");
 

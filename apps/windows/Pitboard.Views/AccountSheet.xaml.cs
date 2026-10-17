@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Pitboard.Core;
 using Pitboard.Windows;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.System;
 
 namespace Pitboard.Views;
@@ -38,6 +39,8 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         _open = open;
         Sheet = sheet;
         InitializeComponent();
+        // The tool picker marks the focus it takes from the keyboard handled.
+        AddHandler(GettingFocusEvent, new TypedEventHandler<UIElement, GettingFocusEventArgs>(OnGettingFocus), handledEventsToo: true);
         AlertSpace.Content = new AlertBar(model);
         model.PropertyChanged += OnModelChanged;
         Show();
@@ -445,19 +448,21 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         }
     }
 
-    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args) => FocusField();
-
-    private void FocusField()
+    // The dialog focuses its first control as it loads, at times after Opened; focus coming in from outside goes to the field.
+    private void OnGettingFocus(UIElement sender, GettingFocusEventArgs args)
     {
-        if (NameField.Visibility == Visibility.Visible && NameField.IsEnabled)
+        if (Field() is { } field && args.NewFocusedElement != field && Look.Ancestor<AccountSheet>(args.OldFocusedElement) != this)
         {
-            NameField.Focus(FocusState.Programmatic);
-        }
-        else if (CodePart.Visibility == Visibility.Visible)
-        {
-            CodeField.Focus(FocusState.Programmatic);
+            args.TrySetNewFocusedElement(field);
         }
     }
+
+    private TextBox? Field() =>
+        NameField.Visibility == Visibility.Visible && NameField.IsEnabled ? NameField
+        : CodePart.Visibility == Visibility.Visible ? CodeField
+        : null;
+
+    private void FocusField() => Field()?.Focus(FocusState.Programmatic);
 
     // As printed, as an address for an app that reads one and as text for a field that reads only text, such as a browser's address bar.
     private void OnCopyLink(object sender, RoutedEventArgs args)

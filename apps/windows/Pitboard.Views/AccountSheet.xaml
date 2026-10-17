@@ -9,7 +9,6 @@
     PrimaryButtonClick="OnPrimaryButtonClick"
     SecondaryButtonClick="OnSecondaryButtonClick"
     Closing="OnClosing"
-    Opened="OnOpened"
     PreviewKeyDown="OnPreviewKeyDown">
   <ContentDialog.Resources>
     <Style x:Key="HeldBack" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
