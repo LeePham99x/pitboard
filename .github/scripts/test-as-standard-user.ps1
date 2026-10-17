@@ -222,7 +222,11 @@ function Show-LogonFailures([datetime] $Since) {
         $filter = @{ LogName = 'Security'; Id = 4625, 4648, 4740; StartTime = $Since }
         $entries = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue |
             Where-Object { $_.Properties.Value -contains $name } | Sort-Object TimeCreated)
-        Write-Output "::group::The Security log's failed logons, explicit logons and lockouts of the standard user: $($entries.Count)"
+        # A 4648 is this script starting a program as the user with its password, not a failure.
+        $failures = @($entries | Where-Object Id -EQ 4625).Count
+        $explicit = @($entries | Where-Object Id -EQ 4648).Count
+        $lockouts = @($entries | Where-Object Id -EQ 4740).Count
+        Write-Output "::group::The Security log on the standard user: $failures failed logons, $explicit explicit logons, $lockouts lockouts"
         $token = [guid]::NewGuid().ToString('N')
         Write-Output "::stop-commands::$token"
         foreach ($entry in $entries) {
