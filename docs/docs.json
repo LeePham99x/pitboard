@@ -37,6 +37,7 @@
           "install",
           "install/other-ways",
           "install/verify",
+          "install/code-signing-policy",
           "install/upgrade-from-0-3-0",
           "install/remove"
         ]

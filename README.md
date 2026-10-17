@@ -50,7 +50,9 @@ brew install --cask datlechin/tap/pitboard-app   # the app
 The app includes the command line, so install one or the other.
 [Install Pitboard](https://docs.usepitboard.com/install) covers Cargo, release files and
 updates. [Verify a download](https://docs.usepitboard.com/install/verify) checks the script
-before you run it.
+before you run it. The
+[code signing policy](https://docs.usepitboard.com/install/code-signing-policy) says which
+files are signed and who approves a signature.
 
 Removing Pitboard without `pitboard uninstall` leaves its parked logins behind. Follow
 [Remove Pitboard](https://docs.usepitboard.com/install/remove).
