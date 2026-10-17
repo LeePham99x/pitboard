@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { closest, elements, parse, walk } from "./html.mjs";
+import { closest, elements, parse, textOf, walk } from "./html.mjs";
 
 const DIST = new URL("../dist/", import.meta.url).pathname;
 const FONTS = new URL("../src/assets/fonts/", import.meta.url).pathname;
@@ -207,6 +207,24 @@ function checkLinks(pages) {
   return problems;
 }
 
+// SignPath's terms for its open source certificate name both pages.
+const SIGNING_POLICY = "https://docs.usepitboard.com/install/code-signing-policy";
+export function checkSigningPolicy(pages) {
+  const problems = [];
+  for (const name of ["index.html", "download.html"]) {
+    const linked = pages
+      .get(name)
+      ?.all.some(
+        (e) =>
+          e.tag === "a" &&
+          e.attrs.href === SIGNING_POLICY &&
+          textOf(e).trim() === "Code signing policy",
+      );
+    if (!linked) problems.push(`${name} has no Code signing policy link`);
+  }
+  return problems;
+}
+
 export function checkVersions(pages) {
   const problems = [];
   const seen = new Set();
@@ -339,7 +357,7 @@ function main() {
     pages.set(f, page);
     report.push(`${f} ${size}`);
   }
-  problems.push(...checkLinks(pages), ...checkVersions(pages));
+  problems.push(...checkLinks(pages), ...checkVersions(pages), ...checkSigningPolicy(pages));
 
   console.log(
     `guard: html gzipped ${report.join(", ")}; css ${css}; js ${js}; fonts ${fontBytes} in ${fonts.length}`,
