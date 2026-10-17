@@ -879,14 +879,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
-    hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
-    tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
-    `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
-    `test-certificate.ps1` makes the throwaway certificate it and the runner facts sign with,
-    `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
-    checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
-    `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
-    `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
+    hands on, in a zip or an MSI, and of a sparse package, `pack-session-bundle.ps1` sums,
+    zips and encrypts the session bundle, and `test-windows-release.ps1` tests the first three
+    on zips and the fourth with a stand-in for age. `check-windows-app.ps1` checks the Windows
+    app's Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package
+    beside it, `test-certificate.ps1` makes the throwaway certificate it and the runner facts
+    sign with, `extract-msi.ps1` extracts an MSI's administrative image and
+    `check-windows-msi.ps1` checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with
+    the WiX that built it, `read-assembly.ps1` reads a value from a .NET assembly's metadata,
+    and `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
     package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
