@@ -905,7 +905,7 @@ class SessionGate(unittest.TestCase):
                 if key:
                     self.assertNotIn(key, done.stderr)
 
-    def test_a_branch_at_a_beta_or_later_gives_both_msis_their_numbers(self):
+    def test_a_branch_at_a_beta_or_later_gives_both_msis_their_numbers_and_the_key(self):
         for version, msi, file, msi_b in (
             ("1.0.0-beta.1", "1.0.0.1", "1.0.0.1", "1.0.0.2"),
             ("1.1.0-beta.2", "1.1.0.2", "1.1.0.2", "1.1.0.3"),
@@ -919,7 +919,8 @@ class SessionGate(unittest.TestCase):
                 self.assertEqual(done.stderr, "")
                 self.assertEqual(
                     done.stdout,
-                    f"version={version}\nmsi={msi}\nfile={file}\npackage={file}\nmsi-b={msi_b}\n",
+                    f"version={version}\nmsi={msi}\nfile={file}\npackage={file}\nmsi-b={msi_b}\n"
+                    f"recipient={self.KEY}\n",
                 )
 
     def test_it_takes_three_arguments(self):

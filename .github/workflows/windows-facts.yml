@@ -235,14 +235,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The key comes from the event, not env:, whose values the log prints: a secret key pasted in
+      # its place must never reach the log.
       - name: A branch at 1.0.0-beta.1 or later, no cfg, and the owner's age key
         id: gate
         env:
           REF: ${{ github.ref }}
-          KEY: ${{ inputs.age-recipient }}
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          sh .github/scripts/session-gate.sh "$REF" "$version" "$KEY" >> "$GITHUB_OUTPUT"
+          key=$(pwsh -NoProfile -Command $'(Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs.\'age-recipient\'' | tr -d '\r')
+          sh .github/scripts/session-gate.sh "$REF" "$version" "$key" >> "$GITHUB_OUTPUT"
       - name: age, from its release, checked against the SHA-256 pinned here
         id: age
         shell: pwsh
@@ -359,7 +361,7 @@ jobs:
         env:
           TRIPLE: ${{ matrix.triple }}
           AGE: ${{ steps.age.outputs.exe }}
-          KEY: ${{ inputs.age-recipient }}
+          KEY: ${{ steps.gate.outputs.recipient }}
         run: >
           ./.github/scripts/pack-session-bundle.ps1 -Folder (Join-Path $env:RUNNER_TEMP 'session')
           -Name "session-build-$env:TRIPLE" -Out (Join-Path $env:RUNNER_TEMP 'sealed') -Age $env:AGE -Recipient $env:KEY

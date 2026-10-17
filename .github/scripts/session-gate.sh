@@ -43,7 +43,7 @@ refuse_cfg() {
 refuse_cfg RUSTFLAGS "${RUSTFLAGS-}"
 refuse_cfg CARGO_ENCODED_RUSTFLAGS "${CARGO_ENCODED_RUSTFLAGS-}"
 
-# Never printed: a secret key pasted in its place would reach the run's log.
+# A refusal never prints it: a secret key pasted in its place would reach the run's log.
 not_a_key() {
   echo "the key given is not an age public key, which age-keygen prints as age1 and 58" \
     "characters of Bech32's alphabet: the session bundle leaves the runner only encrypted" >&2
@@ -59,3 +59,4 @@ file=$(printf '%s\n' "$numbers" | sed -n 's/^file=//p')
 echo "version=$version"
 printf '%s\n' "$numbers"
 echo "msi-b=${file%.*}.$((${file##*.} + 1))"
+echo "recipient=$key"
