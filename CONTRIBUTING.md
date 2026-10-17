@@ -318,15 +318,15 @@ the run. `ARCHITECTURE.md` records what it measured.
 
 With `-f session=true -f age-recipient=<age public key>`, the workflow builds the session
 bundle for [the session machine](AGENTS.md#the-session-machine) instead. Only the owner
-dispatches it, on the draft pull request that holds `Release <version>`
-([Prepare a release](RELEASING.md#prepare-a-release)). `.github/scripts/session-gate.sh`
-refuses anything but a branch at 1.0.0-beta.1 or later, the cfg, and a key that is not an age
-public key. Each machine's bundle holds its MSI as a beta with no signer ships it. The ARM64
-one adds the zip, a second MSI one higher in ProductVersion's fourth field, which installs
-over the first, `pitboard-probe` and `Pitboard.Probe`. `pack-session-bundle.ps1` lists every
-file in `SHA256SUMS`, zips the bundle and encrypts it with age to that key. GitHub keeps the
-two artifacts a day. Download, decrypt and unzip them on the Mac, then delete them from
-GitHub:
+dispatches it, on the branch that holds `Release <version>`, its draft pull request's branch
+once one is open ([Prepare a release](RELEASING.md#prepare-a-release)).
+`.github/scripts/session-gate.sh` refuses anything but a branch at 1.0.0-beta.1 or later, the
+cfg, and a key that is not an age public key. Each machine's bundle holds its MSI as a beta
+with no signer ships it. The ARM64 one adds the zip, a second MSI one higher in
+ProductVersion's fourth field, which installs over the first, `pitboard-probe` and
+`Pitboard.Probe`. `pack-session-bundle.ps1` lists every file in `SHA256SUMS`, zips the bundle
+and encrypts it with age to that key. GitHub keeps the two artifacts a day. Download, decrypt
+and unzip them on the Mac, then delete them from GitHub:
 
 ```sh
 gh run download <run id> -n session-build-aarch64-pc-windows-msvc \
