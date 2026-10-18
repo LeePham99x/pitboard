@@ -94,6 +94,22 @@ protected like `main` and cut from the last 0.x tag. A release runs the `release
 commit it tags, so that tag must hold the release kinds above: release a 0.x with them
 before 1.0.0-beta.1.
 
+## Before 1.0.0-beta.1
+
+Tag the first release with Windows files only once each of these holds:
+
+- No Rust or C# test waits on a later Windows pull request: none is ignored or excluded on
+  Windows with a `W<id>` reason.
+- The session on [the session machine](AGENTS.md#the-session-machine) is done, on the bundle
+  built from `Release 1.0.0-beta.1`, and `ARCHITECTURE.md` records what it measured, with the
+  build and the date.
+- The last 0.x release is published with the release kinds above, and `release/0.N` is cut
+  from its tag.
+- `windows-release` passed on the pull request that holds `Release 1.0.0-beta.1`.
+- `WINDOWS_UPDATE_PUBLIC_KEY` and the `windows-update` environment's
+  `WINDOWS_UPDATE_PRIVATE_KEY` are set, as [the Windows update key](#the-windows-update-key)
+  says, and `WINDOWS_SIGNER` is unset.
+
 ## What a release publishes
 
 Each release has a tarball of the command line for each target of the `build` job, the app
@@ -390,14 +406,16 @@ refuses to build one.
 
 Before the first 1.x tag:
 
-1. On a macOS user account that holds neither macOS key, run `bin/generate_keys --account
-   pitboard-windows` from Sparkle's release archive at the version `apps/macos/project.yml`
-   pins. Put the public key it prints in `WINDOWS_UPDATE_PUBLIC_KEY`.
+1. Run `bin/generate_keys --account pitboard-windows` from Sparkle's release archive at the
+   version `apps/macos/project.yml` pins. Put the public key it prints in
+   `WINDOWS_UPDATE_PUBLIC_KEY`.
 2. `bin/generate_keys --account pitboard-windows -x <file>` writes the private key. Make the
-   `windows-update` environment with a deployment rule for `v*` tags, put the file's contents
-   in its `WINDOWS_UPDATE_PRIVATE_KEY`, and delete the file.
+   `windows-update` environment with a deployment rule for `v*` tags and put the file's
+   contents in its `WINDOWS_UPDATE_PRIVATE_KEY`.
 3. Keep an offline copy of the private key apart from the signer's account, the macOS update
    key and the Developer ID certificate.
+4. Delete the file, and the key from the login keychain with `security
+   delete-generic-password -s https://sparkle-project.org -a pitboard-windows`.
 
 WinSparkle's keys and signatures are Sparkle's Ed25519 in base64. For every Windows release,
 betas and release candidates included, `windows-update-sign` signs each MSI with `sign_update`
