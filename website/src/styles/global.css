@@ -152,7 +152,6 @@
   --color-win-flyout-edge: light-dark(rgb(0 0 0 / 0.059), rgb(0 0 0 / 0.2));
   --color-win-text: light-dark(rgb(0 0 0 / 0.894), #ffffff);
   --color-win-text-2: light-dark(rgb(0 0 0 / 0.62), rgb(255 255 255 / 0.773));
-  --color-win-text-3: light-dark(rgb(0 0 0 / 0.447), rgb(255 255 255 / 0.529));
   --color-win-text-off: light-dark(rgb(0 0 0 / 0.361), rgb(255 255 255 / 0.365));
   --color-win-text-inverse: light-dark(#ffffff, rgb(0 0 0 / 0.894));
   --color-win-accent: light-dark(#0067c0, #4cc2ff);
