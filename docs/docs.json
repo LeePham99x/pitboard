@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "linden",
   "name": "Pitboard",
-  "description": "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see what each Claude Code and Codex account has left.",
+  "description": "Switch AI coding accounts and see their usage.",
   "colors": {
     "primary": "#166534",
     "light": "#4DD170",

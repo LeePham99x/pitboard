@@ -3,6 +3,7 @@
 import satori from "satori";
 import sharp from "sharp";
 import { bar, line } from "../data/glyphs.ts";
+import { TAGLINE } from "../data/site.ts";
 import { clock, tools, type Tool } from "../data/world.ts";
 import { isInUse, listed, menuBarTitle, menuLine, menuTitle } from "./words.ts";
 
@@ -22,9 +23,18 @@ const HEADLINE_TOP = 271;
 const U = 1.85;
 const pt = (n: number) => n * U;
 const MENU: Tool[] = ["claude", "codex"];
-const HEADLINE = "Switch AI coding accounts without signing out.";
 
 export type Card = { kind: "home" } | { kind: "page"; label: string; title: string };
+
+export const cards = {
+  home: { kind: "home" },
+  changelog: {
+    kind: "page",
+    label: "Changelog",
+    title: "What each release added, changed and fixed",
+  },
+  download: { kind: "page", label: "Download", title: "Pitboard for macOS, Windows and Linux" },
+} satisfies Record<string, Card>;
 
 export interface Assets {
   css: string;
@@ -301,7 +311,7 @@ function tree(card: Card, assets: Assets, c: Colors): El {
           lineHeight: "64px",
           letterSpacing: -1.12,
         }),
-        HEADLINE,
+        TAGLINE,
       ),
     ],
     [menuBar(assets, c)],
@@ -319,19 +329,22 @@ export function describe(card: Card): string {
     );
     return `${nameOf(tool)} has ${rows.join(" and ")}`;
   });
-  return `Pitboard's logo above the line: ${HEADLINE} On the right, Pitboard's menu open below its menu bar item, ${menuBarTitle("after")}. ${sections.join("; ")}; each account shows its plan and how much of each limit it has used.`;
+  return `Pitboard's logo above the line: ${TAGLINE} On the right, Pitboard's menu open below its menu bar item, ${menuBarTitle("after")}. ${sections.join("; ")}; each account shows its plan and how much of each limit it has used.`;
 }
 
-export async function render(card: Card, assets: Assets): Promise<Buffer> {
-  const c = darkColors(assets.css);
+export function layout(card: Card, assets: Assets, o: { embedFont?: boolean } = {}) {
   // satori types its input as a React element, which this tree has the shape of
-  const out = await satori(tree(card, assets, c) as never, {
+  return satori(tree(card, assets, darkColors(assets.css)) as never, {
     width: WIDTH,
     height: HEIGHT,
     fonts: assets.fonts,
+    embedFont: o.embedFont ?? true,
   });
-  return sharp(Buffer.from(out))
-    .flatten({ background: c["page"] })
+}
+
+export async function render(card: Card, assets: Assets): Promise<Buffer> {
+  return sharp(Buffer.from(await layout(card, assets)))
+    .flatten({ background: darkColors(assets.css)["page"] })
     .removeAlpha()
     .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer();

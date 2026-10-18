@@ -20,7 +20,7 @@ import WinSettings from "../components/fig/win/Settings.astro";
 import Feature from "../components/home/Feature.astro";
 import Row from "../components/home/Row.astro";
 import { sessions } from "../data/sessions.ts";
-import { DOCS, REPO } from "../data/site.ts";
+import { DOCS, REPO, TAGLINE } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
 import { highlight, siteData } from "../lib/data.ts";
 import { application } from "../lib/schema.ts";
@@ -99,8 +99,8 @@ const jsonLd = [
 ---
 
 <Base
-  title="Pitboard: switch AI coding tools between your accounts"
-  description="Switch your AI coding tools between your own accounts without signing out, and see what each account has left."
+  title="Pitboard: switch AI coding accounts and see their usage"
+  description="Switch AI coding accounts without signing out and see their usage, on macOS, Windows and Linux."
   current="home"
   path="/"
   image="home"
@@ -114,9 +114,7 @@ const jsonLd = [
       >
         <div class="pt-6">
           <h1 class="font-mono text-h1 text-strong max-sm:text-h1-sm" id="hero-title">Pitboard</h1>
-          <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">
-            Switch your AI coding tools between your own accounts without signing out.
-          </p>
+          <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">{TAGLINE}</p>
           <p class="mt-4 hidden max-w-measure text-note text-pretty text-muted os-mobile:block">
             Pitboard runs on a Mac, a Windows PC or a Linux computer.
           </p>
