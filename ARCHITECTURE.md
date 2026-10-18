@@ -699,7 +699,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
-    `FixtureStartupItem`. `SettingsViewModel` is what the settings page shows and sends,
+    `FixtureStartupItem`. It reads `StartupApproved\Run`, which only Settings > Apps >
+    Startup writes: where that turned the `Run` value off, the switch is off and held back,
+    and its note says to turn it on there. `SettingsViewModel` is what the settings page shows and sends,
     beyond the model's words its own, each warm-up account a `WarmAccountRow`, and
     `Versions` the app's own version. `AccountsViewModel`, `ActivityViewModel` and `MachineViewModel` are what
     the accounts, activity and This PC pages bind to, told part by part as `AppModel` tells
@@ -739,9 +741,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
-    the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
-    exits with no window and no single-instance key. On `--unregister-share`, which the
-    MSI's removal and rollback run, `SharePackage` removes `PitboardShare`'s package
+    the `Run` value naming this `Pitboard.exe` and the notifications' registration: it asks
+    `UnregisterAll`, then deletes the `AppUserModelId` key and the class it names by name,
+    which `UnregisterAll` left on the session machine. It exits with no window and no
+    single-instance key. On `--unregister-share`, which the MSI's full removal and rollback
+    run, `SharePackage` removes `PitboardShare`'s package
     registered for this folder, the same way. `App` is the composition root: it makes
     the model, over this PC or in a Debug build started with `PITBOARD_FIXTURE` a fixture's,
     the icon, the notifications, the updater, `AccountWindows`, `IconCommands` and
@@ -779,14 +783,19 @@ window loads its site, and whatever the site's pages load, as a browser would.
     either replaces the other. Settings offers no Modify, since there is one feature and no
     UI. `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a
     final and `X.Y.Z.N` for beta N, as `windows-versions.sh` gives it, and Windows Installer
-    compares three fields. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
+    compares three fields. It removes the old product once the new one's files are in place
+    (`afterInstallExecute`), so `bin\pitboard.exe` is never missing in an upgrade, which needs
+    each component to keep the GUID WiX makes from its key path; `REINSTALLMODE` `emus`
+    replaces a file of an equal version too, as the other architecture's MSI of one version
+    has. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
     `Pitboard.exe --unregister` and removes `%LOCALAPPDATA%\Pitboard App` through WiX's
     `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is the command line's and stays.
     `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes, starts `Pitboard.exe --updated`
     once the install ends. Built with `PitboardShareSigned`, for a signed `PitboardShare.msix`,
     it also carries `PitboardShare.exe`, its package and logos. It runs
     `PitboardShare.exe --register` on each install, and `Pitboard.exe --unregister-share` on
-    each removal and on the rollback of an install that registered, each ignored on failure.
+    each full removal and on the rollback of an install that registered, each ignored on
+    failure.
     `Pitboard.Installer.Tests` reads the built MSI's tables with WiX's DTF, and asks the
     `pitboard_ffi.dll` of the administrative image `msiexec /a` extracts whether it opens.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
@@ -2424,8 +2433,8 @@ Every run met the same images: windows-2025 (Windows Server 2025 Datacenter, 24H
 probe as the job's user and as three throwaway users it makes: a standard user, a standard
 user whose name is not ASCII, and a member of Administrators. Its Bun is 1.4.3, the one
 Claude Code 2.1.300 embeds, with proper-lockfile 4.1.2. A fact holds on both images unless it
-names one. Until the session measures a real PC, the Windows face reads a token as Microsoft
-documents it, and these are the only tokens it has been seen to read.
+names one. The tokens these list, and the session machine's, are the only ones the Windows face
+has been seen to read.
 
 Accounts and tokens:
 
@@ -2812,10 +2821,102 @@ The images:
 - Neither image holds Codex's `%ProgramData%\OpenAI\Codex`, Claude Code's
   `C:\Program Files\ClaudeCode` or its policy keys.
 
+### The session machine
+
+Measured by hand on 18 October 2026 on the session machine: Windows 11 Pro 26H2, build 26300,
+UBR 9711, on ARM64, an OSMates VM, with Defender's real-time protection on and no exclusion.
+The bundle was `windows-facts.yml` session run 39114824545 at 91bd8452, the commit that holds
+`Release 1.0.0-beta.1`, its sums checked on the Mac and in the guest. Claude Code 2.1.302 and
+Codex 0.163.0 came from npm 24.20.0, installed with `winget`; `pitboard-conformance` passed on
+both. The account was an administrator that signs in with a password, its programs run
+limited at medium integrity. The probe's reports are kept out of the repository, which names
+no account.
+
+Steps 9 and 10, Codex's sign-ins and the ChatGPT app, were not done, nor the optional 15 and
+16. What they measure waits on the next session: `codex_login_is_driveable`,
+`codex_runs_inside_the_chatgpt_app`, `windows_credman_cache`, W18's package family and AUMID,
+and the rows of [Documented, not measured](#documented-not-measured) that name them.
+
+Logon and homes:
+
+- The interactive logon is type 2. Its token is limited, not elevated, at medium integrity,
+  owns what it makes, and reads as `not_elevated`, as Microsoft documents a split token.
+- `FOLDERID_Profile` and `FOLDERID_LocalAppData` are the profile and its `AppData\Local`; the
+  profile is local, its name ASCII. Only `Path` is spelled, and `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR`, `PITBOARD_HOME` and `HOME` are unset. The WebView2 Runtime is
+  155.0.4283.62.
+- Windows PowerShell 5.1's execution policy is `Restricted`, so npm's `claude.ps1` and
+  `npm.ps1` refuse to run there, and `claude.cmd` runs.
+
+Smart App Control and SmartScreen:
+
+- With Smart App Control on, the unsigned `pitboard.exe` marked as downloaded ran, and the
+  unsigned MSI opened from File Explorer installed with no prompt; no CodeIntegrity event was
+  logged, before or after a restart.
+- With it off, the MSI so marked met SmartScreen's "Windows protected your PC", Publisher
+  "Unknown publisher", passed with **More info** and **Run anyway**.
+
+The MSI, `Pitboard.exe` and the notification area:
+
+- It installs per user with no UAC prompt, context 2: `%LOCALAPPDATA%\Programs\Pitboard` with
+  `Pitboard.exe` at its top and `pitboard.exe` alone in `bin`, the Start shortcut with the
+  AppUserModelID `Pitboard.Pitboard`, `HKCU\Software\Classes\pitboard`, and `bin` last on the
+  user `PATH`, which a terminal opened afterwards finds. Settings > Apps lists it as Pitboard,
+  publisher Pitboard, with no Modify; its Uninstall key reads under HKLM's view. Pitboard does
+  not start after the install.
+- A first launch from Start opens the window. The icon starts in the overflow, named and
+  tipped "Pitboard", or the account in use and its usage once there is one, and keeps its
+  place on the taskbar across a restart. Closing the window hides it. Win+B, Enter and
+  Shift+F10 reach the icon and its menu, which opens at the icon in the taskbar's mode.
+- Registering for notifications worked with no Singleton package: it wrote
+  `HKCU\Software\Classes\AppUserModelId\Pitboard.Pitboard` with `DisplayName`, `IconUri` and
+  `CustomActivator`. A login replaced outside Pitboard is said in the window alone.
+- `msiexec /i` of a second MSI, one higher in the fourth field, upgraded 1.0.0.1 to 1.0.0.2
+  with no UAC prompt in 7 s. The default schedule removed the old product first, so
+  `bin\pitboard.exe` was missing for about 2 s: 9 of 416 runs of the status line every 250 ms
+  found no `pitboard`. The MSI now removes it after the new one's files are in place.
+- `msiexec /fa` with Pitboard open had Restart Manager close it, not forced, and start it
+  again within 4 s; the icon kept its place.
+- With start at sign-in on, a sign-in started Pitboard with no window, its icon there 7 s
+  after. Settings > Apps > Startup listed it; turning it off there wrote 01 as the first byte
+  of `StartupApproved\Run`'s `Pitboard` and kept the `Run` value.
+- `pitboard uninstall` with the app open deleted `%LOCALAPPDATA%\Pitboard`, and the app made
+  it again; `uninstall` now refuses while the app is open. Removing it in Settings took the install folder, the
+  shortcut, the link scheme, the `PATH` entry, the `Run` value, `%LOCALAPPDATA%\Pitboard App`
+  and the task, and left the `AppUserModelId` key and `StartupApproved\Run`'s value, Windows'
+  own.
+- The x64 MSI installed under emulation: `Pitboard.exe` and `bin\pitboard.exe` are machine
+  0x8664, and both ran.
+
+Claude Code 2.1.302:
+
+- `pitboard enroll --sign-in` drove Claude Code's manual flow, the code pasted back; the app's
+  **Add account** drove its localhost flow, with nothing to paste. Neither left a scratch slot
+  in Credential Manager.
+- A running session took a switch's `.credentials.json` at its next prompt
+  (`windows_file_adoption`). Process Monitor saw it open its files sharing all three access
+  modes, and no sharing violation on any `.claude` path (`windows_open_sharing`).
+- A `settings.json` that starts with a byte order mark is read
+  (`settings_byte_order_mark`), and its first move of a login into Credential Manager lost it
+  (`credman_move_lost_a_piece`). A sign-in into an empty Credential Manager wrote one whole
+  item of 524 bytes.
+- It ran the status line in `powershell.exe` with neither PowerShell 7 nor Git installed, in
+  `pwsh.exe` with PowerShell 7.6.7, and in Git 2.55.0's `bash.exe`
+  (`windows_statusline_powershell`), an account named `bé` shown whole. Twenty runs of
+  `pitboard statusline` took 16 ms each from PowerShell, and 132 ms each through Git Bash.
+
+Daily renewal:
+
+- `pitboard schedule install` registered `\Pitboard\Renew <SID suffix>` to run as the person,
+  interactive only, least privilege, hidden. Run at once, it started `pitboard.exe renew
+  --scheduled` under svchost with no console window, last result 0x0, and doctor said when it
+  last ran.
+
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 and 16 October 2026. W27 reviews the list.
+on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
+[The session machine](#the-session-machine) measured.
 
 | Fact | Source | Why not measured |
 |---|---|---|
@@ -2830,9 +2931,6 @@ on 15 and 16 October 2026. W27 reviews the list.
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
-| `ITaskFolder::RegisterTask` with `TASK_CREATE_OR_UPDATE`, an interactive token and no `userId` registers the task's XML for the person registering it | [RegisterTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskfolder-registertask) | RF-E1 registered the same principal through `RegisterTaskDefinition`, and no build for tests asks Task Scheduler; the session's step 13 registers one. |
-| A task's `LastTaskResult` is its program's exit code, or one of Task Scheduler's `SCHED_S_` and `SCHED_E_` codes, such as `SCHED_S_TASK_RUNNING` (`0x00041301`) and `SCHED_S_TASK_QUEUED` (`0x00041325`) | [Task Scheduler error and success constants](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants) | RF-E1 read only 0 and `SCHED_S_TASK_HAS_NOT_RUN` (`0x00041303`); the session's step 13 reads a run's. |
-| A task's `LastRunTime` is a `DATE`, days since 30 December 1899, on the machine's own clock | [get_LastRunTime](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-get_lastruntime), [DATE](https://learn.microsoft.com/en-us/cpp/atl-mfc-shared/date-type) | The runners' clocks are UTC, which reads the same either way; the session's step 13 reads one. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
 | `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |
@@ -2853,27 +2951,18 @@ on 15 and 16 October 2026. W27 reviews the list.
 | `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
 | Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
 | A launch redirected to the running copy carries the second copy's arguments | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No `windows-app` run has passed `AccountPickerTests` yet: in run 38825074643 the running copy crashed on a theme brush as the link reached it. |
-| A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
-| A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | No runner opens the menu from the icon; the session's step A2 opens it and looks at it. |
-| A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
-| Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
 | A self-contained unpackaged app runs without the Windows App Runtime's packages | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps) | Both images hold the 2.5.1.0 package (run 38804714545); the session's step A5 records `Get-AppxPackage *WindowsAppRuntime*` on a clean PC. |
-| A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
 | A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
 | A program given identity by a package with an external location gets a share with `AppInstance.GetActivatedEventArgs`, from Windows 10 2004 on | [Get activation info for packaged apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/get-activation-info-for-packaged-apps) | No runner registers Pitboard's package or shares a page; the 1.0 session's P1 shares from Edge, Chrome and Firefox. |
 | The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
 | A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | CF8 registered PitboardShare's with its certificate in `LocalMachine\TrustedPeople`, and had the probe's refused with it in the user's own `TrustedPeople` (runs 38928930271 and 38882775456); no runner tried another publisher or `<msix>` element. P1 registers the signed release's. |
 | `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
-| A dual-purpose package installs per user with no UAC prompt when `ALLUSERS` is 2 and `MSIINSTALLPERUSER` 1; per user, `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs`, HKMU is HKCU, and Windows Installer empties `ALLUSERS` | [Single package authoring](https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring), [Installation context](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) | CI only extracts the MSI; the session's steps A1, A7 and A8 install, upgrade and remove it. |
-| An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | CI only extracts the MSI; the session's step A1 runs `where.exe pitboard` in a new terminal and an open one, and A8 removes it. |
-| Windows Installer closes a running program through Restart Manager in an upgrade, and starts again after it one that called `RegisterApplicationRestart` | [Using Windows Installer with Restart Manager](https://learn.microsoft.com/en-us/windows/win32/msi/using-windows-installer-with-restart-manager) | No runner installs over a running Pitboard; the session's step A7 does, with `statusline` running from `bin`. |
-| The RemoveRegistry table deletes values when its component is installed, never when it is removed | [RemoveRegistry table](https://learn.microsoft.com/en-us/windows/win32/msi/removeregistry-table) | The session's step A8 removes Pitboard with start at sign-in on, and finds the `Run` value gone through `--unregister`. |
+| An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | The session of 18 October 2026 measured all but a terminal open before the install, which it could not read. |
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
-| Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
 | `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
 | A process that `PitboardShare.exe` starts through `LaunchUriAsync` carries none of its package identity | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | From the probe's identity process, `LaunchUriAsync` of a link scheme the user registered gave false and started no handler (run 38928930271); its children carried none (CF8 under [Windows](#windows)). P2 measures Pitboard's. |
 
@@ -3227,8 +3316,9 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Git Bash as Claude Code does and says whether a `pitboard.exe` is on the PATH it runs
   with, which a session started from the same shell hands its status line too. It warns of
   none only where `statusLine.command` in the managed settings or the person's own starts
-  with a bare `pitboard`: a full path, or a script of the person's, needs no such PATH.
-  Session step 12 confirms which PowerShell runs.
+  with a bare `pitboard`: a full path, or a script of the person's, needs no such PATH. It
+  finds PowerShell as Claude Code does too, and names PowerShell 7 or Windows PowerShell;
+  the session machine saw Claude Code 2.1.302 run each where it found it.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
