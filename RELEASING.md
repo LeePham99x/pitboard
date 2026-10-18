@@ -406,14 +406,16 @@ refuses to build one.
 
 Before the first 1.x tag:
 
-1. On a macOS user account that holds neither macOS key, run `bin/generate_keys --account
-   pitboard-windows` from Sparkle's release archive at the version `apps/macos/project.yml`
-   pins. Put the public key it prints in `WINDOWS_UPDATE_PUBLIC_KEY`.
+1. Run `bin/generate_keys --account pitboard-windows` from Sparkle's release archive at the
+   version `apps/macos/project.yml` pins. Put the public key it prints in
+   `WINDOWS_UPDATE_PUBLIC_KEY`.
 2. `bin/generate_keys --account pitboard-windows -x <file>` writes the private key. Make the
-   `windows-update` environment with a deployment rule for `v*` tags, put the file's contents
-   in its `WINDOWS_UPDATE_PRIVATE_KEY`, and delete the file.
+   `windows-update` environment with a deployment rule for `v*` tags and put the file's
+   contents in its `WINDOWS_UPDATE_PRIVATE_KEY`.
 3. Keep an offline copy of the private key apart from the signer's account, the macOS update
    key and the Developer ID certificate.
+4. Delete the file, and the key from the login keychain with `security
+   delete-generic-password -s https://sparkle-project.org -a pitboard-windows`.
 
 WinSparkle's keys and signatures are Sparkle's Ed25519 in base64. For every Windows release,
 betas and release candidates included, `windows-update-sign` signs each MSI with `sign_update`
