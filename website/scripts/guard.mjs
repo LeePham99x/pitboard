@@ -245,24 +245,57 @@ export function checkSigningPolicy(pages) {
   return problems;
 }
 
+const RELEASE_FILE = /\/releases\/download\/v(\d+\.\d+\.\d+(?:-beta\.\d+)?)\/([^/?#]+)$/;
+const WINDOWS_FILE =
+  /-windows-(?:x64|arm64)\.msi(?:\.cdx\.json)?$|-pc-windows-msvc\.zip(?:\.cdx\.json)?$|^appcast-windows\.xml$/;
+
+// macOS and Linux files come from the newest full release on /changelog, Windows files from it or
+// from a beta /changelog shows above it, and each SHA256SUMS from one of the two.
 export function checkVersions(pages) {
   const problems = [];
-  const seen = new Set();
-  for (const [, p] of pages) {
-    for (const e of p.all) {
-      const m = /\/releases\/download\/v(\d+\.\d+\.\d+)\//.exec(e.attrs.href ?? "");
-      if (m) seen.add(m[1]);
-    }
+  const links = [...pages.values()].flatMap((p) =>
+    p.all.flatMap((e) => {
+      const m = RELEASE_FILE.exec(e.attrs.href ?? "");
+      return m ? [{ version: m[1], file: m[2], text: textOf(e).trim() }] : [];
+    }),
+  );
+  const versionsOf = (want) => [...new Set(links.filter(want).map((l) => l.version))];
+  const isSums = (l) => l.file === "SHA256SUMS";
+  const isWindows = (l) => WINDOWS_FILE.test(l.file);
+  const macLinux = versionsOf((l) => !isSums(l) && !isWindows(l));
+  const windows = versionsOf(isWindows);
+
+  const articles = (pages.get("changelog.html")?.all ?? [])
+    .filter((e) => e.tag === "article" && /^v\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(e.attrs.id ?? ""))
+    .map((e) => e.attrs.id.slice(1));
+  const at = articles.findIndex((v) => !v.includes("-"));
+  const newest = articles[at] ?? macLinux[0];
+  const above = articles.slice(0, Math.max(at, 0));
+
+  if (macLinux.length !== 1)
+    problems.push(
+      `macOS and Linux downloads name ${macLinux.length} versions: ${macLinux.join(", ")}`,
+    );
+  else if (macLinux[0] !== newest)
+    problems.push(
+      `/changelog starts at ${newest}, the macOS and Linux downloads at ${macLinux[0]}`,
+    );
+  if (windows.length > 1)
+    problems.push(`Windows downloads name ${windows.length} versions: ${windows.join(", ")}`);
+  else if (windows.length === 1 && windows[0] !== newest && !above.includes(windows[0]))
+    problems.push(
+      `Windows downloads name ${windows[0]}, neither ${newest} nor a beta /changelog shows above it`,
+    );
+  for (const v of versionsOf(isSums)) {
+    if (!macLinux.includes(v) && !windows.includes(v))
+      problems.push(`SHA256SUMS links name ${v}, which no other download names`);
   }
-  // a published beta goes above the release /download offers
-  const newest = pages
-    .get("changelog.html")
-    ?.all.find((e) => e.tag === "article" && /^v\d+\.\d+\.\d+$/.test(e.attrs.id ?? ""))
-    ?.attrs.id?.slice(1);
-  if (seen.size !== 1)
-    problems.push(`download links name ${seen.size} versions: ${[...seen].join(", ")}`);
-  if (newest && !seen.has(newest))
-    problems.push(`/changelog starts at ${newest}, the downloads at ${[...seen]}`);
+  for (const { version, text } of links.filter((l) => l.text.startsWith("Download for"))) {
+    const beta = version.includes("-");
+    if (beta && !text.includes("(beta)"))
+      problems.push(`"${text}" downloads ${version}, a beta, without saying (beta)`);
+    if (!beta && text.includes("(beta)")) problems.push(`"${text}" says (beta) for ${version}`);
+  }
   return problems;
 }
 
