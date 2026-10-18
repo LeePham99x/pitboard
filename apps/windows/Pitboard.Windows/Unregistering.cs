@@ -7,7 +7,7 @@ namespace Pitboard.Windows;
 // table of the MSI removes. Each is tried whatever became of the other.
 public static class Unregistering
 {
-    public static void Run(Build build, string exe, IRunKey run, IAppNotifications notifications, Func<bool> registered)
+    public static void Run(Build build, string exe, IRunKey run, IAppNotifications notifications, INotificationRegistration registration)
     {
         if (build is Build.Debug)
         {
@@ -28,7 +28,7 @@ public static class Unregistering
         try
         {
             // UnregisterAll makes the AppUserModelId key as it looks for the class the key names.
-            if (registered())
+            if (registration.Activator() is not null)
             {
                 notifications.UnregisterAll();
             }
