@@ -1,9 +1,5 @@
 ---
-// Pitboard's icon menu over Claude Code in Windows Terminal; with `demo`, site.ts plays a switch:
-// work's row shows its tooltip before the click, and afterwards the icon's tooltip names the
-// account in use. `submenu` opens a site's accounts, and `updates` draws a full release's menu,
-// which offers Check for updates. The menu opens up from the icon, its bottom on the taskbar and
-// its right edge near the screen's, which is approx until read on Windows.
+// IconMenu.cs's menu over Windows Terminal; where it opens is approx until read on Windows.
 import IconMenu from "./IconMenu.astro";
 import Taskbar from "./Taskbar.astro";
 import Terminal from "./Terminal.astro";
@@ -27,9 +23,7 @@ const status =
     : statusLine("after");
 const rule =
   "bg-linear-to-b from-win-term-dim to-win-term-dim bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
-// Where the pointer is: on the icon at rest, then on the middle of work's row; or, still, on the
-// middle of the open site's row. Check for updates makes the menu a row taller, so each sits 32
-// higher in it. WinUI draws a tooltip centred above the pointer.
+// WinUI centres a tooltip above the pointer, and Check for updates' row puts each row 32 higher.
 const pointer = submenu
   ? updates
     ? "translate-x-160 -translate-y-225"
