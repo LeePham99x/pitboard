@@ -1309,13 +1309,20 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
                 v.as_object().map_or(0, serde_json::Map::len)
             ),
         ),
-        Err(Error::ClaudeConfigMissing { path }) if !facts.claude_program => fail(
+        // Claude Code writes it on its first run, and a switch does without it.
+        Err(Error::ClaudeConfigMissing { path }) if !facts.claude_program => warn(
             "config_file",
             "config file",
             format!(
                 "Claude Code is not installed where Pitboard looks, and {} does not exist",
                 path.display()
             ),
+            run_claude_once(facts),
+        ),
+        Err(missing @ Error::ClaudeConfigMissing { .. }) => warn(
+            "config_file",
+            "config file",
+            missing.to_string(),
             run_claude_once(facts),
         ),
         Err(e) => fail(
