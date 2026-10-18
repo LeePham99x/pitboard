@@ -1,0 +1,83 @@
+---
+title: "Environment variables"
+description: "Every environment variable Pitboard reads, on which systems, and what each changes."
+---
+
+The command line reads your shell's environment. The app reads the one it was started with, not a terminal's: on macOS what launchd gives, which `launchctl setenv` adds to, and on Windows your account's and the machine's variables. Daily renewal gets its scheduler's, plus what [`schedule`](/reference/maintenance-commands#schedule) gives it.
+
+A variable that names a folder must hold a full path: [`home_not_absolute`](/reference/errors#the-pitboard-directory) lists which may be empty. On Windows, a variable's name has no case: `PATH` and `Path` are one variable.
+
+## Variables
+
+| Variable | Systems | Read by | Effect |
+| --- | --- | --- | --- |
+| `HOME` | macOS, Linux | Both | Your home, the `~` in every path of [Files](/reference/files). Unset, your account's home. Where it names another folder than your account's own, Pitboard leaves Claude Desktop alone: see [Claude Desktop files](/reference/files#claude-desktop-files). |
+| `USERPROFILE` | Windows | Both | Your home, as `HOME` is elsewhere. Pitboard's directory and Claude Code's files are found from it. Unset, your account's profile folder. |
+| `PITBOARD_HOME` | All | Both | Pitboard's directory, in place of `~/.pitboard`, or `%LOCALAPPDATA%\Pitboard` on Windows. Daily renewal renews the default directory whatever this says. |
+| `PITBOARD_NO_ARGV` | macOS | Both | `1`: Pitboard never writes a login on `security`'s argument line. See [Large logins on macOS](/security#large-logins-on-macos). On Windows it changes nothing, and `pitboard doctor` warns while it is set. |
+| `PITBOARD_API_BASE` | All | Both | For Pitboard's tests. An `http` URL on a loopback IP address gets Pitboard's requests. |
+| `PITBOARD_CLAUDE`, `PITBOARD_CODEX` | All | Both | The `claude` or `codex` program to sign in with, in place of the one Pitboard finds. Empty counts as unset. |
+| `CLAUDE_CONFIG_DIR` | All | Both | Claude Code's config directory, in place of `~/.claude`. The config file, `.credentials.json`, the locks and `settings.json` follow it, and the keychain or Credential Manager item's name gains a suffix. |
+| `CLAUDE_SECURESTORAGE_CONFIG_DIR` | All | Both | The directory that holds `.credentials.json` and the locks and picks the item's suffix, in place of the config directory. Set but empty: `~/.claude` and `Claude Code-credentials`. |
+| `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` | Windows | Both | `1`: Claude Code keeps its login in Credential Manager, with `.credentials.json` behind it, as [Use Pitboard with Claude Code](/guides/claude-code#before-you-add-a-claude-code-account) says. Read from the environment and from the `env` of Claude Code's settings. |
+| `CLAUDE_CODE_GIT_BASH_PATH` | Windows | Both | The Git Bash that Claude Code runs its status line in, which `pitboard doctor`'s `status line` check names. |
+| `USER` | macOS | Both | The keychain account of Claude Code's item and of parked logins. Unset or empty, your login name. With a character other than letters, digits, `.`, `_` and `-`, `claude-code-user`. |
+| `USERNAME` | Windows | Command line | Your user name, which `pitboard doctor --json` hides. |
+| `CLAUDE_CODE_CUSTOM_OAUTH_URL` | All | Both | Not empty: Pitboard does not act on Claude Code. See [Custom OAuth endpoint](#custom-oauth-endpoint). |
+| `ANTHROPIC_API_KEY` and eight more | All | Both | Not empty: Claude Code ignores the login Pitboard switches. See [Variables that override the login](#variables-that-override-the-login). |
+| `CLAUDE_CODE_HOVER_REST` | All | Both | `1` or `true`: `pitboard doctor`'s `storage v5` check reads as on. Measured in 2.1.278, the login stays in the keychain. |
+| `CODEX_HOME` | All | Both | Codex's directory, in place of `~/.codex`, or on Windows `.codex` in your profile folder. Empty counts as unset. On Windows, one that names no folder stops Codex, and Pitboard refuses with `codex_home_missing`. |
+| `CODEX_INSTALL_DIR` | Windows | App | Where Codex's installer put `codex`, which the app looks in after the `PATH`. Unset, `Programs\OpenAI\Codex\bin` in `LOCALAPPDATA`. |
+| `LOCALAPPDATA` | Windows | Both | `pitboard doctor --json` writes its path as `%LOCALAPPDATA%`. The app looks for `claude` and `codex` in WinGet's links folder there. |
+| `APPDATA` | Windows | App | The app looks for `claude` and `codex` in npm's folder there. |
+| `ProgramFiles`, `SystemRoot` | Windows | Both | Where `pitboard doctor` looks for PowerShell 7 and Windows PowerShell, which Claude Code runs its status line in. |
+| `PATHEXT` | Windows | Both | The extensions a program found on the `PATH` may have, such as `claude.cmd`. |
+| `OneDrive`, `OneDriveCommercial`, `OneDriveConsumer` | Windows | Both | Folders OneDrive syncs, which Pitboard's directory may not be in: see [The Pitboard directory](/reference/files#the-pitboard-directory). |
+| `SUDO_UID` | macOS, Linux | Both | Not empty, as `sudo` sets it: Pitboard refuses every change with `elevated`. See [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
+| `PATH` | All | Both | Where `claude` and `codex` are looked for, in directories named from the root. On macOS, the app asks your login shell for its `PATH` instead, and on Windows it reads the `PATH` your account and the machine set: see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). |
+| `SHELL` | macOS | App | The login shell the app asks for its `PATH`. Unset or empty, your account's shell. |
+| `NO_COLOR` | All | Command line | Not empty: no colour in the output. For the status line, see [`statusline`](/reference/integration-commands#statusline). |
+| `XPC_SERVICE_NAME` | macOS | Command line | Set by launchd. `com.datlechin.pitboard.renew` marks a run of daily renewal. |
+| `WSL_DISTRO_NAME` | Linux | Command line | Set by WSL, even empty, as Codex 0.163.0 reads it. `pitboard doctor` says it runs inside WSL, as its `wsl` check. |
+| `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, each also in lower case | All | Both | The proxy for Pitboard's requests. See [Proxies](#proxies). |
+
+## Custom OAuth endpoint
+
+`CLAUDE_CODE_CUSTOM_OAUTH_URL` counts when set in the environment or in an `env` block of Claude Code's settings. As read in Claude Code 2.1.284 and 2.1.289, Claude Code then keeps its login and config under names Pitboard does not read. Pitboard refuses these with `custom_oauth_endpoint`:
+
+- `enroll`, `use`, `forget`, `rename` and `stow` of a Claude Code account, and the same in the app.
+- `repair` and `uninstall`.
+- `abandon` of a Claude Code switch, and every change while one is interrupted.
+
+Changes to Codex accounts go ahead. The automatic switch decides nothing for Claude Code, and says so with [`custom_oauth_endpoint`](/reference/automatic-switching#when-it-decides-nothing).
+
+## Variables that override the login
+
+As read in Claude Code 2.1.278, each of these makes Claude Code ignore the login Pitboard switches:
+
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_GATEWAY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`, `CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD`.
+
+Pitboard reads them from its environment and from Claude Code's settings, along with `apiKeyHelper`. While any is set, changes to Claude Code accounts go ahead but warn with `auth_overridden`, as does `pitboard doctor`. The automatic switch holds back.
+
+## Proxies
+
+Pitboard's requests go through the proxy these variables name. It does not read the system's proxy settings. On Windows, `pitboard doctor` says where Windows' proxy settings send Codex's requests while `HTTPS_PROXY` is unset.
+
+- Pitboard reads `ALL_PROXY`, `all_proxy`, `HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY`, then `http_proxy`, and takes the first that holds a proxy's address.
+- An address with no scheme is `http://`.
+- Pitboard goes through `http://` and `https://` proxies, not SOCKS ones: `socks://`, `socks4://`, `socks4a://`, `socks5://` and `socks5h://`.
+- While a SOCKS proxy is named, each request to a host outside `NO_PROXY` fails before anything is sent, naming the variable.
+- Pitboard then follows no redirect.
+
+`NO_PROXY` lists the hosts Pitboard reaches directly, separated by commas. Pitboard reads `no_proxy` only while `NO_PROXY` is unset. Entries ignore case, and a space is part of an entry.
+
+| Entry | Hosts it names |
+| --- | --- |
+| `*` | Every host |
+| `*example.com` | Every host ending with `example.com`, `badexample.com` included |
+| `.example.com` | Every host ending with `.example.com` |
+| `api*` | Every host starting with `api` |
+| `10.` | Every host starting with `10.` |
+| Anything else | That host alone |
+
+Pitboard reaches these hosts without looking up the proxy's name, which need not resolve.

@@ -16,7 +16,7 @@ Claude Code's folder is `~/.claude`, or the folder `CLAUDE_CONFIG_DIR` names. [C
 
 ## Before you add a Claude Code account
 
-A variable such as `ANTHROPIC_API_KEY`, or `apiKeyHelper` in Claude Code's settings, makes Claude Code ignore the login Pitboard switches. Changes to Claude Code accounts still go ahead, with the warning `auth_overridden`. [Variables that override the login](/reference/files#variables-that-override-the-login) lists them all. To check, run:
+A variable such as `ANTHROPIC_API_KEY`, or `apiKeyHelper` in Claude Code's settings, makes Claude Code ignore the login Pitboard switches. Changes to Claude Code accounts still go ahead, with the warning `auth_overridden`. [Variables that override the login](/reference/environment-variables#variables-that-override-the-login) lists them all. To check, run:
 
 ```sh
 pitboard doctor
@@ -24,7 +24,7 @@ pitboard doctor
 
 The `what a session authenticates with` line warns and names the setting when Claude Code signs in another way.
 
-While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, Pitboard refuses every change to Claude Code accounts with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/files#custom-oauth-endpoint) says why.
+While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, Pitboard refuses every change to Claude Code accounts with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/environment-variables#custom-oauth-endpoint) says why.
 
 On Windows, Claude Code keeps its login in Credential Manager where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where a feature it caches turns that store on, as read in Claude Code 2.1.301. The `credential store` line of `pitboard doctor` names the store Pitboard reads. Where Credential Manager holds a Claude Code login and nothing Pitboard reads says Claude Code uses it, Pitboard refuses every change until you set the variable in `settings.json`:
 

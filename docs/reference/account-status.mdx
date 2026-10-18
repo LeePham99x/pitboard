@@ -3,7 +3,9 @@ title: "Account status"
 description: "What each mark and line under an account means, in the app's menu and window and in `pitboard status`."
 ---
 
-[Check what each account has left](/guides/usage) shows where each appears.
+[Check what each account has left](/guides/usage) shows where each appears. The App column gives the menu bar app's words.
+
+On Windows, the app writes the same words in sentence case, such as **In use** and **Sign in again**. Pitboard's menu marks the account in use with a dot, and the line the menu bar app shows under an account, such as **5-hour 59%, weekly 73%**, is that item's tooltip.
 
 | App | Command line | Meaning |
 | --- | --- | --- |
@@ -31,4 +33,4 @@ description: "What each mark and line under an account means, in the app's menu 
 | **Switching** in the menu, a progress indicator in the window | None | A switch to the account is running. |
 | The email address as the line in the menu, no bars in the window | `no usage known yet`, or `no usage known` and a reason | Pitboard has no reading of the account. [Stale codes](/reference/errors#stale-codes) explains each reason. |
 
-With [`CLAUDE_CONFIG_DIR`](/reference/files#environment-variables) set, a line such as `for the credential slot Claude Code-credentials-1a2b3c4d` follows the Claude Code accounts. It names the keychain item that `signed in` refers to.
+With [`CLAUDE_CONFIG_DIR`](/reference/environment-variables) set, a line such as `for the credential slot Claude Code-credentials-1a2b3c4d` follows the Claude Code accounts. It names the item in the keychain, or in Credential Manager on Windows, that `signed in` refers to.

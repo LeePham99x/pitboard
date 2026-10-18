@@ -56,7 +56,7 @@ export function menuLine(a: Account, moment: Moment): string {
   return line[0].toUpperCase() + line.slice(1);
 }
 
-// The in-use account closest to running out, a tie going to Claude Code (reference/app#menu-bar-item).
+// The in-use account closest to running out, a tie going to Claude Code (reference/mac-app#menu-bar-item).
 export function menuBarTitle(moment: Moment): string {
   const fullest = (a: Account) => Math.max(...a.limits.map((l) => l.used));
   const shown = (["claude", "codex"] as Tool[])

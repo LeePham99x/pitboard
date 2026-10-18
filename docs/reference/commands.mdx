@@ -11,7 +11,7 @@ Commands follow the order of `pitboard --help`.
 | [`enroll`](/reference/account-commands#enroll) | Add an account: the one signed in, or another with `--sign-in` |
 | [`use`](/reference/account-commands#use) | Switch a tool to an enrolled account |
 | [`forget`](/reference/account-commands#forget) | Forget an account and delete its parked login |
-| [`stow`](/reference/recovery-commands#stow) | Put away a login file behind the keychain |
+| [`stow`](/reference/recovery-commands#stow) | Put away a login file behind the keychain or Credential Manager |
 | [`abandon`](/reference/recovery-commands#abandon) | Give up on an interrupted switch or Claude Desktop move, keeping every login |
 | [`repair`](/reference/recovery-commands#repair) | Account for every parked login on this computer |
 | [`adopt`](/reference/recovery-commands#adopt) | Take over a Pitboard directory from another computer |
@@ -28,7 +28,7 @@ Commands follow the order of `pitboard --help`.
 | [`help`](#global-options) | Print the help of `pitboard` or of a command |
 | [`manpage`](/reference/integration-commands#manpage) | Print the man page |
 
-`pitboard --help` leaves out `manpage`.
+`pitboard --help` leaves out `manpage`. On Windows, the help names no Claude Desktop label, since Pitboard switches Claude Desktop on macOS only.
 
 ## Default command
 
@@ -88,6 +88,8 @@ Against the enrolled accounts, a label fails with exit status 1:
 | The prefix is not a tool | `provider_unknown` |
 | `enroll` or `rename` chose a label another account of the tool holds | `label_taken` |
 
+On Windows and Linux, `pitboard enroll` refuses a `desktop/` label with `live_store_unsupported` and exit status 3.
+
 ## Output
 
 | What | Where |
@@ -116,11 +118,11 @@ With standard input or standard error redirected, as in a script or `2>/dev/null
 
 With nobody to ask, these answer as they do with `--yes`:
 
-- `pitboard stow` with nothing behind the keychain, as always on Linux, or with a login of an account not enrolled.
+- `pitboard stow` with nothing behind the keychain or Credential Manager, as always on Linux, or with a login of an account not enrolled.
 - `pitboard forget` with a label that names no account. It fails with that label's error, such as `account_unknown`.
-- `pitboard forget` and `pitboard uninstall` as root or under `sudo`, and `pitboard stow` there once it finds a file to put away. Each fails with `elevated`.
+- `pitboard forget` and `pitboard uninstall` where Pitboard may change nothing, and `pitboard stow` there once it finds a file to put away. Each fails with the reason: `elevated` as root, under `sudo` or elevated on Windows, and `system_too_old` on a Windows older than Windows 11 24H2.
 
-With nobody to ask, a refusal found only once the command runs shows only with `--yes`. Without it, the answer is `confirmation_needed`. Forgetting the account in use is one, with `cannot_forget_active_account`. `identity_unverifiable`, `custom_oauth_endpoint` and `app_open` are others.
+With nobody to ask, a refusal found only once the command runs shows only with `--yes`. Without it, the answer is `confirmation_needed`. Forgetting the account in use is one, with `cannot_forget_active_account`. `identity_unverifiable`, `custom_oauth_endpoint`, `app_open` and `uninstall`'s `pitboard_open` are others.
 
 `pitboard use` asks only where Anthropic refuses the refresh token of Claude Code's login in use for good, before it puts the account's login in its place. It asks and takes `--yes` as these do. With nobody to ask and no `--yes`, it changes nothing and exits 1 with [`live_login_refused`](/reference/errors#switching).
 

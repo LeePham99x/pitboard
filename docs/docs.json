@@ -100,7 +100,9 @@
           "reference/json-output",
           "reference/errors",
           "reference/files",
-          "reference/app",
+          "reference/environment-variables",
+          "reference/mac-app",
+          "reference/windows-app",
           "reference/account-windows",
           "reference/settings",
           "reference/automatic-switching"
@@ -147,6 +149,13 @@
       "canonical": "https://docs.usepitboard.com"
     }
   },
+  "redirects": [
+    {
+      "source": "/reference/app",
+      "destination": "/reference/mac-app",
+      "permanent": true
+    }
+  ],
   "errors": {
     "404": {
       "redirect": false,
