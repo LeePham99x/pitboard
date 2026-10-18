@@ -1013,48 +1013,7 @@ fn adopt(pitboard: &Pitboard) -> Report {
 
 fn repair(pitboard: &Pitboard) -> Report {
     changed("repair", pitboard.repair(), |r| {
-        let human = if r.is_empty() {
-            "Every parked login here is accounted for.\n".to_string()
-        } else {
-            let mut said = String::new();
-            for (label, _) in &r.given_back {
-                said.push_str(&format!(
-                    "Gave {} back a parked login that nothing named.\n",
-                    paint(BOLD, label)
-                ));
-            }
-            if !r.deleted.is_empty() {
-                said.push_str(&format!(
-                    "Deleted {} parked login(s) Pitboard wrote down here and nothing \
-                     recorded.\n",
-                    r.deleted.len()
-                ));
-            }
-            if !r.strangers.is_empty() {
-                said.push_str(&format!(
-                    "{} parked login(s) here belong to no account Pitboard knows and were \
-                     not written down by this one. Left alone: the keychain is shared by \
-                     the whole machine, and they may be another Pitboard's.\n",
-                    r.strangers.len()
-                ));
-            }
-            if !r.unreadable.is_empty() {
-                said.push_str(&format!(
-                    "{} could not be read this time and were left alone. Unlock the \
-                     keychain and run this again.\n",
-                    r.unreadable.len()
-                ));
-            }
-            if !r.set_aside.is_empty() {
-                said.push_str(&format!(
-                    "Set aside {} folder(s) in {} that hold what no account here can take. \
-                     Nothing was deleted; `pitboard doctor` lists them.\n",
-                    r.set_aside.len(),
-                    pitboard.parks_folder().display()
-                ));
-            }
-            said
-        };
+        let human = repaired(pitboard_core::host::OS, &r, &pitboard.parks_folder());
         (
             json!({
                 "given_back": r.given_back.iter().map(|(label, service)| json!({
@@ -1069,6 +1028,54 @@ fn repair(pitboard: &Pitboard) -> Report {
             human,
         )
     })
+}
+
+fn repaired(
+    _os: pitboard_core::host::Os,
+    r: &pitboard_core::switch::Reclaimed,
+    parks: &std::path::Path,
+) -> String {
+    if r.is_empty() {
+        return "Every parked login here is accounted for.\n".to_string();
+    }
+    let mut said = String::new();
+    for (label, _) in &r.given_back {
+        said.push_str(&format!(
+            "Gave {} back a parked login that nothing named.\n",
+            paint(BOLD, label)
+        ));
+    }
+    if !r.deleted.is_empty() {
+        said.push_str(&format!(
+            "Deleted {} parked login(s) Pitboard wrote down here and nothing \
+             recorded.\n",
+            r.deleted.len()
+        ));
+    }
+    if !r.strangers.is_empty() {
+        said.push_str(&format!(
+            "{} parked login(s) here belong to no account Pitboard knows and were \
+             not written down by this one. Left alone: the keychain is shared by \
+             the whole machine, and they may be another Pitboard's.\n",
+            r.strangers.len()
+        ));
+    }
+    if !r.unreadable.is_empty() {
+        said.push_str(&format!(
+            "{} could not be read this time and were left alone. Unlock the \
+             keychain and run this again.\n",
+            r.unreadable.len()
+        ));
+    }
+    if !r.set_aside.is_empty() {
+        said.push_str(&format!(
+            "Set aside {} folder(s) in {} that hold what no account here can take. \
+             Nothing was deleted; `pitboard doctor` lists them.\n",
+            r.set_aside.len(),
+            parks.display()
+        ));
+    }
+    said
 }
 
 fn log(pitboard: &Pitboard, lines: usize) -> Report {
@@ -1625,6 +1632,45 @@ mod tests {
                 .command,
             Some(Command::Stow { yes: true })
         ));
+    }
+
+    // Parked logins are keychain items the whole Mac shares, and on Linux and Windows files in
+    // the vault of this Pitboard directory, which no keychain locks.
+    #[test]
+    fn repair_says_why_it_left_parked_logins_alone_in_the_words_of_its_system() {
+        use pitboard_core::host::Os;
+        let left = pitboard_core::switch::Reclaimed {
+            strangers: vec!["pitboard-park-a-1".into()],
+            unreadable: vec!["pitboard-park-b-1".into()],
+            ..Default::default()
+        };
+        let said = |os| repaired(os, &left, std::path::Path::new("/x/parks"));
+        let stranger = "1 parked login(s) here belong to no account Pitboard knows and were not \
+                        written down by this one. Left alone:";
+        assert_eq!(
+            said(Os::MacOs),
+            format!(
+                "{stranger} the keychain is shared by the whole machine, and they may be another \
+                 Pitboard's.\n\
+                 1 could not be read this time and were left alone. Unlock the keychain and run \
+                 this again.\n"
+            )
+        );
+        assert_eq!(
+            said(Os::Windows),
+            format!(
+                "{stranger} Pitboard deletes only a parked login it wrote down.\n\
+                 1 could not be read this time and were left alone. Run this again from a \
+                 desktop session.\n"
+            )
+        );
+        assert_eq!(
+            said(Os::Linux),
+            format!(
+                "{stranger} Pitboard deletes only a parked login it wrote down.\n\
+                 1 could not be read this time and were left alone.\n"
+            )
+        );
     }
 
     /// A command that deletes something asks at a terminal, for a person. With nobody to ask,
