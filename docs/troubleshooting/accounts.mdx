@@ -26,7 +26,7 @@ Unlock it, then run the command again. Meanwhile `pitboard doctor` marks each pa
 
 ## Windows says Credential Manager cannot be reached
 
-A sign-in over SSH with a key has no Credential Manager, so where Claude Code keeps its login there, Pitboard stops with `credential_store_locked`:
+A sign-in over SSH with a key cannot reach Credential Manager, so Pitboard cannot tell where Claude Code keeps its login, and stops with `credential_store_locked`:
 
 ```text
 error: the credential store could not be read: Credential Manager cannot be reached from this logon, as in a sign-in over SSH with a key; run Pitboard from a desktop session

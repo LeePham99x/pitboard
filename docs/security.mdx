@@ -57,4 +57,4 @@ Past it, Pitboard passes the login as an argument, which another process running
 
 With `PITBOARD_NO_ARGV=1`, Pitboard refuses such a write. It then parks no Codex account, and leaves a parked login that size unrenewed. Opened from Finder or at login, the app lacks your shell's `PITBOARD_NO_ARGV`. A renewal schedule installed while it is set keeps it.
 
-On Windows, no login goes on an argument line: Credential Manager takes one of any size in pieces. `PITBOARD_NO_ARGV` changes nothing there, and `pitboard doctor` warns while it is set.
+On Windows, no login goes on an argument line: Credential Manager takes a large login in up to 256 pieces, about 450 KB. A larger one stops a change with [`credential_too_large`](/reference/errors#parked-logins). `PITBOARD_NO_ARGV` changes nothing there, and `pitboard doctor` warns while it is set.

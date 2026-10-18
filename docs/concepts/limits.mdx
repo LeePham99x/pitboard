@@ -29,7 +29,7 @@ An automatic switch would miss the `codex` session it was meant to keep going, s
 
 Pitboard moves only logins you already hold, between its own store and the place each tool reads them. It has no way to share an account between people.
 
-Anthropic's and OpenAI's terms decide whether you may use several subscriptions this way. As read on 4 October 2026, Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use) page says it does not permit third-party developers to offer Claude.ai login in their own applications, or to route requests through Free, Pro or Max plan credentials on behalf of their users. It adds that developers may not collect, store or intermediate Claude.ai credentials or session tokens, and that sign-in to a Claude account must complete through Anthropic's own flow.
+Anthropic's and OpenAI's terms decide whether you may use several subscriptions this way. As read on 4 October 2026, Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use) page sets these terms for third-party developers. They may not offer Claude.ai login in their own applications. They may not route requests through Free, Pro or Max plan credentials on behalf of their users. They may not collect, store or intermediate Claude.ai credentials or session tokens. Sign-in to a Claude account must complete through Anthropic's own flow.
 
 A claude.ai [account window](/concepts/account-windows) signs in on claude.ai's own pages. On macOS, WebKit keeps the sign-in's cookies under Pitboard's bundle identifier, and on Windows, WebView2 keeps them in Pitboard's app data folder. A Claude Desktop switch renames Claude's files, its session cookie among them, into a folder of Pitboard's and back. Whether Anthropic counts either under those terms is not known.
 
@@ -45,4 +45,4 @@ A claude.ai [account window](/concepts/account-windows) signs in on claude.ai's 
 - Claude Desktop on Windows and Linux.
 - A third-party deployment of Claude, which keeps its data in `Claude-3p`, and Claude's own account switcher, as read in Claude 2.7032.0. Pitboard moves no login while Claude's cookie store holds two sessions of one name.
 - Changes from a sign-in over SSH with a key on Windows, which reaches neither Credential Manager nor the key that seals Pitboard's parked logins. [When the store cannot be reached](/concepts/identity#when-the-store-cannot-be-reached) says what Pitboard does.
-- Google sign-in and passkeys in an account's window. [Sign in](/guides/account-windows#sign-in) gives the ways that work.
+- Google sign-in in an account's window, and passkeys there on macOS. [Sign in](/guides/account-windows#sign-in) gives the ways that work.
