@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { sessions } from "./sessions.ts";
+import { printed, sessions, type Session } from "./sessions.ts";
 import { account } from "./world.ts";
 import { plainText } from "../lib/changelog.ts";
+import { platforms } from "../lib/platform.ts";
 import { listed, menuLine, statusHeading, statusLine, statusLines } from "../lib/words.ts";
 
 const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
@@ -41,7 +42,7 @@ test("the menu says an account's limits as the usage guide does", () => {
 });
 
 test("pitboard use work prints what the Quickstart prints", () => {
-  const ours = text(sessions.use.output);
+  const ours = text(printed(sessions.use, "macos"));
   assert.deepEqual(ours, block(docs("quickstart.mdx"), ours[0], ours.length));
 });
 
@@ -49,7 +50,7 @@ test("pitboard watch starts with the line the command line writes", () => {
   const source = joined(repo("crates/pitboard/src/watch.rs"));
   assert.ok(source.includes("limit of the one in use reaches {}%{}. Stop with Ctrl-C."));
   assert.ok(source.includes('", and warms up {} from {}"'));
-  const [start, watching] = text(sessions.watch.output);
+  const [start, watching] = text(printed(sessions.watch, "macos"));
   assert.match(
     start,
     /^Watching Claude Code\. Pitboard switches to another of your accounts once a limit of the one in use reaches \d+%, and warms up \w+ from \d\d:\d\d to \d\d:\d\d\. Stop with Ctrl-C\.$/,
@@ -65,7 +66,7 @@ test("pitboard watch starts with the line the command line writes", () => {
 });
 
 test("pitboard warm lists accounts as the warm-up guide does", () => {
-  const ours = text(sessions.warm.output);
+  const ours = text(printed(sessions.warm, "macos"));
   const guide = block(docs("guides/warm-up.mdx"), ours[0], 3);
   assert.equal(ours[0], guide[0]);
   assert.match(ours[1], /^  \w+\s+on   warms up again at \d\d:\d\d$/);
@@ -76,7 +77,8 @@ test("pitboard warm lists accounts as the warm-up guide does", () => {
 
 test("pitboard log writes lines in the shape log shows", () => {
   const shape = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+07:00  [\w-]+\s+[\w/]+  ok$/;
-  for (const line of text(sessions.log.output)) assert.match(line, shape);
+  for (const p of platforms)
+    for (const line of text(printed(sessions.log, p))) assert.match(line, shape);
   const page = docs("reference/maintenance-commands.mdx");
   assert.ok(page.split("\n").filter((l) => shape.test(l)).length >= 3);
 });
@@ -103,7 +105,7 @@ test("the menu says a Claude Desktop account has no usage read, as Account statu
 });
 
 test("pitboard use desktop/home prints what Claude Desktop's guide prints", () => {
-  const ours = text(sessions.useDesktop.output);
+  const ours = text(printed(sessions.useDesktop, "macos"));
   const theirs = block(
     docs("guides/claude-desktop.mdx"),
     "Switched to desktop/home; desktop/work is parked.",
@@ -118,5 +120,69 @@ test("every listing gives the account in use first", () => {
   for (const moment of ["before", "after"] as const) {
     const [first] = listed("claude", moment);
     assert.equal(first.label, moment === "before" ? "personal" : "work");
+  }
+});
+
+test("a session prints, on each system it runs on, its lines for every system and those for that one", () => {
+  for (const [name, session] of Object.entries<Session>(sessions)) {
+    for (const p of session.on ?? platforms) {
+      const lines = printed(session, p);
+      assert.ok(lines.length > 0, `${name} prints on ${p}`);
+      assert.deepEqual(
+        lines,
+        session.output.filter((l) => !l.on || l.on.includes(p)).map((l) => l.html),
+      );
+    }
+  }
+});
+
+test("pitboard lists Claude Desktop on macOS alone, where Pitboard supports it", () => {
+  const source = repo("crates/pitboard-core/src/provider/mod.rs");
+  assert.ok(source.includes("(ProviderId::Desktop, Os::MacOs) => true"));
+  assert.ok(source.includes("(ProviderId::Desktop, Os::Linux | Os::Windows) => false"));
+  for (const session of [sessions.status, sessions.statusBefore]) {
+    const mac = text(printed(session, "macos"));
+    const desktop = mac.indexOf(plainText(statusHeading("desktop")));
+    assert.ok(desktop > 0);
+    for (const p of ["windows", "linux"] as const) {
+      assert.deepEqual(text(printed(session, p)), mac.slice(0, desktop - 1));
+    }
+  }
+});
+
+test("pitboard watch on Windows starts with no warm-up, as no account is turned on there", () => {
+  const source = joined(repo("crates/pitboard/src/watch.rs"));
+  assert.ok(source.includes("overview.halted != Some(Halt::Unbuilt)"));
+  const [start, watching] = text(printed(sessions.watch, "windows"));
+  assert.match(
+    start,
+    /^Watching Claude Code\. Pitboard switches to another of your accounts once a limit of the one in use reaches \d+%\. Stop with Ctrl-C\.$/,
+  );
+  assert.ok(
+    docs("guides/automatic-switching.mdx").split("\n").includes(start.replace(/\d+%/, "90%")),
+  );
+  assert.equal(watching, text(printed(sessions.watch, "macos"))[1]);
+  assert.deepEqual(text(printed(sessions.watch, "linux")), text(printed(sessions.watch, "macos")));
+});
+
+test("warm-ups run on macOS and Linux, and Claude Desktop switches on macOS", () => {
+  assert.deepEqual(sessions.warm.on, ["macos", "linux"]);
+  assert.deepEqual(sessions.useDesktop.on, ["macos"]);
+  assert.throws(() => printed(sessions.warm, "windows"));
+  assert.throws(() => printed(sessions.useDesktop, "linux"));
+});
+
+test("pitboard log lists only the changes each system makes, each verb padded to the longest", () => {
+  const log = (p: (typeof platforms)[number]) => text(printed(sessions.log, p));
+  assert.match(log("macos").join("\n"), /desktop\/home/);
+  assert.match(log("macos").join("\n"), /warm-up/);
+  assert.doesNotMatch(log("linux").join("\n"), /desktop\//);
+  assert.match(log("linux").join("\n"), /warm-up/);
+  assert.doesNotMatch(log("windows").join("\n"), /desktop\/|warm-up/);
+  assert.ok(repo("crates/pitboard/src/main.rs").includes("ui::pad(&e.verb, width)"));
+  for (const p of platforms) {
+    const verbs = log(p).map((l) => /^\S+ {2}(\S+ *) {2}\S+ {2}ok$/.exec(l)![1]);
+    const width = Math.max(...verbs.map((v) => v.trim().length));
+    for (const v of verbs) assert.equal(v.length, width, `${p}: "${v}"`);
   }
 });

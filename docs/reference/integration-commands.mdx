@@ -60,7 +60,7 @@ Without `NO_COLOR`, the line has colour through a pipe too. With `NO_COLOR` set,
 
 With `--json`, [`data.line`](/reference/json-output#data-by-command) holds the line without colour.
 
-It sends no request and never reads the keychain or a login. It reads Pitboard's own files, and Claude Code's config only to check whether the record is unconfirmed.
+It sends no request and never reads the keychain, Credential Manager or a login. It reads Pitboard's own files, and Claude Code's config only to check whether the record is unconfirmed.
 
 It writes two files in the [Pitboard directory](/reference/files#the-pitboard-directory):
 
@@ -81,7 +81,7 @@ One risk is known. A session on an account no reading holds, such as an unenroll
 
 A session's numbers only move a limit the account's last answer from Anthropic gave. Once that limit resets, they start its next period. Pitboard records only limits that moved since the session's last run. An idle session passes the same numbers again, which can predate an answer that lowered a percentage.
 
-As root or under `sudo`, it writes nothing.
+Where Pitboard may change nothing, as root, under `sudo`, elevated on Windows or on a Windows older than Windows 11 24H2, it writes nothing.
 
 It exits 0 whatever its input. When a home variable is empty or not a full path, it prints no line and exits 1 with [`home_not_absolute`](/reference/errors#the-pitboard-directory).
 
@@ -95,7 +95,7 @@ pitboard statusline
 work 46%·70%  personal 12%·40%  side ?·? (3h 00m)
 ```
 
-[Show usage in Claude Code's status line](/guides/status-line) adds it to Claude Code.
+[Show usage in Claude Code's status line](/guides/status-line) adds it to Claude Code, and says which shell runs it on Windows.
 
 ## `completions`
 
@@ -116,9 +116,10 @@ It writes the script to standard output. With `--json`, it prints no script and 
 | The install script | `bash-completion/completions/pitboard`, `zsh/site-functions/_pitboard` and `fish/vendor_completions.d/pitboard.fish`, under `~/.local/share` |
 | Either Homebrew cask | `etc/bash_completion.d/pitboard`, `share/zsh/site-functions/_pitboard` and `share/fish/vendor_completions.d/pitboard.fish`, under `$(brew --prefix)` |
 | Release tarball | `completions/pitboard.bash`, `pitboard.zsh` and `pitboard.fish` |
-| The app | The same three files in `Pitboard.app/Contents/Resources/completions/` |
+| The macOS app | The same three files in `Pitboard.app/Contents/Resources/completions/` |
+| Windows zip | `completions/pitboard.ps1` and `completions/pitboard.bash`, for PowerShell and Git Bash |
 
-No release includes the elvish or PowerShell script.
+No release includes the elvish script, and the Windows installer includes no script.
 
 bash-completion 2.2 or later and fish 4 load the install script's files from those folders. zsh loads its file once `~/.zshrc` has these lines:
 
@@ -157,7 +158,9 @@ It is one page, with the sections `NAME`, `SYNOPSIS`, `DESCRIPTION`, `OPTIONS`, 
 | The install script | `~/.local/share/man/man1/pitboard.1` |
 | Either Homebrew cask | `share/man/man1/pitboard.1`, under `$(brew --prefix)` |
 | Release tarball | `pitboard.1` |
-| The app | `Pitboard.app/Contents/Resources/man/pitboard.1` |
+| The macOS app | `Pitboard.app/Contents/Resources/man/pitboard.1` |
+
+No Windows release includes the man page.
 
 `man` finds the install script's page while `~/.local/bin` is on your `PATH`, on macOS and with man-db.
 

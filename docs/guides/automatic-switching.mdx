@@ -11,28 +11,30 @@ Pitboard switches early because open Claude Code sessions take up to about 33 se
 ## Turn it on
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     In **Settings** > **Limits**, under **Before an account runs out**, turn on **Switch Claude Code automatically**. Set the share with **Switch when a limit reaches 95%**.
-
-    The app switches only while it is open, and posts a notification for each switch. [Switch Claude Code automatically](/reference/settings#switch-claude-code-automatically) lists what the line under the share says.
   </Tab>
-  <Tab title="Command line">
-    Run `pitboard watch` and leave the terminal open. It switches whether the app's setting is on or off, at its own share: `--at`, 95 by default.
-
-    ```sh
-    pitboard watch --at 90
-    ```
-
-    ```text
-    Watching Claude Code. Pitboard switches to another of your accounts once a limit of the one in use reaches 90%. Stop with Ctrl-C.
-    13:41:05 Watching work: 82% of its 5-hour limit, as of 13:41.
-    14:02:11 Switched Claude Code from work to personal: work has used 91% of its 5-hour limit. Claude Code sessions already running follow within 33 seconds.
-    14:02:13 Watching personal: 12% of its 5-hour limit, as of 14:01.
-    ```
-
-    [`watch`](/reference/account-commands#watch) lists every line it prints.
+  <Tab title="Windows">
+    Right-click Pitboard's icon in the notification area and select **Settings**. Under **Limits**, turn on **Switch Claude Code automatically**, then expand it and set the share in **Switch when a limit reaches**.
   </Tab>
 </Tabs>
+
+The app switches only while it is open, and posts a notification for each switch. [Switch Claude Code automatically](/reference/settings#switch-claude-code-automatically) lists what the line under the setting says.
+
+On the command line, run `pitboard watch` and leave the terminal open. It switches whether the app's setting is on or off, at its own share: `--at`, 95 by default.
+
+```sh
+pitboard watch --at 90
+```
+
+```text
+Watching Claude Code. Pitboard switches to another of your accounts once a limit of the one in use reaches 90%. Stop with Ctrl-C.
+13:41:05 Watching work: 82% of its 5-hour limit, as of 13:41.
+14:02:11 Switched Claude Code from work to personal: work has used 91% of its 5-hour limit. Claude Code sessions already running follow within 33 seconds.
+14:02:13 Watching personal: 12% of its 5-hour limit, as of 14:01.
+```
+
+[`watch`](/reference/account-commands#watch) lists every line it prints.
 
 The app, `pitboard watch` and `pitboard use` can run at once and never make two switches from one reading. [What a switch does](/concepts/switching#what-a-switch-does) explains why. [`pitboard log`](/reference/maintenance-commands#log) records each automatic switch as `auto-switch`.
 
@@ -54,9 +56,9 @@ If no account qualifies, nothing moves. Once the account runs out, the app offer
 
 When Pitboard stays on the account or cannot decide, the app posts a notification and `pitboard watch` prints the reason. [Automatic switching](/reference/automatic-switching) lists each reason and what ends it.
 
-A run that cannot read the keychain, such as `pitboard watch` over SSH, fails only its own tries. See [macOS says the keychain is locked](/troubleshooting/accounts#macos-says-the-keychain-is-locked).
+On macOS, a run that cannot read the keychain, such as `pitboard watch` over SSH, fails only its own tries: see [macOS says the keychain is locked](/troubleshooting/accounts#macos-says-the-keychain-is-locked). On Windows, the same holds for a run that cannot reach Credential Manager, such as one in a sign-in over SSH with a key: see [Windows says Credential Manager cannot be reached](/troubleshooting/accounts#windows-says-credential-manager-cannot-be-reached).
 
-A login file behind the keychain does not stop a switch. [Open sessions](/concepts/open-sessions) says when open sessions follow it.
+A login file behind the keychain, or on Windows behind Credential Manager, does not stop a switch. [Open sessions](/concepts/open-sessions) says when open sessions follow it.
 
 ## Keep the numbers fresh
 

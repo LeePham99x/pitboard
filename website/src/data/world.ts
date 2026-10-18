@@ -1,4 +1,5 @@
 // Each plan has the limits Pitboard measured it with (ARCHITECTURE.md, "Anthropic's usage answer").
+import { platforms, type Platform } from "../lib/platform.ts";
 
 export type Tool = "claude" | "codex" | "desktop";
 
@@ -8,6 +9,13 @@ export const tools: [Tool, string][] = [
   ["codex", "Codex"],
   ["desktop", "Claude Desktop"],
 ];
+
+// The systems Pitboard lists each tool on (ProviderId::supported_on).
+export const toolOn: Record<Tool, Platform[]> = {
+  claude: platforms,
+  codex: platforms,
+  desktop: ["macos"],
+};
 
 export interface Limit {
   kind: "5h" | "week";
@@ -106,6 +114,53 @@ export const clock = {
   // when personal, left in use, runs out of its weekly limit
   runOut: "Wed 14 Oct 07:56",
 };
+
+// The same moments as Windows says them in the en-GB regional format: its taskbar's time over its
+// date, and the app's "t" and "g" (WindowsLocalTime.cs).
+export const windowsClock = {
+  taskbar: { time: "20:51", date: "13/10/2026" },
+  runOut: { time: "07:56", date: "14/10/2026" },
+};
+
+// The accounts turned on for warm-up on each system. Windows warms up none, since Claude Code there
+// does not read the token a warm-up hands it (duty/warm/mod.rs).
+export const warmUp: { from: string; to: string; accounts: Record<Platform, string[]> } = {
+  from: "07:00",
+  to: "23:00",
+  accounts: { macos: ["personal"], windows: [], linux: ["personal"] },
+};
+
+export interface Logged {
+  day: string;
+  time: string;
+  verb: string;
+  account: string;
+  caller: "app" | "cli";
+  // where not every system makes the change
+  on?: Platform[];
+}
+
+// What the log holds, oldest first, as audit.rs writes it.
+export const logged: Logged[] = [
+  { day: "2026-10-10", time: "09:16:52", verb: "enroll", account: "work", caller: "cli" },
+  {
+    day: "2026-10-13",
+    time: `${clock.warmed}:04`,
+    verb: "warm-up",
+    account: "personal",
+    caller: "app",
+    on: platforms.filter((p) => warmUp.accounts[p].includes("personal")),
+  },
+  {
+    day: "2026-10-13",
+    time: `${clock.desktopSwitched}:12`,
+    verb: "use",
+    account: "desktop/home",
+    caller: "app",
+    on: toolOn.desktop,
+  },
+  { day: "2026-10-13", time: `${clock.switched}:31`, verb: "use", account: "work", caller: "app" },
+];
 
 export const account = (label: string, tool: Tool = "claude"): Account => {
   const found = accounts.find((a) => a.label === label && a.tool === tool);

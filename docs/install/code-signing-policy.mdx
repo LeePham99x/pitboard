@@ -9,11 +9,13 @@ description: "Which Pitboard files are signed, who approves a signature and how 
 | --- | --- |
 | The macOS app and command line | A Developer ID of team `D7HJ5TFYCU`, and notarised by Apple |
 | Windows files Pitboard builds, from the first signed release on | SignPath, with a certificate issued to SignPath Foundation |
-| Windows pre-releases published before that | Not signed |
+| Windows betas published before that | Not signed |
 | Linux files | Not signed |
 | Files Pitboard did not build | Their own publishers, or not signed |
 
-There is no Windows release, so SignPath has signed no Pitboard file. [Verify a download](/install/verify) checks the macOS signatures.
+SignPath has signed no Pitboard file. [Verify a download](/install/verify) checks the macOS signatures.
+
+The Windows files Pitboard builds are the command line, `pitboard.exe`, the app's own programs and libraries, each named for Pitboard, and the installers. The app also ships the .NET runtime's and the Windows App SDK's files, as Microsoft signed them, and `WinSparkle.dll`, which updates it, unsigned as its NuGet package holds it.
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 

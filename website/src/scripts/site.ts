@@ -16,13 +16,6 @@ function head() {
   set();
 }
 
-// a link to a <details>, or into one, opens it
-function openTarget() {
-  const id = decodeURIComponent(location.hash.slice(1));
-  const box = id ? document.getElementById(id)?.closest("details") : null;
-  if (box) box.open = true;
-}
-
 function theming() {
   const names: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const btn = document.getElementById("theme-btn");
@@ -118,55 +111,41 @@ function phoneMenu() {
   }
 }
 
-// a box that scrolls sideways becomes a focusable region, named by the caption in data-scroll
-function scrollers() {
-  const boxes = all("[data-scroll]");
-  if (!boxes.length) return;
-  const check = () => {
-    for (const b of boxes) {
-      if (b.offsetParent === null) continue;
-      if (b.scrollWidth > b.clientWidth + 1) {
-        b.tabIndex = 0;
-        b.setAttribute("role", "region");
-        b.setAttribute("aria-labelledby", b.dataset.scroll!);
-      } else {
-        b.removeAttribute("tabindex");
-        b.removeAttribute("role");
-        b.removeAttribute("aria-labelledby");
-      }
-    }
-  };
-  check();
-  addEventListener("resize", check);
-  document.addEventListener("surface", check);
-  document.fonts?.ready.then(check);
+// Each choice the root keeps as data-<name>, and the key that stores it.
+const keys = { surface: "tab", platform: "platform" } as const;
+type Choice = keyof typeof keys;
+interface Chosen {
+  name: Choice;
+  value: string;
 }
 
-// The install tabs and the App and Command line buttons over each figure share one choice.
-function surfaces() {
-  const tabs = all<HTMLButtonElement>("[role=tab][data-surface]");
-  const picks = all<HTMLButtonElement>("button[data-surface]:not([role=tab])");
-  if (!tabs.length && !picks.length) return;
-  const mark = (name: string) => {
+// The tabs and pressed buttons carrying a choice's attribute set it, and all of them follow it.
+function choice(name: Choice): (value: string) => void {
+  const tabs = all<HTMLButtonElement>(`[role=tab][data-${name}]`);
+  const picks = all<HTMLButtonElement>(`button[data-${name}]:not([role=tab])`);
+  const mark = (value: string) => {
     for (const t of tabs) {
-      const on = t.dataset.surface === name;
+      const on = t.dataset[name] === value;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
     }
-    for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset.surface === name));
+    for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset[name] === value));
   };
-  const select = (name: string, focus: HTMLElement | null) => {
-    mark(name);
-    d.setAttribute("data-surface", name);
+  const show = (value: string) => {
+    mark(value);
+    d.dataset[name] = value;
+    document.dispatchEvent(new CustomEvent<Chosen>("choice", { detail: { name, value } }));
+  };
+  const select = (value: string, focus: HTMLElement | null) => {
+    show(value);
     focus?.focus();
-    put("tab", name);
-    document.dispatchEvent(new CustomEvent("surface", { detail: name }));
+    put(keys[name], value);
   };
-  for (const b of picks) b.addEventListener("click", () => select(b.dataset.surface!, null));
+  for (const b of picks) b.addEventListener("click", () => select(b.dataset[name]!, null));
   for (const tl of all("[role=tablist]")) {
-    const own = all<HTMLButtonElement>("[role=tab]", tl);
+    const own = all<HTMLButtonElement>(`[role=tab][data-${name}]`, tl);
     own.forEach((t, i) => {
-      t.addEventListener("click", () => select(t.dataset.surface!, null));
+      t.addEventListener("click", () => select(t.dataset[name]!, null));
       t.addEventListener("keydown", (e) => {
         let n: HTMLButtonElement | null = null;
         if (e.key === "ArrowRight") n = own[(i + 1) % own.length];
@@ -175,12 +154,24 @@ function surfaces() {
         else if (e.key === "End") n = own[own.length - 1];
         if (n) {
           e.preventDefault();
-          select(n.dataset.surface!, n);
+          select(n.dataset[name]!, n);
         }
       });
     });
   }
-  mark(d.getAttribute("data-surface") || "app");
+  const now = d.dataset[name];
+  if (now) mark(now);
+  return show;
+}
+
+// A link into a <details> opens it, and one into another platform's part shows that platform.
+function openTarget(showPlatform: (value: string) => void) {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const target = id ? document.getElementById(id) : null;
+  const box = target?.closest("details");
+  if (box) box.open = true;
+  const on = target?.closest<HTMLElement>("[data-for]")?.dataset.for?.split(" ");
+  if (on && !on.includes(d.dataset.platform ?? "")) showPlatform(on[0]);
 }
 
 function copying() {
@@ -251,73 +242,82 @@ function copying() {
 function afterDownload() {
   for (const a of all("[data-download]")) {
     a.addEventListener("click", () => {
-      for (const p of all("[data-after]")) p.setAttribute("data-shown", "");
+      for (const p of all(`[data-after="${a.dataset.download}"]`)) p.setAttribute("data-shown", "");
     });
   }
 }
 
+// The menu demo on the desk of the platform shown, once most of it is in view. A desk the Command
+// line tab hides waits for the App tab, and another platform's desk plays it again.
 function demo() {
-  const fig = document.getElementById("demo");
-  if (!fig) {
+  const desks = all("[data-demo-desk]");
+  if (!desks.length) {
     d.removeAttribute("data-demo");
     return;
   }
   if (d.getAttribute("data-demo") !== "start") return;
-  let ran = false;
+  const steps: [number, string | null][] = [
+    [500, "move"],
+    [1400, "hl"],
+    [1900, "pick"],
+    [2100, "shut"],
+    [2900, "reach"],
+    [3800, null],
+  ];
+  let timers: number[] = [];
+  let io: IntersectionObserver | null = null;
+  let started = false;
   const run = () => {
-    if (ran) return;
-    ran = true;
-    const steps: [number, string | null][] = [
-      [500, "move"],
-      [1400, "hl"],
-      [1900, "pick"],
-      [2100, "shut"],
-      [2900, "reach"],
-      [3800, null],
-    ];
     for (const [at, state] of steps) {
-      setTimeout(() => {
-        if (state) d.setAttribute("data-demo", state);
-        else d.removeAttribute("data-demo");
-      }, at);
+      timers.push(
+        window.setTimeout(() => {
+          if (state) d.setAttribute("data-demo", state);
+          else d.removeAttribute("data-demo");
+        }, at),
+      );
     }
   };
   const watch = () => {
+    io?.disconnect();
+    const fig = desks.find((desk) => desk.offsetParent !== null);
+    if (!fig) return;
+    started = true;
     if (!("IntersectionObserver" in window)) {
       run();
       return;
     }
-    const io = new IntersectionObserver(
+    const seen = new IntersectionObserver(
       (es) => {
         if (es.some((e) => e.isIntersecting)) {
-          io.disconnect();
+          seen.disconnect();
           run();
         }
       },
       { threshold: 0.6 },
     );
-    io.observe(fig);
+    io = seen;
+    seen.observe(fig);
   };
-  // a figure hidden by the Command line tab waits until the App tab shows it
-  if (d.getAttribute("data-surface") === "app") watch();
-  else {
-    const on = (e: Event) => {
-      if ((e as CustomEvent).detail === "app") {
-        document.removeEventListener("surface", on);
-        watch();
-      }
-    };
-    document.addEventListener("surface", on);
-  }
+  document.addEventListener("choice", (e) => {
+    const { name, value } = (e as CustomEvent<Chosen>).detail;
+    if (name === "platform") {
+      for (const t of timers) clearTimeout(t);
+      timers = [];
+      started = false;
+      d.setAttribute("data-demo", "start");
+      watch();
+    } else if (name === "surface" && value === "app" && !started) watch();
+  });
+  watch();
 }
 
 head();
-openTarget();
-addEventListener("hashchange", openTarget);
 theming();
 phoneMenu();
-scrollers();
-surfaces();
+choice("surface");
+const showPlatform = choice("platform");
+openTarget(showPlatform);
+addEventListener("hashchange", () => openTarget(showPlatform));
 copying();
 afterDownload();
 demo();

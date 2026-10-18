@@ -1,0 +1,29 @@
+---
+// The Activity pane, with the entries sessions.ts's `pitboard log` prints, in the app's words.
+import Window from "./Window.astro";
+import { activity } from "../../../lib/words.ts";
+const th = "px-4 py-5 text-left font-normal text-mac-window-sub inset-shadow-mac-window-b";
+---
+
+<Window pane="activity" title="Activity" tools={["sf-refresh"]}>
+  <table class="w-full border-collapse text-u-12/15 whitespace-nowrap tabular-nums">
+    <thead>
+      <tr>
+        <th class={th}>Date</th>
+        <th class={th}>Change</th>
+        <th class={th}>Account</th>
+        <th class={th}>Result</th>
+        <th class={th}>Asked By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {activity("macos").map((e) => <tr class="*:px-4 *:py-4 even:*:bg-mac-window-stripe">
+        <td>{e.date}</td>
+        <td>{e.change}</td>
+        <td>{e.account}</td>
+        <td class="text-mac-window-sub">{e.result}</td>
+        <td class="text-mac-window-sub">{e.by}</td>
+      </tr>)}
+    </tbody>
+  </table>
+</Window>

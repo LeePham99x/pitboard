@@ -1,0 +1,221 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import {
+  accountsPage,
+  activityPage,
+  app,
+  iconMenu,
+  panes,
+  settingsPage,
+  toast,
+} from "./windows.ts";
+import { tools } from "./world.ts";
+import { trayTip } from "../lib/words.ts";
+
+const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+const views = (file: string) => repo(`apps/windows/Pitboard.Views/${file}`);
+const shell = (file: string) => repo(`apps/windows/Pitboard.Windows/${file}`);
+const present = (file: string) => repo(`crates/pitboard-ffi/src/present/${file}`);
+const core = (file: string) => repo(`crates/pitboard-core/src/${file}`);
+// A Rust string literal as it reads once its line continuations are joined.
+const joined = (source: string) => source.replace(/\\\n\s*/g, "");
+
+const headings = new Set(tools.map(([, name]) => name));
+const menu = (updates: boolean) => iconMenu("after", updates).flat();
+
+test("the icon's menu says what IconMenu.cs gives it, in its order", () => {
+  const source = shell("IconMenu.cs");
+  const commands = menu(true).flatMap((e) => ("command" in e && !e.submenu ? [e.command] : []));
+  assert.deepEqual(commands, [
+    "Add account…",
+    "Refresh",
+    "Open Pitboard",
+    "Settings",
+    "Check for updates",
+    "Pitboard help",
+    "Exit",
+  ]);
+  for (const c of commands) assert.ok(source.includes(`new IconMenuEntry.Command("${c}"`), c);
+  assert.ok(
+    menu(true).some((e) => "command" in e && e.command === "Open Pitboard" && e.bold),
+    "the click's default is bold",
+  );
+  assert.ok(
+    source.includes(
+      '"Open Pitboard", new IconCommand.Send(new Intent.ShowWindow(Pane: null))) { Default = true }',
+    ),
+  );
+});
+
+test("a beta's menu has no Check for updates, as IconMenu.cs offers it only beside a release", () => {
+  assert.ok(shell("IconMenu.cs").includes("updates.Available && !updates.Beta"));
+  assert.ok(!menu(false).some((e) => "command" in e && e.command === "Check for updates"));
+});
+
+test("the menu heads each tool's accounts with its name, and names each account with its plan", () => {
+  assert.ok(present("words.rs").includes('format!("{title} · {plan}")'));
+  for (const e of menu(false)) {
+    if ("heading" in e) assert.ok(headings.has(e.heading), e.heading);
+    if ("account" in e) assert.match(e.account, /^\w+ · (Max 20x|Pro|Plus)$/);
+  }
+  assert.ok(!menu(false).some((e) => "heading" in e && e.heading === "Claude Desktop"));
+  const checked = menu(false).filter((e) => "account" in e && e.checked);
+  assert.deepEqual(
+    checked.map((e) => ("account" in e ? e.account : "")),
+    ["work · Max 20x", "main · Pro"],
+  );
+});
+
+test("an account's tooltip in the icon's menu is the line the menu bar app shows under it", () => {
+  assert.ok(shell("IconMenu.cs").includes("Lines(item.Summary, item.Help)"));
+  assert.ok(views("IconMenuFlyout.cs").includes("ToolTipService.SetToolTip(item, detail);"));
+  assert.ok(
+    present("accounts.rs").includes("summary: summary(seen, account, switching, needs_sign_in),"),
+  );
+  const [work] = iconMenu("before", false)
+    .flat()
+    .filter((e) => "account" in e && e.label === "work");
+  assert.ok(work && "tip" in work);
+  assert.equal(work.tip, "5-hour 12%, weekly 40%");
+});
+
+test("a site with several accounts' windows is a submenu of their labels", () => {
+  const source = repo("crates/pitboard-ffi/src/account_windows/accounts.rs");
+  assert.ok(source.includes('title: format!("Open {}", site.name()),'));
+  const sites = menu(false).flatMap((e) => ("command" in e && e.submenu ? [e] : []));
+  assert.deepEqual(
+    sites.map((e) => ("command" in e ? [e.command, e.submenu] : [])),
+    [
+      ["Open claude.ai", ["personal", "work"]],
+      ["Open chatgpt.com", ["main", "spare"]],
+    ],
+  );
+  const named = repo("crates/pitboard-sites/src/site.rs");
+  for (const host of ["claude.ai", "chatgpt.com"]) assert.ok(named.includes(`host: "${host}"`));
+});
+
+test("the icon's tooltip names Pitboard, the account the menu bar would and its tool", () => {
+  assert.ok(
+    present("accounts.rs").includes('format!("Pitboard, {name_and_usage}, {}", tool.name)'),
+  );
+  assert.equal(trayTip("after"), "Pitboard, work 40%, Claude Code");
+});
+
+test("the window and its panes are named as MainWindow.xaml names them", () => {
+  const source = views("MainWindow.xaml");
+  assert.equal(app, "Pitboard");
+  assert.ok(source.includes(`Title="${app}"`));
+  for (const [, name] of panes) assert.ok(source.includes(`Content="${name}"`), name);
+});
+
+test("the Accounts page says what AccountsPage.xaml, AccountRow.xaml and the core say", () => {
+  const page = accountsPage("after");
+  const xaml = views("AccountsPage.xaml");
+  assert.ok(xaml.includes(`Text="${page.title}"`));
+  for (const c of page.commands) assert.ok(xaml.includes(`Label="${c}"`), c);
+  assert.ok(present("words.rs").includes('format!("Updated {clock}")'));
+  assert.match(page.updated, /^Updated \d\d:\d\d$/);
+  assert.ok(views("AccountRow.xaml").includes('Text="In use"'));
+  assert.ok(present("accounts.rs").includes('title: "Use".into()'));
+  assert.deepEqual(
+    page.sections.map((s) => s.name),
+    ["Claude Code", "Codex"],
+  );
+  const rows = page.sections.flatMap((s) => s.rows);
+  assert.ok(rows.every((r) => r.inUse !== (r.action === "Use")));
+});
+
+test("the notice after a switch says what notices.rs and NoticeBar.xaml.cs put together", () => {
+  const words = present("words.rs");
+  assert.ok(words.includes('Some(tool) => format!("Switched {tool} to {label}")'));
+  assert.ok(words.includes('Some(tool) => format!("{tool} sessions already open follow in")'));
+  assert.ok(
+    views("NoticeBar.xaml.cs").includes(
+      'CountdownText.Text = $"{label} {Countdown.Left(until, now)}";',
+    ),
+  );
+  const { notice } = accountsPage("after");
+  assert.equal(notice?.title, "Switched Claude Code to work");
+  assert.equal(notice?.countdown, "Claude Code sessions already open follow in 0:21");
+  assert.equal(accountsPage("before").notice, null);
+});
+
+test("an account's notes are the core's, and none says when it warms up", () => {
+  const said = core("words.rs");
+  assert.ok(said.includes('"{limit} limit runs out in {} at this pace",'));
+  assert.ok(said.includes('days => format!("Parked login good for {days} more days"),'));
+  const notes = (moment: "before" | "after") =>
+    accountsPage(moment).sections.flatMap((s) => s.rows.flatMap((r) => r.notes));
+  assert.deepEqual(notes("before"), [
+    "Weekly limit runs out in 11h 05m at this pace",
+    "Parked login good for 26 more days",
+  ]);
+  assert.ok(!notes("after").some((n) => /warm/i.test(n)));
+});
+
+test("Settings says what SettingsPage.xaml, SettingsViewModel.cs and machine.rs say", () => {
+  const s = settingsPage;
+  const xaml = views("SettingsPage.xaml");
+  assert.ok(xaml.includes(`Text="${s.title}"`));
+  assert.ok(xaml.includes(`Text="${s.section}"`));
+  assert.ok(xaml.includes(`<toolkit:SettingsExpander Header="${s.autoSwitch.header}"`));
+  assert.ok(xaml.includes(`Header="${s.share.header}"`));
+  assert.ok(shell("SettingsViewModel.cs").includes('$"From {Auto.Lowest}% to {Auto.Highest}%"'));
+  const autoswitch = core("duty/autoswitch.rs");
+  assert.ok(autoswitch.includes("pub const LOWEST: u8 = 50;"));
+  assert.ok(autoswitch.includes("pub const HIGHEST: u8 = 99;"));
+  assert.equal(s.share.range, "From 50% to 99%");
+  assert.ok(core("words.rs").includes('let mut said = format!("Watching {account}");'));
+  assert.match(
+    s.autoSwitch.standing,
+    /^Watching \w+: \d+% of its (5-hour|weekly) limit, as of \d\d:\d\d\.$/,
+  );
+  const machine = joined(present("machine.rs"));
+  const note = `Pitboard switches Claude Code to another of your accounts with room below ${s.share.value}% in every limit, once a limit of the one in use reaches ${s.share.value}%, while the app is open. Sessions already running follow within about 33 seconds. It never switches back by itself, and never switches Codex: a running codex keeps its account until restarted.`;
+  assert.ok(machine.includes('"Sessions already running follow within about {} seconds."'));
+  assert.ok(
+    machine.includes(
+      "{at}% in every limit, once a limit of the one in use reaches {at}%, while the app is open. {follows} It never switches back by itself, and never switches Codex: a running codex keeps its account until restarted.",
+    ),
+  );
+  assert.ok(core("switch/mod.rs").includes("pub const ADOPTION_CEILING_SECONDS: u32 = 33;"));
+  assert.equal(s.autoSwitch.note, note);
+});
+
+test("Activity lists Windows' changes in the app's words, dated as the regional format's g", () => {
+  const page = activityPage;
+  const xaml = views("ActivityPage.xaml");
+  assert.ok(xaml.includes(`Text="${page.title}"`));
+  assert.ok(xaml.includes(`Label="${page.command}"`));
+  assert.ok(shell("WindowsLocalTime.cs").includes('At(epoch).ToString("g", Culture)'));
+  const words = present("words.rs");
+  assert.ok(words.includes('"use" | "switch" => "Switch".into(),'));
+  assert.ok(words.includes('"enroll" => "Enrol".into(),'));
+  assert.ok(words.includes('"ok" => "Done".into(),'));
+  assert.ok(words.includes('"app" => "Pitboard app".into(),'));
+  assert.ok(words.includes('"cli" => "Command line".into(),'));
+  assert.deepEqual(
+    page.rows.map((r) => [r.date, r.change, r.account, r.result, r.by]),
+    [
+      ["13/10/2026 20:49", "Switch", "work", "Done", "Pitboard app"],
+      ["10/10/2026 09:16", "Enrol", "work", "Done", "Command line"],
+    ],
+  );
+});
+
+test("the run-out notification says what WindowsNotifications.cs builds from notices.rs", () => {
+  const source = shell("WindowsNotifications.cs");
+  assert.ok(source.includes('public const string DisplayName = "Pitboard";'));
+  assert.ok(source.includes('new AppNotificationButton("Switch")'));
+  const words = present("words.rs");
+  assert.ok(words.includes('format!("{account} has no {limit} limit left")'));
+  assert.ok(words.includes('Some(left) => format!("{account} has {left}% of its own left."),'));
+  assert.deepEqual(toast, {
+    app: "Pitboard",
+    title: "personal has no weekly limit left",
+    tool: "Claude Code",
+    body: "work has 60% of its own left.",
+    button: "Switch",
+  });
+});

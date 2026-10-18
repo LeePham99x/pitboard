@@ -1,0 +1,29 @@
+---
+// The run-out notification, the only one with a button (MacPlatform.swift).
+import MenuBar from "./MenuBar.astro";
+import MenuItem from "./MenuItem.astro";
+import { clock } from "../../../data/world.ts";
+---
+
+<div class="desk h-160" aria-hidden="true" data-output>
+  <MenuBar clock={clock.runOut}>
+    <MenuItem>
+      <svg class="size-16 shrink-0"><use href="#pb-template"></use></svg> personal 100%
+    </MenuItem>
+  </MenuBar>
+  <div
+    class="absolute top-36 right-14 flex w-370 items-center gap-10 rounded-u-18 bg-mac-menu-bg p-12 text-mac-menu-text shadow-mac-banner backdrop-blur-xl backdrop-saturate-180"
+  >
+    <img class="size-38 flex-none" src="/icon-192.png" alt="" width="38" height="38" />
+    <span class="min-w-0 flex-1 text-u-13/16">
+      <b class="flex justify-between gap-6 font-bold whitespace-nowrap"
+        >personal has no weekly limit
+        left<span class="text-u-12 font-normal text-mac-menu-sub">now</span></b
+      >
+      Claude Code<br />work has 60% of its own left.
+    </span>
+    <span class="flex flex-none items-center self-stretch pl-10 font-medium inset-shadow-mac-menu-l"
+      >Switch</span
+    >
+  </div>
+</div>

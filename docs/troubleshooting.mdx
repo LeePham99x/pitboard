@@ -11,20 +11,38 @@ pitboard doctor
 
 Do not switch accounts while any check shows `✗`, broken. [`doctor`](/reference/maintenance-commands#doctor) lists every check and mark.
 
-`pitboard log` lists the last 20 changes and how each ended; `-n 50` lists 50. In the app, the Pitboard window's **This Mac** pane makes the same checks, and **Activity** shows the log.
+`pitboard log` lists the last 20 changes and how each ended; `-n 50` lists 50. In the app, the Pitboard window's **This Mac** pane makes the same checks, and **Activity** shows the log. On Windows, the pane is **This PC**.
 
-[Error and warning codes](/reference/errors) gives the cause and fix of each code a message names. [Fix accounts, usage and renewal](/troubleshooting/accounts), [Fix Claude Desktop accounts](/troubleshooting/claude-desktop), [Recover after a crash, a restore or a change of computer](/troubleshooting/recovery) and [Fix problems in account windows](/troubleshooting/account-windows) cover the rest.
+[Error and warning codes](/reference/errors) gives the cause and fix of each code a message names. These pages cover the rest:
+
+- [Fix accounts and usage](/troubleshooting/accounts)
+- [Fix daily renewal and starting at sign-in](/troubleshooting/renewal)
+- [Fix Codex accounts](/troubleshooting/codex)
+- [Fix Claude Desktop accounts](/troubleshooting/claude-desktop)
+- [Recover after a crash, a restore or a change of computer](/troubleshooting/recovery)
+- [Fix problems in account windows](/troubleshooting/account-windows)
+- [Fix Pitboard refusing every change](/troubleshooting/refused-changes)
 
 ## Claude Code over SSH uses another account
 
-On macOS, a session started over SSH can stay on another account than Pitboard shows, through every switch, and Pitboard warns with `fallback_login`.
+A Claude Code session started over SSH can stay on another account than Pitboard shows, through every switch, and Pitboard warns with `fallback_login`.
 
-A `/login` while the keychain is locked, as over SSH, writes the login to `~/.claude/.credentials.json`, which such a session signs in with. [A login file behind the keychain](/concepts/open-sessions#a-login-file-behind-the-keychain) says what else it does.
+<Tabs>
+  <Tab title="macOS">
+    A `/login` while the keychain is locked, as over SSH, writes the login to `~/.claude/.credentials.json`, which such a session signs in with. [A login file behind the keychain or Credential Manager](/concepts/open-sessions#a-login-file-behind-the-keychain-or-credential-manager) says what else it does.
 
-1. In a desktop terminal, where the keychain is unlocked, run `pitboard stow`, or click **Put Away** on the app's notice **A login file is left behind the keychain**. A session signed in with the file is signed out.
-2. Before you start Claude Code over SSH, run `security unlock-keychain ~/Library/Keychains/login.keychain-db`, or start it from a desktop terminal. Do not run `/login` while the keychain is locked.
+    1. In a desktop terminal, where the keychain is unlocked, run `pitboard stow`, or click **Put Away** on the app's notice **A login file is left behind the keychain**. A session signed in with the file is signed out.
+    2. Before you start Claude Code over SSH, run `security unlock-keychain ~/Library/Keychains/login.keychain-db`, or start it from a desktop terminal. Do not run `/login` while the keychain is locked.
+  </Tab>
+  <Tab title="Windows">
+    Where Claude Code keeps its login in Credential Manager, a sign-in over SSH with a key cannot reach it. A `/login` there writes the login to `.credentials.json` in Claude Code's folder, which such a session signs in with, as read in the Windows builds of Claude Code 2.1.301.
 
-When `stow` deletes nothing, its message says why, and [`stow`](/reference/recovery-commands#stow) lists every outcome. If it cannot read the file, make the file readable to you, or delete it, login and all, with `rm ~/.claude/.credentials.json`.
+    1. In a desktop session, run `pitboard stow`, or select **Put away** on the app's notice **A login file is left behind Credential Manager**. A session signed in with the file is signed out.
+    2. Start Claude Code from a desktop session, and do not run `/login` over SSH.
+  </Tab>
+</Tabs>
+
+When `stow` deletes nothing, its message says why, and [`stow`](/reference/recovery-commands#stow) lists every outcome. If it cannot read the file, make the file readable to you, or delete `.credentials.json`, login and all.
 
 ## An account reads `login replaced outside Pitboard`
 
@@ -36,23 +54,7 @@ The only login of the account in use ended outside Pitboard. Pitboard held no co
 | Codex | A sign-in outside Pitboard, such as `codex login`, wrote over it. |
 | Claude Desktop | A sign-in outside Pitboard replaced it, or the account was signed out in Claude, which ends its login at claude.ai. |
 
-[Sign in to the account again](/guides/sign-in-again), or [forget it](/guides/accounts#forget-an-account). Either stops the warning. To add another account without ending the login in use, click **Add Account** in the app, or run `pitboard enroll personal --sign-in`.
-
-## Pitboard changes nothing as root
-
-As root or with `sudo`, Pitboard refuses every change with `elevated`: a file or keychain item made as root would be out of reach of your own runs. A container whose only user is root counts too. `pitboard status` and the status line still answer from the last numbers measured, and write nothing.
-
-Run Pitboard as yourself. [Remove files Pitboard made as root](/install/remove#remove-files-pitboard-made-as-root) cleans up after an earlier Pitboard run as root.
-
-### `SUDO_UID` is set in your own shell
-
-Pitboard takes any run with a non-empty `SUDO_UID` as one under `sudo`. A shell started with `sudo -iu` and your own name passes it on, such as to a tmux server. If `id -un` prints your own name there, run the command without it:
-
-```sh
-env -u SUDO_UID pitboard use work
-```
-
-To stop it for good, start that shell or tmux again without `sudo`. For the install script, pipe it to `env -u SUDO_UID sh` in place of `sh`.
+[Sign in to the account again](/guides/sign-in-again), or [forget it](/guides/accounts#forget-an-account). Either stops the warning. To add another account without ending the login in use, follow [Add another account](/guides/accounts#add-another-account).
 
 ## Report a problem
 
@@ -61,7 +63,7 @@ Open a [GitHub issue](https://github.com/datlechin/pitboard/issues/new/choose) w
 - What you ran, what it printed and what you expected.
 - The output of `pitboard doctor --json`, not plain `pitboard doctor`: it replaces email addresses and account identifiers with digests, and your home with `~`.
 - `pitboard --version`, and `claude --version` or `codex --version`.
-- How you installed Pitboard, and your macOS or Linux version.
+- How you installed Pitboard, and your macOS or Linux version. On Windows, give the build and the system type, x64 or ARM64, which **Settings** > **System** > **About** shows.
 - The last lines of `pitboard log`, if they help. A `reclaim` line can name an account identifier.
 
 For a security problem, follow [Report a vulnerability](https://github.com/datlechin/pitboard/blob/main/SECURITY.md#report-a-vulnerability).

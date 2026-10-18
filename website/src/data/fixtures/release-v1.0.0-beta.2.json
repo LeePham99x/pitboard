@@ -1,0 +1,150 @@
+{
+  "tag_name": "v1.0.0-beta.2",
+  "name": "v1.0.0-beta.2",
+  "draft": false,
+  "prerelease": true,
+  "published_at": "2026-10-18T21:34:36Z",
+  "html_url": "https://github.com/datlechin/pitboard/releases/tag/v1.0.0-beta.2",
+  "assets": [
+    {
+      "name": "install.sh",
+      "size": 7911,
+      "digest": "sha256:4bf8429b991dc3ba543296c16bb0be6aa88e1e8ac96164746ef428cb0121c4a1",
+      "content_type": "application/x-sh",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/install.sh"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-apple-darwin.tar.gz",
+      "size": 2074631,
+      "digest": "sha256:cb9905d32c9492f244de586d1b855366e2556a9b1b8666cf75520dbaa8a85101",
+      "content_type": "application/gzip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-apple-darwin.tar.gz.cdx.json",
+      "size": 109529,
+      "digest": "sha256:5aec772c9b234761f651f854f531599e1bd2245405bfca19595418a023e83602",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-apple-darwin.tar.gz.cdx.json"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-pc-windows-msvc.zip",
+      "size": 2384676,
+      "digest": "sha256:f81b97fbb43a288e4cd21cb60d3eee7c2e8ec4cc2416630422880d972432abe4",
+      "content_type": "application/zip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-pc-windows-msvc.zip.cdx.json",
+      "size": 115821,
+      "digest": "sha256:3fe6e90469410886c16337b35007a6b181dcccf2b5250ceb6f43f3e3406803bd",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-pc-windows-msvc.zip.cdx.json"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-unknown-linux-musl.tar.gz",
+      "size": 2280817,
+      "digest": "sha256:b9add912c9d87e048f55de7a18ba48b745cd2449531ebb5c4cff58c551313aa6",
+      "content_type": "application/gzip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-aarch64-unknown-linux-musl.tar.gz.cdx.json",
+      "size": 97776,
+      "digest": "sha256:ebd3e27f9590eef4d932ef5588ad4a3f9cac6c44e785a5337f511d140ede2e49",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-aarch64-unknown-linux-musl.tar.gz.cdx.json"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-macos.zip",
+      "size": 18801200,
+      "digest": "sha256:02eab75bbfb9ecb090a49de9b0f09ad488901939f434a219b05be41734398b6b",
+      "content_type": "application/zip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-macos.zip"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-macos.zip.cdx.json",
+      "size": 205493,
+      "digest": "sha256:81f2413a11fd893c1fdb21fc9070107e2974ba4400273d136d527d66f0eb3f8f",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-macos.zip.cdx.json"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-windows-arm64.msi",
+      "size": 79479396,
+      "digest": "sha256:566fa85a1b8f16c979f0e48252953351fad6912ca1420b3318765f141495e392",
+      "content_type": "application/x-msdownload",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-arm64.msi"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-windows-arm64.msi.cdx.json",
+      "size": 241496,
+      "digest": "sha256:53a9700fdf7bab56d154484701ae2880ede19c1cf401a7b748d9a03a0cbc8be8",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-arm64.msi.cdx.json"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-windows-x64.msi",
+      "size": 83600020,
+      "digest": "sha256:3645148c4010c4e94f8fb34b84c365187c150655a459ba2c6b4dc9e4918b0261",
+      "content_type": "application/x-msdownload",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-x64.msi"
+    },
+    {
+      "name": "Pitboard-v1.0.0-beta.2-windows-x64.msi.cdx.json",
+      "size": 238597,
+      "digest": "sha256:c6fc890a20983f88158c43b75f7d938368e0af530316019089a071f9dd87b3d3",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-x64.msi.cdx.json"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-apple-darwin.tar.gz",
+      "size": 2210446,
+      "digest": "sha256:f0c8d717d6c780bcac427630a7a35160ed02b97c06422bec79e32ea49f790ec3",
+      "content_type": "application/gzip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-apple-darwin.tar.gz"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-apple-darwin.tar.gz.cdx.json",
+      "size": 109343,
+      "digest": "sha256:59ed203fed3e5ad7c313d675335f850fa7b101731297469643781889fc5b9945",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-apple-darwin.tar.gz.cdx.json"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-pc-windows-msvc.zip",
+      "size": 2468949,
+      "digest": "sha256:db7f2e142906ed71d9c3def7d9ad05c03743dd32a46cca7ba3b1bd32d74b51cb",
+      "content_type": "application/zip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-pc-windows-msvc.zip"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-pc-windows-msvc.zip.cdx.json",
+      "size": 112945,
+      "digest": "sha256:5723acf8e1821579be487cc9d7e39ae4d6ab177faead4b64123f2d5964210471",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-pc-windows-msvc.zip.cdx.json"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-unknown-linux-musl.tar.gz",
+      "size": 2381147,
+      "digest": "sha256:f658616d5923696030fb4eb8f3708fbbbfa7ee6b0dcbd0dd833891e2b51d3f13",
+      "content_type": "application/gzip",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-unknown-linux-musl.tar.gz"
+    },
+    {
+      "name": "pitboard-v1.0.0-beta.2-x86_64-unknown-linux-musl.tar.gz.cdx.json",
+      "size": 97590,
+      "digest": "sha256:e18ba70e702a26773909ed1da1e8cd19c11056c1759cadc407024d9b21d2c828",
+      "content_type": "application/json",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/pitboard-v1.0.0-beta.2-x86_64-unknown-linux-musl.tar.gz.cdx.json"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 1099,
+      "digest": "sha256:566f5f2926d0c840842c5c1b98465682ad3892d3e0fce9c93e6cc9e244068a0e",
+      "content_type": "application/octet-stream",
+      "browser_download_url": "https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/SHA256SUMS"
+    }
+  ]
+}

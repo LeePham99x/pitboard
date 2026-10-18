@@ -4,35 +4,40 @@ import Block from "../components/Block.astro";
 import Disclosure from "../components/Disclosure.astro";
 import Icons from "../components/Icons.astro";
 import InstallTabs from "../components/InstallTabs.astro";
-import Accounts from "../components/fig/Accounts.astro";
-import Activity from "../components/fig/Activity.astro";
-import Desk from "../components/fig/Desk.astro";
+import Accounts from "../components/fig/mac/Accounts.astro";
+import Activity from "../components/fig/mac/Activity.astro";
+import Desk from "../components/fig/mac/Desk.astro";
 import Figure from "../components/fig/Figure.astro";
-import Notice from "../components/fig/Notice.astro";
-import OpenLink from "../components/fig/OpenLink.astro";
-import Settings from "../components/fig/Settings.astro";
+import Notice from "../components/fig/mac/Notice.astro";
+import OpenLink from "../components/fig/mac/OpenLink.astro";
+import Settings from "../components/fig/mac/Settings.astro";
 import Term from "../components/fig/Term.astro";
+import WinAccounts from "../components/fig/win/Accounts.astro";
+import WinActivity from "../components/fig/win/Activity.astro";
+import WinDesk from "../components/fig/win/Desk.astro";
+import WinNotice from "../components/fig/win/Notice.astro";
+import WinSettings from "../components/fig/win/Settings.astro";
 import Feature from "../components/home/Feature.astro";
 import Row from "../components/home/Row.astro";
 import { sessions } from "../data/sessions.ts";
-import { DOCS, REPO } from "../data/site.ts";
+import { DOCS, REPO, TAGLINE } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
-import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
+import { application } from "../lib/schema.ts";
 import { recentReleases } from "../lib/shown.ts";
 import { tools, type Tool } from "../data/world.ts";
 import spark from "../assets/logos/claude-spark.svg?url";
 import blossomBlack from "../assets/logos/openai-blossom-black.svg?url";
 import blossomWhite from "../assets/logos/openai-blossom-white.svg?url";
 
-const { versions, release } = await siteData();
-const zip = appZip(release);
+const { versions, downloads } = await siteData();
+// a beta's icon menu has no Check for updates
+const updates = !downloads.windows.release.prerelease;
 const recent = recentReleases(versions).map((v) => ({ ...v, highlight: highlight(v.version) }));
 // a row is one string: on a phone its cells run inline, where whitespace between them would show
 const cell = "border-b border-grid py-3.5 text-left align-baseline max-sm:border-0 max-sm:p-0";
 const row = (v: (typeof recent)[number]) =>
   `<th class="${cell} pr-6 font-mono text-control font-semibold whitespace-nowrap max-sm:mr-3 max-sm:inline" scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="${cell} pr-6 text-note/[1.5] whitespace-nowrap text-muted max-sm:inline">${longDate(v.date)}</td><td class="${cell} max-sm:mt-1 max-sm:block">${v.highlight}</td>`;
-const note = "mt-4 hidden max-w-measure text-note text-pretty text-muted";
 const guide = { claude: "claude-code", codex: "codex", desktop: "claude-desktop" };
 // each company's own files, unaltered; Claude Code and Claude Desktop share Claude's spark
 const sparkMark = { src: spark, class: "h-5 w-auto" };
@@ -65,8 +70,8 @@ const faq = [
     a: `No. Pitboard <a href="${DOCS}/concepts/limits#rules">never sees a tool's requests</a>.`,
   },
   {
-    q: "Does it run on Linux or Windows?",
-    a: `The command line runs on Linux but <a href="${DOCS}/install#what-you-need">has not been run there with real logins</a>. There is no Windows release.`,
+    q: "Does it run on Windows or Linux?",
+    a: `Yes. The app runs on macOS and Windows, and <a href="${DOCS}/install#what-you-need">the command line on all three</a>.`,
   },
   {
     q: "What happens if I uninstall it?",
@@ -89,23 +94,13 @@ const jsonLd = [
     name: "Pitboard",
     url: new URL("/", Astro.site).href,
   },
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: "Pitboard",
-    applicationCategory: "DeveloperApplication",
-    operatingSystem: "macOS 14 or later, Linux",
-    softwareVersion: release.version,
-    downloadUrl: zip.url,
-    license: "https://www.apache.org/licenses/LICENSE-2.0",
-    url: new URL("/", Astro.site).href,
-  },
+  application(Astro.site!, downloads),
 ];
 ---
 
 <Base
-  title="Pitboard: switch AI coding tools between your accounts"
-  description="Switch your AI coding tools between your own accounts without signing out, and see what each account has left."
+  title="Pitboard: switch AI coding accounts and see their usage"
+  description="Switch AI coding accounts without signing out and see their usage, on macOS, Windows and Linux."
   current="home"
   path="/"
   image="home"
@@ -119,17 +114,11 @@ const jsonLd = [
       >
         <div class="pt-6">
           <h1 class="font-mono text-h1 text-strong max-sm:text-h1-sm" id="hero-title">Pitboard</h1>
-          <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">
-            Switch your AI coding tools between your own accounts without signing out.
+          <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">{TAGLINE}</p>
+          <p class="mt-4 hidden max-w-measure text-note text-pretty text-muted os-mobile:block">
+            Pitboard runs on a Mac, a Windows PC or a Linux computer.
           </p>
-          <p class:list={[note, "os-linux:block"]}>
-            On Linux, Pitboard has not been run with real logins.
-          </p>
-          <p class:list={[note, "os-windows:block"]}>
-            There is <a href={`${DOCS}/install#what-you-need`}>no Windows release</a>.
-          </p>
-          <p class:list={[note, "os-mobile:block"]}>Pitboard runs on a Mac or a Linux computer.</p>
-          <InstallTabs class="mt-10" n={1} zipUrl={zip.url} />
+          <InstallTabs class="mt-10" n={1} />
           <div class="mt-10 border-t border-grid pt-5 font-mono text-ui">
             <p class="text-muted">Works with</p>
             <ul class="mt-3 flex flex-wrap items-end gap-x-9 gap-y-4">
@@ -147,67 +136,97 @@ const jsonLd = [
         </div>
         <Figure
           class="mt-8.75 max-xl:mt-8"
-          pick={false}
           app={{
-            caption: "Switching accounts in Pitboard's menu.",
-            describe:
-              "Pitboard's menu open from the menu bar. Claude Code has personal, in use, and work; Codex has main, in use, and spare; Claude Desktop has home, in use, and office. Each Claude Code and Codex account shows its plan and how much of each limit it has used, and each Claude Desktop account reads No usage read. The pointer chooses work and the menu closes; the menu bar shows work 40%. The pointer opens the menu again, with work first and in use. Then the status line of the Claude Code session behind the menu puts work first.",
+            macos: {
+              caption: "Switching accounts in Pitboard's menu on macOS.",
+              describe:
+                "Pitboard's menu open from the menu bar. Claude Code has personal, in use, and work; Codex has main, in use, and spare; Claude Desktop has home, in use, and office. Each Claude Code and Codex account shows its plan and how much of each limit it has used, and each Claude Desktop account reads No usage read. The pointer chooses work and the menu closes; the menu bar shows work 40%. The pointer opens the menu again, with work first and in use. Then the status line of the Claude Code session behind the menu puts work first.",
+            },
+            windows: {
+              caption: "Switching accounts from Pitboard's icon on Windows.",
+              describe:
+                "Pitboard's menu open from its icon in the notification area. Claude Code has personal, in use, and work; Codex has main, in use, and spare, each with its plan. The pointer rests on work, whose tooltip reads 5-hour 12%, weekly 40%, then chooses it, and the menu closes; the icon's tooltip reads Pitboard, work 40%, Claude Code. The menu opens again with work first and in use. Then the status line of the Claude Code session in Windows Terminal puts work first.",
+            },
           }}
           cli={{
-            caption: "The same accounts in a terminal.",
-            describe:
-              "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace. Then Claude Desktop, whose usage Pitboard does not read: home, in use, read 2h 05m ago, and office, whose sign-in may lapse in 25 days 3 hours.",
+            macos: {
+              caption: "The same accounts in a terminal.",
+              describe:
+                "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace. Then Claude Desktop, whose usage Pitboard does not read: home, in use, read 2h 05m ago, and office, whose sign-in may lapse in 25 days 3 hours.",
+            },
+            linux: {
+              caption: "The same accounts in a terminal.",
+              describe:
+                "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace.",
+            },
+            windows: {
+              caption: "The same accounts in a terminal.",
+              describe:
+                "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace.",
+            },
           }}
         >
           <Desk demo />
+          <WinDesk slot="win" demo updates={updates} />
           <Term slot="cli" session={sessions.status} />
         </Figure>
       </div>
     </section>
     <Feature id="switch" title="Switch without signing out">
       <p>
-        Choose an account in the menu or run <code>pitboard use work</code>.
+        Choose an account in the app or run <code>pitboard use work</code>, and
         <a href={`${DOCS}/guides/switch#what-happens-to-open-sessions`}
-          >Open Claude Code sessions follow the switch</a
-        >.
-      </p>
-      <p>
-        <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> keeps the logins of your other Claude
-        Code accounts from expiring.
+          >open Claude Code sessions follow</a
+        >. Daily renewal keeps your other Claude Code logins from expiring.
       </p>
       <Figure
         slot="fig"
         app={{
-          caption: "The Pitboard window after the switch.",
-          describe:
-            "The top of the Accounts pane after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+          macos: {
+            caption: "The Pitboard window on macOS after the switch.",
+            describe:
+              "The top of the Accounts pane after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+          },
+          windows: {
+            caption: "The Pitboard window on Windows after the switch.",
+            describe:
+              "The top of the Accounts page after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+          },
         }}
         cli={{
-          caption: "Switching from a terminal.",
-          describe:
-            "<code>pitboard use work</code> prints: Switched to work; personal is parked. Claude Code sessions already running follow within 33 seconds.",
+          macos: {
+            caption: "Switching from a terminal.",
+            describe:
+              "<code>pitboard use work</code> prints: Switched to work; personal is parked. Claude Code sessions already running follow within 33 seconds.",
+          },
         }}
       >
         <Accounts moment="after" crop />
+        <WinAccounts slot="win" moment="after" crop />
         <Term slot="cli" session={sessions.use} />
       </Figure>
     </Feature>
     <Feature id="desktop" title="Claude Desktop">
       <p>
         On macOS, Pitboard switches <a href={`${DOCS}/guides/claude-desktop`}>Claude Desktop</a>
-        too. The app offers to quit Claude, switches, and opens it again.
+        too, and the app offers to quit Claude and open it again. On Windows and Linux, it leaves
+        Claude Desktop alone.
       </p>
       <Figure
         slot="fig"
         app={{
-          caption: "Claude Desktop in the Pitboard window.",
-          describe:
-            "The Claude Desktop section of the Accounts pane. home is in use: Read 2h 05m ago, with Claude closed. office has a Use button: Its sign-in may lapse in 25 days.",
+          macos: {
+            caption: "Claude Desktop in the Pitboard window on macOS.",
+            describe:
+              "The Claude Desktop section of the Accounts pane. home is in use: Read 2h 05m ago, with Claude closed. office has a Use button: Its sign-in may lapse in 25 days.",
+          },
         }}
         cli={{
-          caption: "Switching Claude Desktop from a terminal.",
-          describe:
-            "<code>pitboard use desktop/home</code> prints: Switched to desktop/home; desktop/office is parked. Claude opens signed in to it.",
+          macos: {
+            caption: "Switching Claude Desktop from a terminal on macOS.",
+            describe:
+              "<code>pitboard use desktop/home</code> prints: Switched to desktop/home; desktop/office is parked. Claude opens signed in to it.",
+          },
         }}
       >
         <Accounts moment="after" only="desktop" />
@@ -217,27 +236,44 @@ const jsonLd = [
 
     <Feature id="usage" title="What each account has left">
       <p>
-        Pitboard shows each limit of every Claude Code and Codex account: how much is used, when it
-        resets, and <a href={`${DOCS}/concepts/usage#pace`}>the pace</a>.
-      </p>
-      <p>
-        With <a href={`${DOCS}/guides/status-line`}><code>pitboard statusline</code></a>, each
-        Claude Code session lists the usage of every Claude Code account.
+        Pitboard shows the usage, resets and <a href={`${DOCS}/concepts/usage#pace`}>pace</a> of
+        each Claude Code and Codex account. <code>pitboard statusline</code> lists every Claude Code
+        account in each session's status line.
       </p>
       <Figure
         slot="fig"
         app={{
-          caption: "The Pitboard window.",
-          describe:
-            "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow, then Claude Desktop's home and office.",
+          macos: {
+            caption: "The Pitboard window on macOS.",
+            describe:
+              "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow, then Claude Desktop's home and office.",
+          },
+          windows: {
+            caption: "The Pitboard window on Windows.",
+            describe:
+              "The Accounts page of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow.",
+          },
         }}
         cli={{
-          caption: "The same accounts in a terminal.",
-          describe:
-            "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare, and the Claude Desktop accounts home and office.",
+          macos: {
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare, and the Claude Desktop accounts home and office.",
+          },
+          linux: {
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare.",
+          },
+          windows: {
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare.",
+          },
         }}
       >
         <Accounts moment="before" />
+        <WinAccounts slot="win" moment="before" />
         <Term slot="cli" session={sessions.statusBefore} />
       </Figure>
     </Feature>
@@ -252,19 +288,27 @@ const jsonLd = [
         </h2>
         <Row id="offer-title" title="When one runs out">
           <p>
-            When the account in use runs out, a
+            When the account in use runs out, the app's
             <a href={`${DOCS}/guides/switch#when-an-account-runs-out`}>notification</a> offers
             another with room left.
           </p>
           <Figure
             slot="fig"
             app={{
-              caption: "The notification when an account runs out.",
-              describe:
-                "A notification from Pitboard: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+              macos: {
+                caption: "The notification on macOS when an account runs out.",
+                describe:
+                  "A notification from Pitboard: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+              },
+              windows: {
+                caption: "The notification on Windows when an account runs out.",
+                describe:
+                  "A notification from Pitboard in the corner of the screen: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+              },
             }}
           >
             <Notice />
+            <WinNotice slot="win" />
           </Figure>
         </Row>
         <Row id="auto-title" title="Automatic switch" flip>
@@ -276,36 +320,55 @@ const jsonLd = [
           <Figure
             slot="fig"
             app={{
-              caption: "Settings, in the Limits pane.",
-              describe:
-                "The Limits pane of Pitboard's Settings, with Switch Claude Code automatically turned on and Switch when a limit reaches 95%. Under it: Watching work: 40% of its weekly limit, as of 20:50.",
+              macos: {
+                caption: "Settings on macOS, in the Limits pane.",
+                describe:
+                  "The Limits pane of Pitboard's Settings, with Switch Claude Code automatically turned on and Switch when a limit reaches 95%. Under it: Watching work: 40% of its weekly limit, as of 20:50.",
+              },
+              windows: {
+                caption: "Settings on Windows, under Limits.",
+                describe:
+                  "Pitboard's Settings under Limits, with Switch Claude Code automatically turned on and the line: Watching work: 40% of its weekly limit, as of 20:50. Under it, Switch when a limit reaches 95%.",
+              },
             }}
             cli={{
-              caption: "The same from a terminal.",
-              describe:
-                "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
+              macos: {
+                caption: "The same from a terminal.",
+                describe:
+                  "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
+              },
+              windows: {
+                caption: "The same from a terminal.",
+                describe:
+                  "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, then: Watching work: 40% of its weekly limit, as of 20:50.",
+              },
             }}
           >
             <Settings show="switch" />
+            <WinSettings slot="win" />
             <Term slot="cli" session={sessions.watch} />
           </Figure>
         </Row>
         <Row id="warm-title" title="Warm-up">
           <p>
-            A <a href={`${DOCS}/guides/warm-up`}>warm-up</a> starts Claude Code's next five-hour
-            period when the last one ends, with one short message.
+            On macOS and Linux, a <a href={`${DOCS}/guides/warm-up`}>warm-up</a> starts Claude
+            Code's next five-hour period when the last one ends, with one short message.
           </p>
           <Figure
             slot="fig"
             app={{
-              caption: "Warm-up in the Limits pane.",
-              describe:
-                "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+              macos: {
+                caption: "Warm-up in the Limits pane on macOS.",
+                describe:
+                  "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+              },
             }}
             cli={{
-              caption: "The same from a terminal.",
-              describe:
-                "<code>pitboard warm</code> says Pitboard warms up these accounts from 07:00 to 23:00: personal on, warms up again at 22:00; work off.",
+              macos: {
+                caption: "The same from a terminal.",
+                describe:
+                  "<code>pitboard warm</code> says Pitboard warms up these accounts from 07:00 to 23:00: personal on, warms up again at 22:00; work off.",
+              },
             }}
           >
             <Settings show="warm" />
@@ -315,46 +378,73 @@ const jsonLd = [
       </div>
     </section>
 
-    <Feature id="windows" title="claude.ai and chatgpt.com for each account">
+    <Feature id="account-windows" title="claude.ai and chatgpt.com for each account">
       <p>
         The app opens claude.ai and chatgpt.com
-        <a href={`${DOCS}/guides/account-windows`}>in a window for each account</a>. A link shared
-        from your browser opens in the account you choose.
+        <a href={`${DOCS}/guides/account-windows`}>in a window for each account</a>. On macOS, a
+        link shared from your browser opens as the account you choose.
       </p>
       <Figure
         slot="fig"
         app={{
-          caption: "Opening a shared link as an account.",
-          describe:
-            "The Open Link window: Open this claude.ai link as: personal, or work, whose window is open. work is chosen, with Cancel and Open buttons.",
+          macos: {
+            caption: "Opening a shared link as an account on macOS.",
+            describe:
+              "The Open Link window: Open this claude.ai link as: personal, or work, whose window is open. work is chosen, with Cancel and Open buttons.",
+          },
+          windows: {
+            caption: "Opening claude.ai as an account from Pitboard's icon on Windows.",
+            describe:
+              "Pitboard's menu open from its icon in the notification area, with Open claude.ai showing personal and work.",
+          },
         }}
       >
         <OpenLink />
+        <WinDesk slot="win" submenu="claude.ai" updates={updates} />
       </Figure>
     </Feature>
 
     <Feature id="security" title="Security and privacy">
       <p>
-        Pitboard has no server and no telemetry.
+        Pitboard has no server and no telemetry, and
         <a href={`${DOCS}/security#what-leaves-your-machine`}
-          >Logins go only to the service that issued them</a
-        >.
+          >logins go only to the service that issued them</a
+        >. <b>Activity</b> and <code>pitboard log</code> list every change it makes.
       </p>
-      <p><b>Activity</b> and <code>pitboard log</code> list every change it makes.</p>
       <Figure
         slot="fig"
         app={{
-          caption: "The Activity pane.",
-          describe:
-            "The Activity pane of the Pitboard window lists the switch to work, the switch to desktop/home and a warm-up of personal, all asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+          macos: {
+            caption: "The Activity pane on macOS.",
+            describe:
+              "The Activity pane of the Pitboard window lists the switch to work, the switch to desktop/home and a warm-up of personal, all asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+          },
+          windows: {
+            caption: "The Activity page on Windows.",
+            describe:
+              "The Activity page of the Pitboard window lists the switch to work, asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+          },
         }}
         cli={{
-          caption: "The same from a terminal.",
-          describe:
-            "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal, the switch to desktop/home and the switch to work, each ok.",
+          macos: {
+            caption: "The same from a terminal.",
+            describe:
+              "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal, the switch to desktop/home and the switch to work, each ok.",
+          },
+          linux: {
+            caption: "The same from a terminal.",
+            describe:
+              "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal and the switch to work, each ok.",
+          },
+          windows: {
+            caption: "The same from a terminal.",
+            describe:
+              "<code>pitboard log</code> lists the enrolment of work and the switch to work, each ok.",
+          },
         }}
       >
         <Activity />
+        <WinActivity slot="win" />
         <Term slot="cli" session={sessions.log} />
       </Figure>
     </Feature>
@@ -388,7 +478,7 @@ const jsonLd = [
 
     <Block titleId="install-title" title="Install Pitboard">
       <div>
-        <InstallTabs n={2} zipUrl={zip.url} />
+        <InstallTabs n={2} />
       </div>
     </Block>
   </main>

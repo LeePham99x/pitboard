@@ -367,9 +367,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.8.0/pitboard_core/) shows the new one.
 - **Breaking:** On macOS and Linux, Pitboard [changes nothing as
-  root](https://docs.usepitboard.com/troubleshooting#pitboard-changes-nothing-as-root) or with
-  `sudo` and stops with `elevated`, though `pitboard status` still answers as with `--offline`.
-  Run it as yourself.
+  root](https://docs.usepitboard.com/troubleshooting/refused-changes#pitboard-changes-nothing-as-root)
+  or with `sudo` and stops with `elevated`, though `pitboard status` still answers as with
+  `--offline`. Run it as yourself.
 - **Breaking:** Pitboard refuses SOCKS proxies: while `ALL_PROXY`, `HTTPS_PROXY` or `HTTP_PROXY`
   names one, requests fail as `unreachable` unless `NO_PROXY` names their host.
 - **Breaking:** `pitboard schedule install` and **Renew parked logins daily** refuse with

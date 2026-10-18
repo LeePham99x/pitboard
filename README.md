@@ -1,7 +1,6 @@
 # Pitboard
 
-Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out,
-and see what each Claude Code and Codex account has left.
+Switch AI coding accounts and see their usage.
 
 [![CI](https://github.com/datlechin/pitboard/actions/workflows/ci.yml/badge.svg)](https://github.com/datlechin/pitboard/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/pitboard.svg)](https://crates.io/crates/pitboard)
@@ -13,16 +12,19 @@ and see what each Claude Code and Codex account has left.
   usage or that it needs signing in again"
   width="300">
 
-Pitboard keeps the login of each account you are not using, called a parked login. A switch
-puts the chosen account's parked login where Claude Code, OpenAI's Codex CLI or Claude
-Desktop reads it. Your history, settings and projects stay where they are.
+Pitboard switches Claude Code, OpenAI's Codex CLI and, on macOS, Claude Desktop between your
+own accounts without signing out, and shows what each Claude Code and Codex account has left.
+
+It keeps the login of each account you are not using, called a parked login. A switch puts
+the chosen account's parked login where the tool reads it. Your history, settings and
+projects stay where they are.
 
 [Open Claude Code sessions](https://docs.usepitboard.com/concepts/switching#open-sessions)
 follow a switch with no restart. A running `codex` keeps the old account until it starts
-again. Claude Desktop switches on macOS only, while Claude is closed. The app offers to quit
-Claude, and the command line refuses while it is open.
+again. Claude Desktop switches only while Claude is closed. The app offers to quit Claude,
+and the command line refuses while it is open.
 
-The menu bar app also gives each Claude Code and Codex account its own
+The app also gives each Claude Code and Codex account its own
 [window on claude.ai or chatgpt.com](https://docs.usepitboard.com/guides/account-windows).
 
 Pitboard has no server of its own and no telemetry. It sends each login only to the service
@@ -30,27 +32,34 @@ that issued it, and sends nothing for a Claude Desktop account.
 [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine)
 lists every request.
 
-The command line runs on macOS and Linux, and the app on macOS 14 or later. Pitboard is
-tested on macOS. On Linux it builds and passes its tests, but has not been run with real
-logins.
+The command line runs on macOS, Windows and Linux. The app runs on macOS 14 or later and on
+Windows 11 24H2 or later, and includes the command line. Pitboard for Windows is in beta, and
+its files are not signed. On Linux, Pitboard builds and passes its tests, but has not been run
+with real logins.
 
 ## Install
+
+On macOS and Linux, install the command line with the script:
 
 ```sh
 curl -fsSL https://usepitboard.com/install.sh | sh
 ```
 
-With Homebrew:
+Or with Homebrew:
 
 ```sh
 brew install datlechin/tap/pitboard              # the command line
-brew install --cask datlechin/tap/pitboard-app   # the app
+brew install --cask datlechin/tap/pitboard-app   # the app, on macOS
 ```
 
+On Windows, download the installer from
+[Download Pitboard](https://usepitboard.com/download#windows). It installs the app and puts
+the command line on your `PATH`, for your Windows account alone.
+
 The app includes the command line, so install one or the other.
-[Install Pitboard](https://docs.usepitboard.com/install) covers Cargo, release files and
-updates. [Verify a download](https://docs.usepitboard.com/install/verify) checks the script
-before you run it. The
+[Install Pitboard](https://docs.usepitboard.com/install) covers each system, Cargo, release
+files and updates. [Verify a download](https://docs.usepitboard.com/install/verify) checks a
+file before you run it. The
 [code signing policy](https://docs.usepitboard.com/install/code-signing-policy) says which
 files are signed and who approves a signature.
 
@@ -66,16 +75,19 @@ pitboard                        # what each account has left
 pitboard use work               # switch Claude Code to work
 ```
 
-In the app, click Pitboard's item in the menu bar and choose the account. The
+In the app, choose the account in Pitboard's menu, from its item in the menu bar on macOS or
+its icon in the notification area on Windows. The
 [Quickstart](https://docs.usepitboard.com/quickstart) shows each step and what it prints. For
-Codex or Claude Desktop, put `codex/` or `desktop/` before each label, as
-[Use Pitboard with Codex](https://docs.usepitboard.com/guides/codex) and
-[Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop) explain.
+Codex, put `codex/` before each label, as
+[Use Pitboard with Codex](https://docs.usepitboard.com/guides/codex) explains. For Claude
+Desktop on macOS, put `desktop/`, as
+[Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
+explains.
 
 Add accounts only this way, never with Claude Code's `/login` or with `codex login`. Each
 replaces the login in use without Pitboard parking it. The account that was in use then needs
-a browser sign-in. Never choose **Log out** in Claude: it ends the login Claude holds at
-claude.ai, and Pitboard cannot bring it back.
+a browser sign-in. Never choose **Log out** in Claude Desktop: it ends the login Claude holds
+at claude.ai, and Pitboard cannot bring it back.
 
 ## Documentation
 

@@ -1,19 +1,64 @@
 ---
-import Terminal from "./Terminal.astro";
-import type { Session } from "../../data/sessions.ts";
+// A session in the terminal of each system it runs on, and in macOS's on a system it does not.
+import LinuxTerminal from "./linux/Terminal.astro";
+import MacTerminal from "./mac/Terminal.astro";
+import WinTerminal from "./win/Terminal.astro";
+import { printed, type Session } from "../../data/sessions.ts";
+import { platforms, shownOn, type Platform } from "../../lib/platform.ts";
 
 interface Props {
   session: Session;
 }
 const { session } = Astro.props;
+// each shell's prompt, and the cursor at it: Windows Terminal's is a bar
+const prompts: Record<Platform, [string, string]> = {
+  macos: ['<span class="text-mac-term-dim">%</span>', '<span class="bg-mac-term-dim"> </span>'],
+  windows: [
+    '<span class="text-win-term-dim">PS C:\\Users\\me&gt;</span>',
+    '<span class="inline-block h-20 w-2 bg-win-term-text align-top"></span>',
+  ],
+  linux: [
+    '<span class="text-linux-term-dim">$</span>',
+    '<span class="bg-linux-term-text"> </span>',
+  ],
+};
+const drawn = platforms.filter((p) => !session.on || session.on.includes(p));
+// the command typed at the prompt, what it printed, and the prompt again with the cursor
+const lines = (p: Platform) => {
+  const [prompt, cursor] = prompts[p];
+  return [
+    `${prompt} ${session.command}`,
+    ...printed(session, p).map((line) => line || " "),
+    `${prompt} ${cursor}`,
+  ];
+};
+const desk = "desk flex min-h-0 items-center justify-center";
 ---
 
-<div class="desk flex min-h-0 items-center justify-center py-20" aria-hidden="true" data-output>
-  <Terminal title={session.title} solo>
-    <div><span class="text-tw-dim">%</span> {session.command}</div>
-    {session.output.map((line) => (
-      <div set:html={line || " "} />
-    ))}
-    <div><span class="text-tw-dim">%</span> <span class="bg-tw-dim"> </span></div>
-  </Terminal>
+<div class={shownOn("macos", drawn)}>
+  <div class:list={[desk, "py-20"]} aria-hidden="true" data-output>
+    <MacTerminal title={session.title} solo>
+      {lines("macos").map((line) => (
+        <div set:html={line} />
+      ))}
+    </MacTerminal>
+  </div>
 </div>
+{drawn.includes("windows") && <div class={shownOn("windows", drawn)}>
+  <div class:list={[desk, "py-24 desk-px-820"]} aria-hidden="true" data-output>
+    <WinTerminal title="Windows PowerShell" solo>
+      {lines("windows").map((line) => (
+        <div set:html={line} />
+      ))}
+    </WinTerminal>
+  </div>
+</div>}
+{drawn.includes("linux") && <div class={shownOn("linux", drawn)}>
+  <div class:list={[desk, "py-24 desk-px-780"]} aria-hidden="true" data-output>
+    <LinuxTerminal title={session.title}>
+      {lines("linux").map((line) => (
+        <div set:html={line} />
+      ))}
+    </LinuxTerminal>
+  </div>
+</div>}

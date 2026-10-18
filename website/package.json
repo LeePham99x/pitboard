@@ -10,7 +10,7 @@
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build && node scripts/csp.mjs && node scripts/guard.mjs",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "check": "ASTRO_TELEMETRY_DISABLED=1 astro check",
-    "test": "node --test \"src/lib/*.test.ts\" \"src/data/*.test.ts\" \"scripts/*.test.mjs\"",
+    "test": "node --test \"src/lib/*.test.ts\" \"src/data/*.test.ts\" \"src/scripts/*.test.ts\" \"scripts/*.test.mjs\"",
     "format": "prettier --write ."
   },
   "dependencies": {

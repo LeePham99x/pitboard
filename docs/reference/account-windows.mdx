@@ -1,8 +1,10 @@
 ---
 title: "Account windows and shared links"
-sidebarTitle: "Windows and links"
+sidebarTitle: "Account windows"
 description: "Look up account windows, the sign-in window, downloads, the Open Link window, refused links and the Share extension."
 ---
+
+The app opens account windows on macOS and Windows, and only the macOS app takes pages from the share sheet. Linux has no app.
 
 Each enrolled account has at most one window, on its tool's site. For signing in and a window's limits, see [Use each account's site](/guides/account-windows).
 
@@ -16,30 +18,52 @@ A login nobody enrolled has no window.
 
 ## Account windows
 
-| Opens from | Item |
-| --- | --- |
-| Pitboard's item in the menu bar, the **File** menu and the Dock icon's menu | **Open claude.ai as work**, or **Open claude.ai** and then the account when the site has several |
-| An account's shortcut menu in the **Accounts** pane | **Open claude.ai** or **Open chatgpt.com** |
-| The [**Open Link** window](#open-link-window) | **Open** |
+<Tabs>
+  <Tab title="macOS">
+    | Opens from | Item |
+    | --- | --- |
+    | Pitboard's item in the menu bar, the **File** menu and the Dock icon's menu | **Open claude.ai as work**, or **Open claude.ai** and then the account when the site has several |
+    | An account's shortcut menu in the **Accounts** pane | **Open claude.ai** or **Open chatgpt.com** |
+    | The [**Open Link** window](#open-link-window) | **Open** |
+  </Tab>
+  <Tab title="Windows">
+    | Opens from | Item |
+    | --- | --- |
+    | Pitboard's menu in the notification area | **Open claude.ai as work**, or **Open claude.ai** and then the account when the site has several |
+    | An account's shortcut menu in **Accounts** | **Open claude.ai** or **Open chatgpt.com** |
+    | The [**Open link** window](#open-link-window) | **Open** |
+
+    A window needs the Microsoft Edge WebView2 Runtime 144.0.3719.77 or later. With an older one, or none, it shows **Couldn't open this window** and says which version it found.
+  </Tab>
+</Tabs>
 
 Opening an open window brings it to the front.
 
-The title is the account's label. When the other site has an account with the same label, the title adds the site: **work (claude.ai)**. The subtitle is the page's title, or the site's name.
+The title is the account's label. When the other site has an account with the same label, the title adds the site: **work (claude.ai)**. On macOS, the subtitle is the page's title, or the site's name.
 
 The window opens at the last page of its site it showed, other than a sign-in page. Otherwise it opens at `https://claude.ai/` or `https://chatgpt.com/`.
 
-Until the app has read the accounts, the window shows **Reading accounts**. A failed read shows **Couldn't Read Accounts**, the reason and **Try Again**. The window closes once a read no longer lists its account.
+Until the app has read the accounts, the window shows **Reading accounts**. A failed read shows **Couldn't Read Accounts**, or **Couldn't read accounts** on Windows, the reason and a button to try again. The window closes once a read no longer lists its account.
 
-| Action | Toolbar | Menu |
-| --- | --- | --- |
-| Previous or next page | **Back**, **Forward** or a two-finger swipe | **Go** > **Back** (Command-Left Bracket), **Forward** (Command-Right Bracket) |
-| Reload | **Reload**, which **Stop** replaces while a page loads | **View** > **Reload Page** (Command-R) |
-| Zoom | A pinch | **View** > **Zoom In** (Command-Plus), **Zoom Out** (Command-Minus), **Actual Size** (Command-0) |
-| Find | None | **Edit** > **Find** > **Find** (Command-F) |
+<Tabs>
+  <Tab title="macOS">
+    | Action | Toolbar | Menu |
+    | --- | --- | --- |
+    | Previous or next page | **Back**, **Forward** or a two-finger swipe | **Go** > **Back** (Command-Left Bracket), **Forward** (Command-Right Bracket) |
+    | Reload | **Reload**, which **Stop** replaces while a page loads | **View** > **Reload Page** (Command-R) |
+    | Zoom | A pinch | **View** > **Zoom In** (Command-Plus), **Zoom Out** (Command-Minus), **Actual Size** (Command-0) |
+    | Find | None | **Edit** > **Find** > **Find** (Command-F) |
 
-Zoom steps from 50% to 300%, as in Safari. It resets when the window closes. **Actual Size** also undoes a pinch. The find bar searches when you press Return.
+    Zoom steps from 50% to 300%, as in Safari. It resets when the window closes. **Actual Size** also undoes a pinch. The find bar searches when you press Return.
 
-The page's shortcut menu has no **Download Linked File**, **Download Image** or **Download Video**: WebKit would cancel those downloads.
+    The page's shortcut menu has no **Download Linked File**, **Download Image** or **Download Video**: WebKit would cancel those downloads.
+  </Tab>
+  <Tab title="Windows">
+    The toolbar holds **Back**, **Forward** and **Reload**, which **Stop** replaces while a page loads. **Downloads** joins them once the window has a download, and the menu behind the three dots at the toolbar's end holds **Remove website data**.
+
+    WebView2 serves the page's own keys, find bar and zoom, as Microsoft Edge does.
+  </Tab>
+</Tabs>
 
 ## Notes
 
@@ -47,7 +71,8 @@ Notes show one at a time at the top of the window. **Dismiss** (an x) closes one
 
 | Note | Shown when |
 | --- | --- |
-| **Sign in to claude.ai as me@example.com. Google's sign-in does not work inside apps.**, then the site's sign-in steps | The first time this [Pitboard directory](/reference/files#the-pitboard-directory) opens the window, and after **Remove Website Data** |
+| **Sign in to claude.ai as me@example.com. Google's sign-in does not work inside apps.**, then the site's sign-in steps | The first time this [Pitboard directory](/reference/files#the-pitboard-directory) opens the window, and after its website data is removed |
+| **What this window kept before is deleted once every account window has closed. It opens after that.** | On Windows, in the item that would open a window whose data waits to be deleted. The window does not open until then. |
 | **Google does not allow its pages inside apps, so Pitboard stopped it. Sign in as me@example.com another way.**, then the steps and the Google services the window cannot connect | A page went to Google's sign-in |
 | **claude.ai opened a page in your browser. Anything you connect there goes to the claude.ai account your browser is signed in to, which may not be "work".** | A page sent a web page to your browser without a click |
 | **This window doesn't open links to other apps, such as this vscode: link.** | A link to another app was stopped |
@@ -65,23 +90,23 @@ Notes show one at a time at the top of the window. **Dismiss** (an x) closes one
 
 Email and app links act only when clicked or opened in a new window.
 
-A frame inside the page, such as an artifact, loads any address but a file on your Mac.
+A frame inside the page, such as an artifact, loads any address but a file on your computer.
 
 A page's alert, confirmation or question opens as a dialog titled with the asking host: **claude.ai says**. A frame's is titled **An embedded page at artifact.example says**, or **An embedded page says** when it has no host.
 
 A file upload opens the standard Open dialog.
 
-A page that fails to load or keeps crashing shows **Couldn't Load the Page**: see [A window does not load its page](/troubleshooting/account-windows#a-window-does-not-load-its-page).
+A page that fails to load or keeps crashing shows **Couldn't Load the Page**, or **Couldn't load the page** on Windows: see [A window does not load its page](/troubleshooting/account-windows#a-window-does-not-load-its-page).
 
 ## Sign-in window
 
 A page opens a sign-in window when it opens a sign-in page or a blank page in a new window. Only the site's page or a sign-in page in the account's window can, never a frame.
 
-It opens centred on the account's window, at the size the page asks for. It defaults to 500 by 640 points and is never smaller than 320 by 400.
+It opens centred on the account's window, at the size the page asks for. On macOS, it defaults to 500 by 640 points and is never smaller than 320 by 400.
 
 It shares the account's website data, so a sign-in there is the account's.
 
-Its title is the page's title, or the page's host until it has one. Its subtitle is the host.
+Its title is the page's title, or the page's host until it has one. On macOS, its subtitle is the host.
 
 Its page loads only the site, the site's sign-in pages and a blank page. Anything else goes where the account's window would send it, and notes show there.
 
@@ -89,36 +114,58 @@ It has no toolbar and opens no window of its own. It closes when:
 
 - its page closes it, as a finished sign-in does
 - you close it or the account's window
-- you choose **Remove Website Data**
+- you remove the window's website data
 - another sign-in window opens in its place
 
 Whether chatgpt.com's **Continue with Microsoft** and **Continue with Apple** open a sign-in window is not known.
 
 ## Downloads
 
-Downloads go to your Downloads folder. If you denied Pitboard that folder, see [Downloads are not saved](/troubleshooting/account-windows#downloads-are-not-saved).
-
-A download never replaces a file: a second `report.pdf` is saved as `report 2.pdf`, then `report 3.pdf`.
+Downloads go to your Downloads folder. A download never replaces a file.
 
 | Download | Saved |
 | --- | --- |
 | Started by the site's own page | At once |
-| Started by anything else, such as an artifact | After you click **Download** in **Download "report.csv" from example.com?**, or **Download "report.csv"?** when the host is not known |
+| Started by anything else, such as an artifact | After you choose **Download** in **Download "report.csv" from example.com?**, or **Download "report.csv"?** when the host is not known |
 | Started in a sign-in window, or from an address that is not `https:`, `blob:` or `data:` | Never |
 
-**Downloads** in the toolbar appears once the window has a download, and lists them newest first. An ended one shows **Downloaded**, **Cancelled** or why it failed.
+A failed download's partial file is deleted.
 
-**Cancel** (an x) stops a running download and deletes what it wrote. **Show in Finder** (a magnifying glass) shows a finished file. **Clear** takes the ended downloads off the list.
+**Quit Pitboard** on macOS, or **Exit** on Windows, asks **A download is in progress. Quit anyway?** while a download runs, with the count when there are several. **Quit** stops every download and deletes what each wrote.
 
-A failed download's partial file is deleted. Downloads go on after the window closes.
+<Tabs>
+  <Tab title="macOS">
+    A download goes on after its window closes.
 
-Quitting Pitboard while a download runs asks **A download is in progress. Quit anyway?**, with the count when there are several. **Quit** stops every download and deletes what each wrote.
+    A second `report.pdf` is saved as `report 2.pdf`, then `report 3.pdf`. If you denied Pitboard the Downloads folder, see [Downloads are not saved](/troubleshooting/account-windows#downloads-are-not-saved).
+
+    **Downloads** in the toolbar appears once the window has a download, and lists them newest first. An ended one shows **Downloaded**, **Cancelled** or why it failed.
+
+    **Cancel** (an x) stops a running download and deletes what it wrote. **Show in Finder** (a magnifying glass) shows a finished file. **Clear** takes the ended downloads off the list.
+  </Tab>
+  <Tab title="Windows">
+    A download goes on while any account window is open. Closing the last one stops every download, and nothing asks first.
+
+    A second `report.pdf` is saved as `report (1).pdf`, then `report (2).pdf`.
+
+    **Downloads** in the toolbar appears once the window has a download, and opens WebView2's own list of them.
+  </Tab>
+</Tabs>
 
 ## Remove Website Data
 
-**File** > **Remove Website Data** acts on the account's window in front. It asks **Remove claude.ai data for "work"?**, with **Remove** and **Cancel**.
+<Tabs>
+  <Tab title="macOS">
+    **File** > **Remove Website Data** acts on the account's window in front.
+  </Tab>
+  <Tab title="Windows">
+    **Remove website data** is in the menu at the end of the account's window's toolbar.
+  </Tab>
+</Tabs>
 
-**Remove** clears everything the site keeps in that window. That signs the window out on this Mac only. The site is not told.
+It asks **Remove claude.ai data for "work"?**, with **Remove** and **Cancel**.
+
+**Remove** clears everything the site keeps in that window. That signs the window out on this computer only. The site is not told.
 
 The window starts again at the site's home, at 100% zoom, with the sign-in note.
 
@@ -126,7 +173,7 @@ Forgetting an account also deletes its window's data: see [How account windows k
 
 ## Open Link window
 
-The **Open Link** window asks which account opens a shared link. Nothing opens until you choose, even when the site has one account.
+The **Open Link** window asks which account opens a [Pitboard link](#pitboard-links). On Windows, it is the **Open link** window, and its other titles and buttons are in sentence case too. Nothing opens until you choose, even when the site has one account.
 
 | Shows | When | Buttons |
 | --- | --- | --- |
@@ -150,7 +197,7 @@ If the account's window is open, it loads the link, and **Back** returns to the 
 
 ## Refused links
 
-The Share extension and the **Open Link** window refuse these links. Only the **Open Link** window gives the last reason.
+The Share extension on macOS and the **Open Link** window refuse these links. Only the **Open Link** window gives the last reason.
 
 | Link | Reason |
 | --- | --- |
@@ -165,21 +212,21 @@ Pitboard opens an `http` link, or one with no scheme such as `claude.ai/new`, as
 
 ## Pitboard links
 
-The Share extension hands a page to the app as a Pitboard link: `pitboard://open?url=` followed by the page's link, percent-encoded.
+A Pitboard link is `pitboard://open?url=` followed by a page's link, percent-encoded. On macOS, the Share extension hands a page to the app as one. On Windows, the installer registers `pitboard://` for Pitboard.
 
 ```text
 pitboard://open?url=https%3A%2F%2Fclaude.ai%2Fchat%2F0e5a
 ```
 
-Anything on your Mac can open a Pitboard link, so one only ever shows the **Open Link** window.
+Anything on your computer can open a Pitboard link, so one only ever shows the **Open Link** window.
 
 The app [refuses](#refused-links) one with a port, a user name, a fragment, a host other than `open` or a path other than `/`. Its query must be one non-empty `url` and nothing else.
 
 ## Share extension
 
-The app includes a Share extension, **Pitboard** in a browser's Share menu. If it is missing, see [Pitboard is missing from the Share menu](/troubleshooting/account-windows#pitboard-is-missing-from-the-share-menu).
+On macOS, the app includes a Share extension, **Pitboard** in a browser's Share menu. If it is missing, see [Pitboard is missing from the Share menu](/troubleshooting/account-windows#pitboard-is-missing-from-the-share-menu). On Windows, the share sheet lists only a signed Pitboard, so the app takes no page from it.
 
-It is offered for one web page at a time. It checks the page against the [refused links](#refused-links), then hands it to the app it came in as a [Pitboard link](#pitboard-links).
+The extension is offered for one web page at a time. It checks the page against the [refused links](#refused-links), then hands it to the app it came in as a [Pitboard link](#pitboard-links).
 
 | Shows | When | Buttons |
 | --- | --- | --- |

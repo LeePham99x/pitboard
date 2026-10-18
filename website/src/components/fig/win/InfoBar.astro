@@ -1,0 +1,28 @@
+---
+// WinUI's InfoBar at its informational severity: the icon, the title, the slot on its own line
+// below them, and the close button when the notice can be dismissed.
+interface Props {
+  title: string;
+  closable?: boolean;
+}
+const { title, closable = false } = Astro.props;
+---
+
+<div
+  class="relative flex min-h-48 gap-12 rounded-u-4 bg-win-card-2 pt-14 pr-38 pb-12 pl-16 inset-shadow-win-layer-edge"
+>
+  <svg class="mt-2 size-16 shrink-0" viewBox="0 0 16 16">
+    <circle class="fill-win-attention" cx="8" cy="8" r="8"></circle>
+    <path
+      class="fill-win-text-inverse"
+      d="M7.25 6.75h1.5v5h-1.5ZM8 3.6a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9Z"
+    ></path>
+  </svg>
+  <span class="min-w-0 flex-1">
+    <b class="block font-semibold">{title}</b>
+    <slot />
+  </span>
+  {closable && <span class="absolute top-5 right-5 flex size-38 items-center justify-center"
+    ><svg class="size-16"><use href="#fl-dismiss"></use></svg></span
+  >}
+</div>

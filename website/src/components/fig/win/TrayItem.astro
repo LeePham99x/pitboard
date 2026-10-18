@@ -1,0 +1,18 @@
+---
+// An icon in the notification area: a 32 by 40 pixel button, its backplate shown while `on`.
+interface Props {
+  on?: boolean;
+  class?: string;
+}
+const { on = false, class: extra } = Astro.props;
+---
+
+<span
+  class:list={[
+    "flex h-40 w-32 items-center justify-center rounded-u-4",
+    { "bg-win-subtle": on },
+    extra,
+  ]}
+>
+  <slot />
+</span>

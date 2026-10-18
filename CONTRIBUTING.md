@@ -611,10 +611,11 @@ npm run build
 ```
 
 CI runs these when a change reaches `website/` or a file the site reads, such as
-`CHANGELOG.md` or a docs page. `npm run build` reads the newest GitHub release, with
-`GITHUB_TOKEN` when it is set. `PITBOARD_SITE_OFFLINE=1` builds from the release recorded in
-`src/data/fixtures/` instead. The build ends with `scripts/guard.mjs`, which fails on anything
-the site must not ship and says what. `npm run preview` serves the build.
+`CHANGELOG.md` or a docs page. `npm run build` reads the latest release and the betas published
+above it, with `GITHUB_TOKEN` when it is set. `PITBOARD_SITE_OFFLINE=1` builds from the releases
+recorded in `src/data/fixtures/` instead, and takes each beta recorded there as published. The
+build ends with `scripts/guard.mjs`, which fails on anything the site must not ship and says
+what. `npm run preview` serves the build.
 
 ## Changelog
 

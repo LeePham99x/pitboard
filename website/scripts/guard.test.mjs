@@ -6,6 +6,7 @@ import { headers, policy } from "./csp.mjs";
 import {
   SITE_BANNED,
   bannedFromDocs,
+  checkDocsToSite,
   checkImage,
   checkPage,
   checkSigningPolicy,
@@ -120,6 +121,40 @@ test("needs an image description X takes, the same for X as for the others", () 
   assert.match(tags("The logo \u2014 big.").problems.join(), /en or em dash/);
 });
 
+test("needs each platform tab and surface button to look chosen by the root's choice", () => {
+  const tab = (look) =>
+    `<button class="text-muted ${look}" role="tab" aria-selected="true" data-platform="macos">macOS</button>`;
+  const pick = (look) =>
+    `<button class="text-fg ${look}" type="button" aria-pressed="true" data-surface="app">App</button>`;
+  assert.deepEqual(
+    problems(tab("chosen:text-ink chosen:after:bg-ink") + pick("chosen:bg-ink")),
+    [],
+  );
+  assert.match(
+    problems(tab("aria-selected:text-ink")).join(),
+    /the macos tab looks chosen by aria-selected, which only site\.ts sets/,
+  );
+  assert.match(
+    problems(pick("aria-pressed:bg-ink")).join(),
+    /the app button looks chosen by aria-pressed, which only site\.ts sets/,
+  );
+  assert.match(problems(pick("")).join(), /the app button has no chosen: look/);
+});
+
+test("needs each installer link beside a step shown after a download to show that step", () => {
+  const installer = (arch, after = ' data-download="windows"') =>
+    `<a href="https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-${arch}.msi"${after}>${arch}</a>`;
+  const panel = (links) =>
+    `<div role="tabpanel">${links}<p data-after="windows">Select <b>Run anyway</b>.</p></div>`;
+  assert.deepEqual(problems(panel(installer("x64") + installer("arm64"))), []);
+  assert.match(
+    problems(panel(installer("x64") + installer("arm64", ""))).join(),
+    /Pitboard-v1\.0\.0-beta\.2-windows-arm64\.msi does not show the step its panel gives after a download/,
+  );
+  // a list of the release's files sits outside every panel
+  assert.deepEqual(problems(panel(installer("x64")) + installer("arm64", "")), []);
+});
+
 // the signature and the header of a PNG, then the chunks given, each with a dummy CRC
 function png(width, height, colour, ...chunks) {
   const chunk = (type, data) => {
@@ -176,23 +211,81 @@ test("checks the preview image each page names", () => {
   assert.match(checkImage("p.html", all, () => null).join(), /is not in dist/);
 });
 
-test("compares the downloads with the newest full release on /changelog", () => {
-  const download = (v) =>
-    `<a href="https://github.com/datlechin/pitboard/releases/download/v${v}/Pitboard-v${v}-macos.zip">Mac</a>`;
-  const changelog = (...versions) =>
-    checkPage(
+const download = (v, file, text = file) =>
+  `<a href="https://github.com/datlechin/pitboard/releases/download/v${v}/${file}">${text}</a>`;
+const mac = (v, text = "Download for Mac") => download(v, `Pitboard-v${v}-macos.zip`, text);
+const msi = (v, text) => download(v, `Pitboard-v${v}-windows-x64.msi`, text);
+const site = (body, ...versions) =>
+  new Map([
+    ["download.html", checkPage("download.html", page(body), rules)],
+    [
       "changelog.html",
-      page(versions.map((v) => `<article id="v${v}"><h2>${v}</h2></article>`).join("")),
-      rules,
-    );
-  const pages = (...versions) =>
-    new Map([
-      ["download.html", checkPage("download.html", page(download("0.15.0")), rules)],
-      ["changelog.html", changelog(...versions)],
-    ]);
-  assert.deepEqual(checkVersions(pages("1.0.0-beta.2", "1.0.0-beta.1", "0.15.0")), []);
-  assert.equal(checkVersions(pages("1.0.0-beta.1", "0.14.0")).length, 1);
-  assert.equal(checkVersions(pages("0.16.0", "0.15.0")).length, 1);
+      checkPage(
+        "changelog.html",
+        page(versions.map((v) => `<article id="v${v}"><h2>${v}</h2></article>`).join("")),
+        rules,
+      ),
+    ],
+  ]);
+
+test("compares the macOS and Linux downloads with the newest full release on /changelog", () => {
+  const linux = (v) => download(v, `pitboard-v${v}-x86_64-unknown-linux-musl.tar.gz`);
+  assert.deepEqual(
+    checkVersions(site(mac("0.15.0") + linux("0.15.0"), "1.0.0-beta.2", "1.0.0-beta.1", "0.15.0")),
+    [],
+  );
+  assert.equal(checkVersions(site(mac("0.15.0"), "1.0.0-beta.1", "0.14.0")).length, 1);
+  assert.equal(checkVersions(site(mac("0.15.0"), "0.16.0", "0.15.0")).length, 1);
+  assert.match(
+    checkVersions(site(mac("0.15.0") + linux("1.0.0-beta.1"), "1.0.0-beta.1", "0.15.0")).join(),
+    /macOS and Linux downloads name 2 versions/,
+  );
+});
+
+test("takes the Windows downloads from that release, or from a beta /changelog shows above it", () => {
+  const beta = "1.0.0-beta.1";
+  const files =
+    msi(beta, "Download for Windows (beta)") +
+    download(beta, `Pitboard-v${beta}-windows-arm64.msi`) +
+    download(beta, `Pitboard-v${beta}-windows-arm64.msi.cdx.json`, ".cdx.json") +
+    download(beta, `pitboard-v${beta}-aarch64-pc-windows-msvc.zip`) +
+    download(beta, "SHA256SUMS") +
+    download("0.15.0", "SHA256SUMS");
+  assert.deepEqual(checkVersions(site(mac("0.15.0") + files, beta, "0.15.0")), []);
+  const full =
+    mac("1.0.0") + msi("1.0.0", "Download for Windows") + download("1.0.0", "appcast-windows.xml");
+  assert.deepEqual(checkVersions(site(full, "1.1.0-beta.1", "1.0.0", beta)), []);
+  const why = (body, ...versions) => checkVersions(site(body, ...versions)).join("\n");
+  assert.match(
+    why(mac("0.15.0") + files, "0.15.0"),
+    /Windows downloads name 1\.0\.0-beta\.1, neither 0\.15\.0 nor a beta \/changelog shows above it/,
+  );
+  assert.match(
+    why(mac("1.0.0") + msi(beta, "Download for Windows (beta)"), "1.0.0", beta),
+    /Windows downloads name 1\.0\.0-beta\.1, neither 1\.0\.0/,
+  );
+  assert.match(
+    why(mac("0.15.0") + msi(beta) + msi("1.0.0-beta.2"), "1.0.0-beta.2", beta, "0.15.0"),
+    /Windows downloads name 2 versions: 1\.0\.0-beta\.1, 1\.0\.0-beta\.2/,
+  );
+  assert.match(
+    why(mac("0.15.0") + msi(beta) + download("0.14.0", "SHA256SUMS"), beta, "0.15.0"),
+    /SHA256SUMS links name 0\.14\.0, which no other download names/,
+  );
+});
+
+test("needs a download button to say (beta) exactly when it downloads a beta", () => {
+  const beta = "1.0.0-beta.1";
+  const why = (body) => checkVersions(site(mac("0.15.0") + body, beta, "0.15.0")).join("\n");
+  assert.equal(why(msi(beta, "Download for Windows (beta)")), "");
+  assert.match(
+    why(msi(beta, "Download for Windows")),
+    /"Download for Windows" downloads 1\.0\.0-beta\.1, a beta, without saying \(beta\)/,
+  );
+  assert.match(
+    checkVersions(site(mac("1.0.0", "Download for Mac (beta)"), "1.0.0")).join(),
+    /"Download for Mac \(beta\)" says \(beta\) for 1\.0\.0/,
+  );
 });
 
 test("finds two releases on one site", () => {
@@ -239,6 +332,30 @@ test("needs the code signing policy on the home page and the download page", () 
     checkSigningPolicy(pages(policy.replace("Code signing policy", "Signing"), policy)).length,
     1,
   );
+});
+
+test("needs each site address a docs page links with an id to name one the site has", () => {
+  const pages = new Map([
+    ["index.html", checkPage("index.html", page('<section id="faq"></section>'), rules)],
+    [
+      "download.html",
+      checkPage("download.html", page('<section id="release-files"></section>'), rules),
+    ],
+  ]);
+  const docs = (text) => checkDocsToSite(pages, [["install.mdx", text]]);
+  assert.deepEqual(
+    docs(
+      "[Files](https://usepitboard.com/download#release-files), [FAQ](https://usepitboard.com/#faq) and `https://usepitboard.com/install.sh`.",
+    ),
+    [],
+  );
+  assert.deepEqual(docs("[Other ways](https://usepitboard.com/download#other-ways)."), [
+    "install.mdx: https://usepitboard.com/download#other-ways names an id download.html does not have",
+  ]);
+  assert.deepEqual(docs("[Files](https://usepitboard.com/downloads#release-files)"), [
+    "install.mdx: https://usepitboard.com/downloads#release-files goes to no page",
+  ]);
+  assert.deepEqual(docs("[Install](https://docs.usepitboard.com/install#what-you-need)"), []);
 });
 
 test("hashes inline scripts byte for byte and refuses foreign scripts", () => {

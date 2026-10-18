@@ -1,0 +1,65 @@
+---
+// As MainWindow.swift lays it out; a `crop` desk shows the window's top, a `fit` one all of it.
+import Lights from "./Lights.astro";
+
+interface Props {
+  pane: "accounts" | "activity";
+  title: string;
+  subtitle?: string;
+  tools: string[];
+  crop?: boolean;
+  fit?: boolean;
+}
+const { pane, title, subtitle, tools, crop = false, fit = false } = Astro.props;
+const panes = [
+  ["accounts", "Accounts", "sf-people"],
+  ["activity", "Activity", "sf-clock"],
+  ["machine", "This Mac", "sf-steth"],
+];
+const log = pane === "activity";
+---
+
+<div
+  class:list={[
+    "desk",
+    crop ? "h-356" : "flex items-center justify-center py-20",
+    { "min-h-540": pane === "accounts" && !crop && !fit, "min-h-250": log },
+  ]}
+  aria-hidden="true"
+  data-output
+>
+  <div
+    class:list={[
+      "grid min-h-220 grid-cols-[calc(var(--spacing)*170)_1fr] overflow-hidden rounded-u-12 bg-mac-window-bg text-mac-window-text shadow-mac-window",
+      crop ? "absolute top-24 left-1/2 -translate-x-1/2" : "relative",
+      log ? "w-580" : "w-560",
+    ]}
+  >
+    <div class="relative bg-mac-window-side px-10 pt-46 inset-shadow-mac-window-r">
+      <Lights window />
+      {panes.map(([id, name, icon]) => <div
+        class:list={[
+          "flex h-28 items-center gap-6 rounded-u-6 px-8",
+          { "bg-mac-window-pick": id === pane },
+        ]}
+      >
+        <svg class="size-16 shrink-0 text-mac-window-blue">
+          <use href={`#${icon}`} />
+        </svg>
+        {name}
+      </div>)}
+    </div>
+    <div class="flex min-w-0 flex-col">
+      <div class="flex h-52 flex-none items-center gap-14 pr-14 pl-16 inset-shadow-mac-window-b">
+        <span class="flex flex-1 flex-col"
+          ><b class="text-u-15/19 font-bold">{title}</b
+          >{subtitle && <span class="text-u-11/13 text-mac-window-sub">{subtitle}</span>}</span
+        >
+        {tools.map((icon) => <svg class="size-16 shrink-0 text-mac-window-sub">
+          <use href={`#${icon}`} />
+        </svg>)}
+      </div>
+      <div class:list={["flex-1", { "px-16 pt-4 pb-10": !log }]}><slot /></div>
+    </div>
+  </div>
+</div>

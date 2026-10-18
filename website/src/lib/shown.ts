@@ -13,10 +13,9 @@ export function shown(all: Version[], latest: string, published: ReadonlySet<str
   );
 }
 
-export function newestFull(all: Version[]): Version | undefined {
-  return all.find((v) => !v.prerelease);
-}
-
+// A beta at the head of shown()'s list is published above the latest release.
 export function recentReleases(versions: Version[]): Version[] {
-  return versions.filter((v) => !v.prerelease).slice(0, 3);
+  const full = versions.filter((v) => !v.prerelease).slice(0, 3);
+  const [newest] = versions;
+  return newest?.prerelease ? [newest, ...full] : full;
 }

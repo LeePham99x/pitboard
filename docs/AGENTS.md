@@ -3,10 +3,10 @@
 These are the writing rules for docs.usepitboard.com. [README.md](README.md) says where files
 go and how to preview, check and publish a change.
 
-Readers run the tagged release, so the facts come from the code at that release. Where a
-Markdown file in the repository disagrees with the code, the code wins. Release procedures,
-design notes and unreleased behaviour are not site content; they live in `RELEASING.md`,
-`ARCHITECTURE.md` and the code.
+Readers run the newest published release, betas included, so the facts come from the code at
+that release. Where a Markdown file in the repository disagrees with the code, the code wins.
+Release procedures, design notes and unreleased behaviour are not site content; they live in
+`RELEASING.md`, `ARCHITECTURE.md` and the code.
 
 Run [the checks](README.md#check) before each commit, then read the page in
 [the preview](README.md#preview): the checks miss the silent failures listed under "MDX".
@@ -20,6 +20,8 @@ Run [the checks](README.md#check) before each commit, then read the page in
   punctuation, no questions and no links. No heading holds only other headings.
 - No apostrophe in a heading: Mintlify makes it `%E2%80%99` in the anchor, and links to it
   break.
+- A heading that a page, the site or a file outside `docs/` links keeps its words, or every
+  link to it changes in the same commit.
 - Each page is one type: quickstart, how-to, explanation or reference. Most pages stay
   under 600 words; paragraphs are one to three sentences.
 - The first sentence says what the page does or what is true, and never restates the
@@ -40,7 +42,8 @@ Run [the checks](README.md#check) before each commit, then read the page in
 - Release history lives in CHANGELOG.md. Only `install/upgrade-from-0-3-0` and a section
   that applies to a past release name an older version.
 - A claim about Claude Code, Codex or Claude Desktop names the build it was read in ("read
-  in 2.1.294") on the page that owns the fact. Other pages link that page.
+  in 2.1.294") on the page that owns the fact, and the system when it was read on one only
+  ("read in 2.1.302 on Windows"). Other pages link that page.
 
 ## Exceptions
 
@@ -53,6 +56,30 @@ State the rule alone. Put its exception in one of three places:
 
 Never hang an exception on the rule with `unless`, `except where` or a trailing `which`.
 Two exceptions to one rule make a table.
+
+## Systems
+
+The command line runs on macOS, Windows and Linux, and the app on macOS and Windows. Pitboard
+switches Claude Desktop on macOS only. Pitboard for Windows is in beta, and only the install
+pages say so.
+
+- Write what every system shares once. A difference on one system is an exception, in its own
+  sentence or paragraph that starts with the system: "On Windows, the directory is
+  `%LOCALAPPDATA%\Pitboard`." Text that macOS and Linux share is written once, followed by
+  an "On Windows," paragraph.
+- What differs by more than a paragraph goes in `<Tabs>`: steps, a picture of the app or a
+  reference section. The app's steps get a `macOS` and a `Windows` tab, and the command line
+  follows once, after the Tabs. Steps that differ on all three systems, such as installing,
+  get a `Linux` tab too.
+- Tab titles are exactly `macOS`, `Windows` and `Linux`, in that order, with a tab only for a
+  system whose text differs. Mintlify opens the first tab and keeps one choice for every
+  `<Tabs>` on the page.
+- No heading goes inside a tab. On a page with tabs, no heading's anchor is `macos`, `windows`
+  or `linux`, the ids the tabs take.
+- A table gives each system its own row, never tabs.
+- A page about something only some systems have names them in its first sentence and says
+  what Pitboard does on the others: "Pitboard switches Claude Desktop on macOS only. On
+  Windows and Linux it leaves Claude Desktop alone."
 
 ## MDX
 
@@ -120,13 +147,15 @@ Use the first word, never the others.
 | forget | delete or remove an account |
 | renew (a parked login, or a tool its own login) | refresh, rotate |
 | identify (whose a login is) | tell whose, look up, resolve |
-| a login file behind the keychain (`~/.claude/.credentials.json` beside a keychain login) | fallback file, plaintext login |
+| a login file behind the keychain (`~/.claude/.credentials.json` beside a keychain login); a login file behind Credential Manager (the same file beside a Credential Manager login, on Windows) | fallback file, plaintext login |
 | share (the automatic switch's threshold) | threshold, trigger, cutoff |
 | period (a limit's five-hour or weekly span) | window (a window is an account window or the Pitboard window) |
 | usage, limit, five-hour limit, weekly limit, resets | quota, cap, 5h limit, session limit, refills |
-| keychain | Keychain, keyring |
-| the app, the menu bar app; the command line | Pitboard.app, the GUI; the CLI, the binary |
-| Pitboard's item in the menu bar; the Pitboard window; pane | status item, tray icon, panel, dashboard, tab |
+| keychain; Credential Manager | Keychain, keyring; Windows Credential Manager, credential vault |
+| the app (on either system); the menu bar app (on macOS only); the command line | Pitboard.app, Pitboard.exe, the GUI, the tray app; the CLI, the binary |
+| Pitboard's item in the menu bar; Pitboard's icon in the notification area; the Pitboard window; pane | status item, tray icon, system tray, panel, dashboard, tab |
+| **This Mac**, **This PC** (the pane of checks) | diagnostics, the doctor pane |
+| **Quit Pitboard** on macOS, **Exit** on Windows (the menu item that stops the app) | close, kill, quit (for the Windows app) |
 | shortcut menu; dialog; Settings | context menu; sheet, modal; Preferences |
 | Claude Code; Codex ("OpenAI's Codex CLI" on first mention); Claude Desktop | Claude (for Claude Code, or for Claude Desktop as a tool), Codex CLI |
 | Claude (Claude Desktop's app, as a person opens and quits it: "quit Claude") | the Claude app, Claude.app, the desktop app |
@@ -135,14 +164,20 @@ Use the first word, never the others.
 
 ## UI and commands
 
-- UI text in bold, exactly as shown, without a trailing ellipsis: **Add Account**,
-  **Sign In Again**. Quote UI text with its contraction: **Couldn't Read Accounts**.
+- UI text in bold, exactly as the system shows it, without a trailing ellipsis. The macOS
+  app writes labels in title case and the Windows app in sentence case: **Add Account** on
+  macOS, **Add account** on Windows. Quote UI text with its contraction:
+  **Couldn't Read Accounts**.
 - Mac verbs: choose a menu item; click a button, tab or pane; turn on or turn off a
   switch; select a row; press a key; enter text. Paths: **Settings** > **General**.
-- Shortcuts spelled out, no bold or code: Command-N, Command-Comma.
+- Windows verbs: select a menu item, button or pane; right-click Pitboard's icon or a row;
+  turn on or turn off a switch; press a key; enter text. Paths: **Settings** > **Limits**.
+- Shortcuts spelled out, no bold or code: Command-N and Command-Comma on macOS, Ctrl+N and
+  F5 on Windows.
 - Commands are never verbs: "enrol it with `pitboard enroll`".
-- Code blocks always have a language: `sh` for commands, `text` for output, `json`,
-  `toml`. No `$` prompt. Commands and output in separate blocks.
+- Code blocks always have a language: `sh` for commands, `powershell` for a command only
+  PowerShell runs, `text` for output, `json`, `toml`. No `$` or `PS>` prompt. Commands and
+  output in separate blocks.
 - Prefer real values (`work`, `codex/work`, `me@example.com`) to placeholders.
 
 ## Components
@@ -150,8 +185,7 @@ Use the first word, never the others.
 - Callouts: only `<Warning>` (an action that loses or revokes a login, or cannot be
   undone) and `<Note>` (a fact that changes what the reader does). At most one per
   section, never first on a page, never two in a row.
-- `<Steps>` for three or more steps. `<Tabs>` only for the same task done two ways,
-  titled "App" and "Command line", in that order.
+- `<Steps>` for three or more steps. `<Tabs>` only for systems, as [Systems](#systems) says.
 - `<Columns>` and `<Card>` only on the home page, without icons.
 - `<Accordion>` only on reference pages, for detail most readers skip.
 - `<ResponseField>` and `<Expandable>` only for the JSON envelope. Not `ParamField`.
@@ -163,7 +197,7 @@ Use the first word, never the others.
 | Before | After |
 | --- | --- |
 | Open Claude Code sessions pick up the switch within about 33 seconds, unless a login file sits behind the keychain. | Open Claude Code sessions follow a switch within about 33 seconds, with no restart. The exception lives in Open sessions. |
-| Windows is not supported: Claude Code keeps its login differently there, and Pitboard has not been written for it. | There is no Windows release. A Windows build answers only `--version`, `--help`, `completions` and `manpage`. |
+| Pitboard keeps its directory in `~/.pitboard`, or in `%LOCALAPPDATA%\Pitboard` if you are on Windows. | The directory is `~/.pitboard`. On Windows, it is `%LOCALAPPDATA%\Pitboard`. |
 | A file with no login in it, such as `{}`, does the same. So does a file Pitboard cannot read. | Any file there pins open sessions: a login, `{}` or a file Pitboard cannot read. |
 | It switches whatever the app's setting says. | `pitboard watch` switches whether the app's setting is on or off, at its own share: `--at`, 95 by default. |
 | Run `pitboard renew` to renew it, or the command shown to sign in to it again. (one table cell) | One row per case, one instruction per row. |

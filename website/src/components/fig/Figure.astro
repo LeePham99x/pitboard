@@ -1,48 +1,62 @@
 ---
-// An app figure and, with a `cli` slot, its terminal twin; captions and descriptions are HTML.
+// An app figure, its `win` slot drawing it for Windows, and with a `cli` slot its terminal twin.
+// A platform with no drawing or words of its own shows macOS's. Captions and descriptions are HTML.
+import Choice from "./Choice.astro";
+import { platforms, shownOn, type Platform } from "../../lib/platform.ts";
+
 interface Side {
   caption: string;
   describe: string;
 }
+type Sides = { macos: Side } & { [p in Exclude<Platform, "macos">]?: Side };
 interface Props {
-  app: Side;
-  cli?: Side;
+  app: Sides;
+  cli?: Sides;
   class?: string;
-  // false where tabs beside the figure already pick, as the hero's install tabs do
-  pick?: boolean;
 }
-const { app, cli, class: extra, pick = true } = Astro.props;
+const { app, cli, class: extra } = Astro.props;
 const both = cli !== undefined && Astro.slots.has("cli");
+const win = Astro.slots.has("win");
+if (win !== (app.windows !== undefined)) throw new Error("a Windows drawing needs its own words");
+if (app.linux) throw new Error("Linux has no app to draw");
+const drawn: Platform[] = win ? ["macos", "windows"] : ["macos"];
 const onApp = both ? "block surface-cli:hidden" : "block";
 const onCli = "block surface-app:hidden no-js:mt-6";
-const button =
-  "cursor-pointer rounded-xs px-2.5 py-0.75 font-mono text-label font-medium text-fg aria-pressed:bg-ink aria-pressed:text-on-ink";
+// each surface's words, for each platform that has its own
+const captions: [string, Sides][] = [[onApp, app]];
+if (both) captions.push([onCli, cli!]);
+const said = (sides: Sides) => {
+  const own = platforms.filter((p) => sides[p] !== undefined);
+  return own.map((p) => ({ shown: shownOn(p, own), ...sides[p]! }));
+};
 ---
 
 <figure class:list={["min-w-0", extra]}>
-  {both && pick && <div
-    class="mb-3 flex w-fit gap-0.5 rounded-sm border border-edge p-0.5 no-js:hidden"
-    role="group"
-    aria-label="Show Pitboard as"
-  >
-    <button class={button} type="button" data-surface="app" aria-pressed="true">App</button>
-    <button class={button} type="button" data-surface="cli" aria-pressed="false">
-      Command line
-    </button>
-  </div>}
+  {both && (
+    <Choice
+      class="mb-3"
+      name="surface"
+      label="Show Pitboard as"
+      options={[
+        ["app", "App"],
+        ["cli", "Command line"],
+      ]}
+    />
+  )}
   <div class="@container">
-    <div class={onApp}><slot /></div>
+    <div class={onApp}>
+      <div class={shownOn("macos", drawn)}><slot /></div>
+      {win && <div class={shownOn("windows", drawn)}><slot name="win" /></div>}
+    </div>
     {both && <div class={onCli}>
       <slot name="cli" />
     </div>}
   </div>
   <figcaption class="mt-3.5 font-mono text-ui text-muted [&_code]:text-[1em] [&_code]:text-muted">
-    <span class={onApp}
-      ><span class="sr-only" set:html={`${app.describe} `} /><span set:html={app.caption}
-    /></span>
-    {both && <span class={onCli}>
-      <span class="sr-only" set:html={`${cli!.describe} `} />
-      <span set:html={cli!.caption} />
-    </span>}
+    {captions.map(([surface, sides]) => <span class={surface}>
+      {said(sides).map((s) => <span class={s.shown}
+        ><span class="sr-only" set:html={`${s.describe} `} /><span set:html={s.caption}
+      /></span>)}
+    </span>)}
   </figcaption>
 </figure>

@@ -4,7 +4,9 @@ sidebarTitle: "Recovery"
 description: "Finish or give up on an interrupted switch, find lost parked logins and take over another computer's Pitboard directory."
 ---
 
-Most fixes here run on the command line. If you have only the app, first [put the bundled command line on your `PATH`](/install#put-the-bundled-command-line-on-your-path).
+Most fixes here run on the command line. If you have only the app on macOS, first put its command line on your `PATH`, as [Install the app](/install#install-the-app) shows. On Windows, the installer put it there.
+
+Pitboard's directory is `~/.pitboard`. On Windows, it is `%LOCALAPPDATA%\Pitboard`.
 
 ## An interrupted switch cannot be finished
 
@@ -20,22 +22,22 @@ If the error comes back, for example while you are offline, give up on the switc
 pitboard abandon
 ```
 
-In the app, click **Give Up** in the notice, then **Give Up** again to confirm. Giving up keeps every login. Run `pitboard` to check which account each tool shows as `signed in`. [`abandon`](/reference/recovery-commands#abandon) shows what it prints.
+In the app, click **Give Up** in the notice, then **Give Up** again to confirm. On Windows, both buttons read **Give up**. Giving up keeps every login. Run `pitboard` to check which account each tool shows as `signed in`. [`abandon`](/reference/recovery-commands#abandon) shows what it prints.
 
 If the error says `this run reads it from somewhere else` (`recovery_elsewhere`), the switch ran with a different `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. Run the command again with that variable set as it was, or run `pitboard abandon`.
 
-If the error says the record of the switch `is damaged` (`recovery_record_corrupt`), check that `pitboard` shows the account you expect as `signed in`. Then delete the file the error names, usually `~/.pitboard/journal.json`.
+If the error says the record of the switch `is damaged` (`recovery_record_corrupt`), check that `pitboard` shows the account you expect as `signed in`. Then delete the file the error names, usually `journal.json` in Pitboard's directory.
 
 ## A Claude Desktop move was interrupted
 
-Every read warns `move_waiting`, and the app shows the notice **An interrupted move is waiting**. A crash, a power cut or Claude opened midway stopped a Claude Desktop move.
+On macOS, every read warns `move_waiting`, and the app shows the notice **An interrupted move is waiting**. A crash, a power cut or Claude opened midway stopped a Claude Desktop move.
 
 Keep Claude closed, then make any change to a Claude Desktop account, such as `pitboard use desktop/work`. Pitboard settles the move first, and a warning says how.
 
 If the error says Pitboard `cannot tell where it stopped` (`recovery_undetermined`), open Claude to see whether it is signed in, and to which account. Then quit it with Command-Q:
 
 - Signed in: enrol the account Claude shows with `pitboard enroll desktop/<label>`.
-- Signed out: [give up the move](/guides/claude-desktop#give-up-an-interrupted-move), then switch to an account.
+- Signed out: [give up the move](/troubleshooting/claude-desktop#give-up-an-interrupted-move), then switch to an account.
 
 If the error says Pitboard `stopped while settling` the move, keep Claude closed and run the change again. If it stops again, give up the move.
 
@@ -43,7 +45,7 @@ If the error says Claude `kept its data in` another folder (`recovery_elsewhere`
 
 ## Pitboard lost track of parked logins
 
-After `~/.pitboard` is restored from a backup or loses files, `pitboard` can show `nothing parked` for an account whose [parked login](/concepts/switching#parked-logins) still exists.
+After Pitboard's directory is restored from a backup or loses files, `pitboard` can show `nothing parked` for an account whose [parked login](/concepts/switching#parked-logins) still exists.
 
 Run `pitboard repair` before you sign in to that account again. A sign-in parks a fresh login for it, and `repair` gives nothing back to an account that already holds one.
 
@@ -61,11 +63,17 @@ If `state.json` itself is lost, `pitboard repair` sets each Claude Desktop parke
 
 On macOS, every Pitboard directory shares the keychain, so a login `repair` gives back may be another directory's. `pitboard forget` and `pitboard uninstall` leave such a login in the keychain until you switch to its account or Pitboard renews it.
 
+## Parked logins do not open on this PC
+
+On Windows, Pitboard seals each parked login to your Windows account. After an administrator resets your Windows password, or after your profile is restored on another PC, they no longer open. A change that needs one fails with `credential_sealed`, and `pitboard doctor` fails its `parked logins` check and names a `pitboard enroll <label> --sign-in` for each account.
+
+Run each of those, or sign in from the app as [Sign in to an account again](/guides/sign-in-again) shows. A session over SSH cannot open them either, so check first with `pitboard doctor` from a desktop session.
+
 ## The Pitboard directory came from another computer
 
-Migration Assistant or a backup can bring `~/.pitboard` from another computer. Pitboard refuses to use it. Commands stop with an error (`state_wrong_machine`) saying the account list `was written on another computer`. In the app, the **Accounts** pane shows **Couldn't Read Accounts** with the same message.
+A backup, or on macOS Migration Assistant, can bring Pitboard's directory from another computer. Pitboard refuses to use it. Commands stop with an error (`state_wrong_machine`) saying the account list `was written on another computer`. In the app, the **Accounts** pane shows **Couldn't Read Accounts**, or **Couldn't read accounts** on Windows, with the same message.
 
-Run `pitboard adopt`. It keeps your accounts and drops the Claude Code and Codex parked logins they came with. It sets aside each Claude Desktop parked login made on another Mac.
+Run `pitboard adopt`. It keeps your accounts and drops the Claude Code and Codex parked logins they came with. On macOS, it sets aside each Claude Desktop parked login made on another Mac.
 
 ```sh
 pitboard adopt

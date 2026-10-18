@@ -4,10 +4,11 @@ import { plainText } from "../lib/changelog.ts";
 
 interface Props {
   command: Command;
+  shell?: "sh" | "pwsh";
   wide?: boolean;
   class?: string;
 }
-const { command, wide = false, class: extra } = Astro.props;
+const { command, shell = "sh", wide = false, class: extra } = Astro.props;
 if (plainText(command.html) !== command.copy) {
   throw new Error(`the command shown is not the one copied: ${command.copy}`);
 }
@@ -22,7 +23,7 @@ const text = "font-mono text-control font-medium max-sm:text-ui/5.5 max-xs:text-
   ]}
 >
   <span class:list={["flex-none py-3 pl-3.5 text-muted select-none", text]} aria-hidden="true"
-    >$</span
+    >{shell === "pwsh" ? "PS>" : "$"}</span
   ><code
     class:list={[
       "min-w-0 flex-1 py-3 pr-2.5 pl-2.25 whitespace-normal text-strong [font-variant-ligatures:normal] wrap-anywhere",

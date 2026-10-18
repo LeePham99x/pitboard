@@ -1,7 +1,6 @@
-// The Claude Code session behind the menu, a terminal row a line.
+// The Claude Code session behind the menu, a terminal row a line; each desk sizes the elbow to its type.
 
-const elbow =
-  '<span class="mr-2 ml-1 inline-block size-6 border-b border-l border-tw-dim align-[calc(var(--spacing)*3)]"></span>';
+const elbow = '<span class="elbow dim inline-block border-b border-l border-current"></span>';
 
 export const session: string[] = [
   `<span class="dim">&gt; the parser test fails about one run in ten, find out why</span>`,

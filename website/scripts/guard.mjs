@@ -6,11 +6,13 @@ import { closest, elements, parse, textOf, walk } from "./html.mjs";
 
 const DIST = new URL("../dist/", import.meta.url).pathname;
 const FONTS = new URL("../src/assets/fonts/", import.meta.url).pathname;
-const DOCS_RULES = new URL("../../docs/AGENTS.md", import.meta.url).pathname;
+const DOCS = new URL("../../docs/", import.meta.url).pathname;
+const DOCS_RULES = join(DOCS, "AGENTS.md");
 
 const BUDGETS = {
   html: {
-    "index.html": 30_000,
+    // its figures drawn for each platform: the size measured with them, and a fifth more
+    "index.html": 49_250,
     "download.html": 30_000,
     "404.html": 30_000,
     "changelog.html": 80_000,
@@ -128,6 +130,28 @@ export function checkPage(name, html, rules) {
   );
   if (preloads.length > BUDGETS.fonts.preloads) fail(`preloads ${preloads.length} fonts`);
 
+  // head.js sets the root's choice before the first paint; site.ts sets aria state once it loads
+  for (const e of all.filter((e) => e.tag === "button")) {
+    const value = e.attrs["data-platform"] ?? e.attrs["data-surface"];
+    if (!value) continue;
+    const what = `the ${value} ${e.attrs.role === "tab" ? "tab" : "button"}`;
+    const look = e.attrs.class ?? "";
+    const aria = /(?:^|[\s:])aria-(selected|pressed):/.exec(look);
+    if (aria) fail(`${what} looks chosen by aria-${aria[1]}, which only site.ts sets`);
+    else if (!/(?:^|[\s:])chosen:/.test(look)) fail(`${what} has no chosen: look`);
+  }
+
+  // site.ts shows a [data-after] step once a link with its platform's data-download is clicked
+  const panelOf = (e) => closest(e.parent, (p) => p.attrs.role === "tabpanel");
+  for (const note of all.filter((e) => e.attrs["data-after"])) {
+    const platform = note.attrs["data-after"];
+    for (const a of all.filter((e) => e.tag === "a" && panelOf(e) === panelOf(note))) {
+      const file = RELEASE_FILE.exec(a.attrs.href ?? "")?.[2];
+      if (file && INSTALLER[platform]?.test(file) && a.attrs["data-download"] !== platform)
+        fail(`${file} does not show the step its panel gives after a download`);
+    }
+  }
+
   const ids = new Set(all.map((e) => e.attrs.id).filter(Boolean));
   for (const e of all) {
     for (const key of ["aria-labelledby", "aria-controls", "aria-describedby"]) {
@@ -177,11 +201,11 @@ export function checkPage(name, html, rules) {
   return { problems, root, all };
 }
 
+const idsOf = (page) => new Set(page.all.map((e) => e.attrs.id).filter(Boolean));
+
 function checkLinks(pages) {
   const problems = [];
-  const ids = new Map(
-    [...pages].map(([name, p]) => [name, new Set(p.all.map((e) => e.attrs.id).filter(Boolean))]),
-  );
+  const ids = new Map([...pages].map(([name, p]) => [name, idsOf(p)]));
   const resolve = (path) => {
     if (path === "/") return "index.html";
     const clean = path.replace(/^\//, "");
@@ -207,6 +231,25 @@ function checkLinks(pages) {
   return problems;
 }
 
+// The docs link the site by its full address, which checkLinks passes over.
+export function checkDocsToSite(pages, docs) {
+  const problems = [];
+  for (const [file, text] of docs) {
+    for (const [url, path = "", id] of text.matchAll(
+      /https:\/\/usepitboard\.com(\/[\w./-]*)?#([\w.-]*\w)/g,
+    )) {
+      const clean = path.replace(/^\/|\/$/g, "");
+      const name = clean
+        ? [`${clean}.html`, `${clean}/index.html`].find((n) => pages.has(n))
+        : "index.html";
+      if (!pages.has(name)) problems.push(`${file}: ${url} goes to no page`);
+      else if (!idsOf(pages.get(name)).has(id))
+        problems.push(`${file}: ${url} names an id ${name} does not have`);
+    }
+  }
+  return problems;
+}
+
 // SignPath's terms for its open source certificate name both pages.
 const SIGNING_POLICY = "https://docs.usepitboard.com/install/code-signing-policy";
 export function checkSigningPolicy(pages) {
@@ -225,24 +268,58 @@ export function checkSigningPolicy(pages) {
   return problems;
 }
 
+const RELEASE_FILE = /\/releases\/download\/v(\d+\.\d+\.\d+(?:-beta\.\d+)?)\/([^/?#]+)$/;
+const INSTALLER = { macos: /-macos\.zip$/, windows: /-windows-(?:x64|arm64)\.msi$/ };
+const WINDOWS_FILE =
+  /-windows-(?:x64|arm64)\.msi(?:\.cdx\.json)?$|-pc-windows-msvc\.zip(?:\.cdx\.json)?$|^appcast-windows\.xml$/;
+
+// macOS and Linux files come from the newest full release on /changelog, Windows files from it or
+// from a beta /changelog shows above it, and each SHA256SUMS from one of the two.
 export function checkVersions(pages) {
   const problems = [];
-  const seen = new Set();
-  for (const [, p] of pages) {
-    for (const e of p.all) {
-      const m = /\/releases\/download\/v(\d+\.\d+\.\d+)\//.exec(e.attrs.href ?? "");
-      if (m) seen.add(m[1]);
-    }
+  const links = [...pages.values()].flatMap((p) =>
+    p.all.flatMap((e) => {
+      const m = RELEASE_FILE.exec(e.attrs.href ?? "");
+      return m ? [{ version: m[1], file: m[2], text: textOf(e).trim() }] : [];
+    }),
+  );
+  const versionsOf = (want) => [...new Set(links.filter(want).map((l) => l.version))];
+  const isSums = (l) => l.file === "SHA256SUMS";
+  const isWindows = (l) => WINDOWS_FILE.test(l.file);
+  const macLinux = versionsOf((l) => !isSums(l) && !isWindows(l));
+  const windows = versionsOf(isWindows);
+
+  const articles = (pages.get("changelog.html")?.all ?? [])
+    .filter((e) => e.tag === "article" && /^v\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(e.attrs.id ?? ""))
+    .map((e) => e.attrs.id.slice(1));
+  const at = articles.findIndex((v) => !v.includes("-"));
+  const newest = articles[at] ?? macLinux[0];
+  const above = articles.slice(0, Math.max(at, 0));
+
+  if (macLinux.length !== 1)
+    problems.push(
+      `macOS and Linux downloads name ${macLinux.length} versions: ${macLinux.join(", ")}`,
+    );
+  else if (macLinux[0] !== newest)
+    problems.push(
+      `/changelog starts at ${newest}, the macOS and Linux downloads at ${macLinux[0]}`,
+    );
+  if (windows.length > 1)
+    problems.push(`Windows downloads name ${windows.length} versions: ${windows.join(", ")}`);
+  else if (windows.length === 1 && windows[0] !== newest && !above.includes(windows[0]))
+    problems.push(
+      `Windows downloads name ${windows[0]}, neither ${newest} nor a beta /changelog shows above it`,
+    );
+  for (const v of versionsOf(isSums)) {
+    if (!macLinux.includes(v) && !windows.includes(v))
+      problems.push(`SHA256SUMS links name ${v}, which no other download names`);
   }
-  // a published beta goes above the release /download offers
-  const newest = pages
-    .get("changelog.html")
-    ?.all.find((e) => e.tag === "article" && /^v\d+\.\d+\.\d+$/.test(e.attrs.id ?? ""))
-    ?.attrs.id?.slice(1);
-  if (seen.size !== 1)
-    problems.push(`download links name ${seen.size} versions: ${[...seen].join(", ")}`);
-  if (newest && !seen.has(newest))
-    problems.push(`/changelog starts at ${newest}, the downloads at ${[...seen]}`);
+  for (const { version, text } of links.filter((l) => l.text.startsWith("Download for"))) {
+    const beta = version.includes("-");
+    if (beta && !text.includes("(beta)"))
+      problems.push(`"${text}" downloads ${version}, a beta, without saying (beta)`);
+    if (!beta && text.includes("(beta)")) problems.push(`"${text}" says (beta) for ${version}`);
+  }
   return problems;
 }
 
@@ -357,7 +434,16 @@ function main() {
     pages.set(f, page);
     report.push(`${f} ${size}`);
   }
-  problems.push(...checkLinks(pages), ...checkVersions(pages), ...checkSigningPolicy(pages));
+  const docs = readdirSync(DOCS, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith(".mdx") || f === "docs.json")
+    .map((f) => [`docs/${f}`, readFileSync(join(DOCS, f), "utf8")]);
+  problems.push(
+    ...checkLinks(pages),
+    ...checkVersions(pages),
+    ...checkSigningPolicy(pages),
+    ...checkDocsToSite(pages, docs),
+  );
 
   console.log(
     `guard: html gzipped ${report.join(", ")}; css ${css}; js ${js}; fonts ${fontBytes} in ${fonts.length}`,

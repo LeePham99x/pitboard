@@ -1,0 +1,14 @@
+---
+interface Props {
+  window?: boolean;
+}
+const { window = false } = Astro.props;
+const light = [
+  "size-12 rounded-circle inset-shadow-mac-light",
+  window ? "bg-mac-window-tl" : "bg-mac-term-tl",
+];
+---
+
+<span class:list={["flex gap-8", { "absolute top-13 left-13 z-1": window }]}
+  ><i class:list={light}></i><i class:list={light}></i><i class:list={light}></i></span
+>

@@ -6,11 +6,23 @@
 @custom-variant js (&:where(.js *));
 @custom-variant no-js (&:where(:root:not(.js) *));
 @custom-variant scrolled (&:where(.scrolled *));
-@custom-variant os-linux (&:where([data-os="linux"] *));
-@custom-variant os-windows (&:where([data-os="windows"] *));
+/* the platform head.js chose; without JavaScript, macOS */
+@custom-variant platform-macos (&:where(:root:not([data-platform="windows"], [data-platform="linux"]) *));
+@custom-variant platform-windows (&:where([data-platform="windows"] *));
+@custom-variant platform-linux (&:where([data-platform="linux"] *));
 @custom-variant os-mobile (&:where([data-os="mobile"] *));
 @custom-variant surface-app (&:where([data-surface="app"] *));
 @custom-variant surface-cli (&:where([data-surface="cli"] *));
+/* a tab or button whose value is the root's choice, so it looks chosen from the first paint */
+@custom-variant chosen {
+  &:where(:root:not([data-platform="windows"], [data-platform="linux"]) [data-platform="macos"]),
+  &:where(:root[data-platform="windows"] [data-platform="windows"]),
+  &:where(:root[data-platform="linux"] [data-platform="linux"]),
+  &:where(:root:not([data-surface="cli"]) [data-surface="app"]),
+  &:where(:root[data-surface="cli"] [data-surface="cli"]) {
+    @slot;
+  }
+}
 @custom-variant theme-system (&:where(:root:not([data-theme]) *));
 @custom-variant theme-light (&:where([data-theme="light"] *));
 @custom-variant theme-dark (&:where([data-theme="dark"] *));
@@ -28,11 +40,13 @@
 /* the menu demo site.ts plays: start, move, hl and pick before the switch, shut and reach after it */
 @custom-variant demo (&:where([data-demo] *));
 @custom-variant demo-start (&:where([data-demo="start"] *));
+@custom-variant demo-hl (&:where([data-demo="hl"] *));
 @custom-variant demo-pick (&:where([data-demo="pick"] *));
 @custom-variant demo-moving (&:where(:is([data-demo="start"], [data-demo="move"]) *));
 @custom-variant demo-before (&:where(:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"]) *));
 @custom-variant demo-row (&:where(:is([data-demo="move"], [data-demo="hl"], [data-demo="pick"], [data-demo="shut"]) *));
 @custom-variant demo-shut (&:where(:is([data-demo="shut"], [data-demo="reach"]) *));
+@custom-variant demo-reach (&:where([data-demo="reach"] *));
 
 @theme {
   --color-*: initial;
@@ -69,34 +83,34 @@
   --color-wall-a: light-dark(#eef1ef, #121716);
   --color-wall-b: light-dark(#dce1de, #0a0d0c);
   --color-wall-line: light-dark(rgb(13 17 16 / 0.07), rgb(233 237 235 / 0.05));
-  --color-bar-bg: light-dark(rgb(255 255 255 / 0.5), rgb(36 40 39 / 0.6));
-  --color-bar-edge: light-dark(rgb(13 17 16 / 0.06), rgb(0 0 0 / 0.4));
-  --color-bar-text: light-dark(#1d1d1f, #f5f5f7);
-  --color-bar-hl: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.2));
-  --color-mn-bg: light-dark(rgb(244 245 245 / 0.8), rgb(36 36 36 / 0.78));
-  --color-mn-edge: light-dark(rgb(0 0 0 / 0.16), rgb(0 0 0 / 0.7));
-  --color-mn-rim: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.13));
-  --color-mn-shadow: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.55));
-  --color-mn-text: light-dark(#1d1d1f, #fafafa);
-  --color-mn-sub: light-dark(rgb(0 0 0 / 0.66), rgb(255 255 255 / 0.8));
-  --color-mn-dim: light-dark(rgb(0 0 0 / 0.42), rgb(255 255 255 / 0.42));
-  --color-mn-sep: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.12));
-  --color-mn-hl: light-dark(#2d6fe0, #1f5fcf);
-  --color-tw-bg: light-dark(#ffffff, #161817);
-  --color-tw-bar: light-dark(#f0f1f1, #222423);
-  --color-tw-sep: light-dark(rgb(0 0 0 / 0.09), rgb(0 0 0 / 0.6));
-  --color-tw-edge: light-dark(rgb(0 0 0 / 0.18), rgb(255 255 255 / 0.12));
-  --color-tw-shadow: light-dark(rgb(0 0 0 / 0.16), rgb(0 0 0 / 0.5));
-  --color-tw-tl: light-dark(#dadbdb, #474a49);
-  --color-tw-tl-edge: light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.05));
-  --color-tw-title: light-dark(rgb(0 0 0 / 0.4), rgb(255 255 255 / 0.38));
-  --color-tw-text: light-dark(#2a2e2d, #d5dbd9);
-  --color-tw-dim: light-dark(#8a908e, #868f8b);
-  --color-tw-bold: light-dark(#0d1110, #f5f7f6);
-  --color-tw-rule: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.2));
-  --color-tw-green: light-dark(#1e7b3a, #5cc97a);
-  --color-tw-yellow: light-dark(#8c6800, #ddbb6a);
-  --color-tw-red: light-dark(#c2352c, #ee6e64);
+  --color-mac-bar-bg: light-dark(rgb(255 255 255 / 0.5), rgb(36 40 39 / 0.6));
+  --color-mac-bar-edge: light-dark(rgb(13 17 16 / 0.06), rgb(0 0 0 / 0.4));
+  --color-mac-bar-text: light-dark(#1d1d1f, #f5f5f7);
+  --color-mac-bar-hl: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.2));
+  --color-mac-menu-bg: light-dark(rgb(244 245 245 / 0.8), rgb(36 36 36 / 0.78));
+  --color-mac-menu-edge: light-dark(rgb(0 0 0 / 0.16), rgb(0 0 0 / 0.7));
+  --color-mac-menu-rim: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.13));
+  --color-mac-menu-shadow: light-dark(rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.55));
+  --color-mac-menu-text: light-dark(#1d1d1f, #fafafa);
+  --color-mac-menu-sub: light-dark(rgb(0 0 0 / 0.66), rgb(255 255 255 / 0.8));
+  --color-mac-menu-dim: light-dark(rgb(0 0 0 / 0.42), rgb(255 255 255 / 0.42));
+  --color-mac-menu-sep: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.12));
+  --color-mac-menu-hl: light-dark(#2d6fe0, #1f5fcf);
+  --color-mac-term-bg: light-dark(#ffffff, #161817);
+  --color-mac-term-bar: light-dark(#f0f1f1, #222423);
+  --color-mac-term-sep: light-dark(rgb(0 0 0 / 0.09), rgb(0 0 0 / 0.6));
+  --color-mac-term-edge: light-dark(rgb(0 0 0 / 0.18), rgb(255 255 255 / 0.12));
+  --color-mac-term-shadow: light-dark(rgb(0 0 0 / 0.16), rgb(0 0 0 / 0.5));
+  --color-mac-term-tl: light-dark(#dadbdb, #474a49);
+  --color-mac-term-tl-edge: light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.05));
+  --color-mac-term-title: light-dark(rgb(0 0 0 / 0.4), rgb(255 255 255 / 0.38));
+  --color-mac-term-text: light-dark(#2a2e2d, #d5dbd9);
+  --color-mac-term-dim: light-dark(#8a908e, #868f8b);
+  --color-mac-term-bold: light-dark(#0d1110, #f5f7f6);
+  --color-mac-term-rule: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.2));
+  --color-mac-term-green: light-dark(#1e7b3a, #5cc97a);
+  --color-mac-term-yellow: light-dark(#8c6800, #ddbb6a);
+  --color-mac-term-red: light-dark(#c2352c, #ee6e64);
   --color-term-bg: light-dark(#0b0f0e, #0f1413);
   --color-term-text: #d5dbd9;
   --color-term-dim: #8a938f;
@@ -104,29 +118,93 @@
   --color-term-green: #4dd170;
   --color-term-yellow: #e5c07b;
   --color-term-red: #f47067;
-  --color-win-bg: light-dark(#ffffff, #1e1e1e);
-  --color-win-edge: light-dark(#c9cdcc, #3a3a3c);
-  --color-win-text: light-dark(#1d1d1f, #f5f5f7);
-  --color-win-sub: light-dark(#6e6e73, #a1a1a6);
-  --color-win-sep: light-dark(#e3e3e6, #333335);
-  --color-win-track: light-dark(#ebebed, #38383a);
-  --color-win-tl: light-dark(#dcdcde, #4a4a4c);
-  --color-win-btn: light-dark(#e8e8ea, #3a3a3c);
-  --color-win-btn-edge: light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.5));
-  --color-win-green: light-dark(#34c759, #30d158);
-  --color-win-orange: light-dark(#f29200, #ff9f0a);
-  --color-win-red: light-dark(#ff3b30, #ff453a);
-  --color-win-blue: light-dark(#007aff, #0a84ff);
-  --color-win-side: light-dark(#f2f2f4, #262628);
-  --color-win-pick: light-dark(#dcdce0, #3a3a3c);
-  --color-win-form: light-dark(#f2f2f4, #1a1a1a);
-  --color-win-stripe: light-dark(#f5f5f7, #232325);
-  --color-win-green-text: light-dark(#248a3d, #30d158);
-  --color-win-red-text: light-dark(#d70015, #ff6961);
+  --color-mac-window-bg: light-dark(#ffffff, #1e1e1e);
+  --color-mac-window-edge: light-dark(#c9cdcc, #3a3a3c);
+  --color-mac-window-text: light-dark(#1d1d1f, #f5f5f7);
+  --color-mac-window-sub: light-dark(#6e6e73, #a1a1a6);
+  --color-mac-window-sep: light-dark(#e3e3e6, #333335);
+  --color-mac-window-track: light-dark(#ebebed, #38383a);
+  --color-mac-window-tl: light-dark(#dcdcde, #4a4a4c);
+  --color-mac-window-btn: light-dark(#e8e8ea, #3a3a3c);
+  --color-mac-window-btn-edge: light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.5));
+  --color-mac-window-green: light-dark(#34c759, #30d158);
+  --color-mac-window-orange: light-dark(#f29200, #ff9f0a);
+  --color-mac-window-red: light-dark(#ff3b30, #ff453a);
+  --color-mac-window-blue: light-dark(#007aff, #0a84ff);
+  --color-mac-window-side: light-dark(#f2f2f4, #262628);
+  --color-mac-window-pick: light-dark(#dcdce0, #3a3a3c);
+  --color-mac-window-form: light-dark(#f2f2f4, #1a1a1a);
+  --color-mac-window-stripe: light-dark(#f5f5f7, #232325);
+  --color-mac-window-green-text: light-dark(#248a3d, #30d158);
+  --color-mac-window-red-text: light-dark(#d70015, #ff6961);
+  /* Ptyxis's GNOME palette in a libadwaita 1.8 window, light or dark as the site is, as Ptyxis follows the system */
+  --color-linux-bar-bg: light-dark(#ffffff, #2e2e32);
+  --color-linux-bar-text: light-dark(#333333, #ffffff);
+  --color-linux-bar-shade: light-dark(rgb(0 0 6 / 0.12), rgb(0 0 6 / 0.36));
+  --color-linux-term-bg: light-dark(#ffffff, #1c1c1f);
+  --color-linux-term-text: light-dark(#1d1d20, #ffffff);
+  --color-linux-term-dim: color-mix(
+    in srgb,
+    var(--color-linux-term-text) 50%,
+    var(--color-linux-term-bg)
+  );
+  --color-linux-term-green: light-dark(#26a269, #2ec27e);
+  --color-linux-term-yellow: light-dark(#a2734c, #f5c211);
+  --color-linux-term-red: #c01c28;
+  /* WinUI's theme resources and Windows 11's default accent, which windows-app-pictures shows in
+     light; the taskbar, the window's edge and Windows Terminal's tab row and faint text are approx */
+  --color-win-base: light-dark(#f3f3f3, #202020);
+  --color-win-layer: light-dark(rgb(255 255 255 / 0.5), rgb(58 58 58 / 0.3));
+  --color-win-layer-edge: light-dark(rgb(0 0 0 / 0.059), rgb(0 0 0 / 0.098));
+  --color-win-card: light-dark(rgb(255 255 255 / 0.702), rgb(255 255 255 / 0.051));
+  --color-win-card-2: light-dark(rgb(246 246 246 / 0.502), rgb(255 255 255 / 0.031));
+  --color-win-flyout: light-dark(#f9f9f9, #2c2c2c);
+  --color-win-flyout-edge: light-dark(rgb(0 0 0 / 0.059), rgb(0 0 0 / 0.2));
+  --color-win-text: light-dark(rgb(0 0 0 / 0.894), #ffffff);
+  --color-win-text-2: light-dark(rgb(0 0 0 / 0.62), rgb(255 255 255 / 0.773));
+  --color-win-text-off: light-dark(rgb(0 0 0 / 0.361), rgb(255 255 255 / 0.365));
+  --color-win-text-inverse: light-dark(#ffffff, rgb(0 0 0 / 0.894));
+  --color-win-accent: light-dark(#0067c0, #4cc2ff);
+  --color-win-accent-text: light-dark(#003e92, #99ebff);
+  --color-win-on-accent: light-dark(#ffffff, #000000);
+  --color-win-attention: light-dark(#0078d4, #4cc2ff);
+  --color-win-control: light-dark(rgb(255 255 255 / 0.702), rgb(255 255 255 / 0.059));
+  --color-win-control-2: light-dark(rgb(249 249 249 / 0.502), rgb(255 255 255 / 0.082));
+  --color-win-control-edge: light-dark(rgb(0 0 0 / 0.059), rgb(255 255 255 / 0.071));
+  --color-win-edge-bottom: light-dark(rgb(0 0 0 / 0.161), transparent);
+  --color-win-edge-top: light-dark(transparent, rgb(255 255 255 / 0.094));
+  --color-win-strong: light-dark(rgb(0 0 0 / 0.447), rgb(255 255 255 / 0.545));
+  --color-win-toggle-off: light-dark(rgb(0 0 0 / 0.024), rgb(0 0 0 / 0.098));
+  --color-win-subtle: light-dark(rgb(0 0 0 / 0.035), rgb(255 255 255 / 0.059));
+  --color-win-subtle-2: light-dark(rgb(0 0 0 / 0.024), rgb(255 255 255 / 0.039));
+  --color-win-divider: light-dark(rgb(0 0 0 / 0.059), rgb(255 255 255 / 0.082));
+  --color-win-group-rule: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.2));
+  --color-win-success: light-dark(#0f7b0f, #6ccb5f);
+  --color-win-caution: light-dark(#9d5d00, #fce100);
+  --color-win-critical: light-dark(#c42b1c, #ff99a4);
+  --color-win-shadow: light-dark(rgb(0 0 0 / 0.24), rgb(0 0 0 / 0.28));
+  --color-win-shadow-tip: light-dark(rgb(0 0 0 / 0.14), rgb(0 0 0 / 0.28));
+  --color-win-shadow-wide: light-dark(rgb(0 0 0 / 0.2), transparent);
+  --color-win-shadow-tight: light-dark(transparent, rgb(0 0 0 / 0.2));
+  --color-win-taskbar: light-dark(#eeeeee, #1c1c1c);
+  --color-win-window-edge: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.08));
+  /* Windows Terminal's dark theme and Campbell scheme, the same in both of the site's */
+  --color-win-term-bar: #202020;
+  --color-win-term-bg: #0c0c0c;
+  --color-win-term-text: #cccccc;
+  --color-win-term-bright: #f2f2f2;
+  --color-win-term-dim: rgb(204 204 204 / 0.5);
+  --color-win-term-green: #13a10e;
+  --color-win-term-yellow: #c19c00;
+  --color-win-term-red: #c50f1f;
 
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mac: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --font-linux: "Adwaita Sans", "Cantarell", "Ubuntu Sans", "Inter", system-ui, sans-serif;
+  --font-win:
+    "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  --font-win-mono: "Cascadia Mono", "Cascadia Code", Consolas, var(--font-mono);
 
   --text-label: 0.8125rem;
   --text-label--line-height: 1.25rem;
@@ -182,50 +260,88 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* sizes in a figure are macOS points, var(--u) each */
+/* sizes in a figure count its desk's unit, var(--u) */
 @theme inline {
-  --text-pt-10: calc(10 * var(--u));
-  --text-pt-11: calc(11 * var(--u));
-  --text-pt-12: calc(12 * var(--u));
-  --text-pt-13: calc(13 * var(--u));
-  --text-pt-15: calc(15 * var(--u));
+  --text-u-10: calc(10 * var(--u));
+  --text-u-11: calc(11 * var(--u));
+  --text-u-12: calc(12 * var(--u));
+  --text-u-13: calc(13 * var(--u));
+  --text-u-14: calc(14 * var(--u));
+  --text-u-15: calc(15 * var(--u));
+  --text-u-16: calc(16 * var(--u));
+  --text-u-28: calc(28 * var(--u));
 
-  --radius-pt-5: calc(5 * var(--u));
-  --radius-pt-6: calc(6 * var(--u));
-  --radius-pt-8: calc(8 * var(--u));
-  --radius-pt-10: calc(10 * var(--u));
-  --radius-pt-12: calc(12 * var(--u));
-  --radius-pt-18: calc(18 * var(--u));
+  --radius-u-2: calc(2 * var(--u));
+  --radius-u-4: calc(4 * var(--u));
+  --radius-u-5: calc(5 * var(--u));
+  --radius-u-6: calc(6 * var(--u));
+  --radius-u-8: calc(8 * var(--u));
+  --radius-u-10: calc(10 * var(--u));
+  --radius-u-12: calc(12 * var(--u));
+  --radius-u-15: calc(15 * var(--u));
+  --radius-u-18: calc(18 * var(--u));
 
-  --shadow-menu:
-    0 0 0 calc(0.5 * var(--u)) var(--color-mn-edge),
-    inset 0 0 0 calc(0.5 * var(--u)) var(--color-mn-rim),
-    0 calc(12 * var(--u)) calc(36 * var(--u)) calc(-4 * var(--u)) var(--color-mn-shadow),
-    0 calc(2 * var(--u)) calc(8 * var(--u)) calc(-2 * var(--u)) var(--color-mn-shadow);
-  --shadow-banner:
-    0 0 0 calc(0.5 * var(--u)) var(--color-mn-edge),
-    0 calc(10 * var(--u)) calc(30 * var(--u)) calc(-6 * var(--u)) var(--color-mn-shadow);
-  --shadow-terminal:
-    0 0 0 calc(0.5 * var(--u)) var(--color-tw-edge),
-    0 calc(16 * var(--u)) calc(40 * var(--u)) calc(-8 * var(--u)) var(--color-tw-shadow),
-    0 calc(3 * var(--u)) calc(10 * var(--u)) calc(-2 * var(--u)) var(--color-tw-shadow);
-  --shadow-window:
-    0 0 0 calc(0.5 * var(--u)) var(--color-win-edge),
-    0 calc(18 * var(--u)) calc(44 * var(--u)) calc(-10 * var(--u)) var(--color-tw-shadow),
-    0 calc(3 * var(--u)) calc(10 * var(--u)) calc(-2 * var(--u)) var(--color-tw-shadow);
-  --shadow-control: 0 calc(0.5 * var(--u)) calc(1 * var(--u)) var(--color-win-btn-edge);
-  --shadow-knob: 0 calc(0.5 * var(--u)) calc(1.5 * var(--u)) rgb(0 0 0 / 0.3);
-  --shadow-group: 0 0 0 calc(0.5 * var(--u)) var(--color-win-sep);
-  --shadow-list: 0 0 0 calc(0.5 * var(--u)) var(--color-win-edge);
+  --shadow-mac-menu:
+    0 0 0 calc(0.5 * var(--u)) var(--color-mac-menu-edge),
+    inset 0 0 0 calc(0.5 * var(--u)) var(--color-mac-menu-rim),
+    0 calc(12 * var(--u)) calc(36 * var(--u)) calc(-4 * var(--u)) var(--color-mac-menu-shadow),
+    0 calc(2 * var(--u)) calc(8 * var(--u)) calc(-2 * var(--u)) var(--color-mac-menu-shadow);
+  --shadow-mac-banner:
+    0 0 0 calc(0.5 * var(--u)) var(--color-mac-menu-edge),
+    0 calc(10 * var(--u)) calc(30 * var(--u)) calc(-6 * var(--u)) var(--color-mac-menu-shadow);
+  --shadow-mac-term:
+    0 0 0 calc(0.5 * var(--u)) var(--color-mac-term-edge),
+    0 calc(16 * var(--u)) calc(40 * var(--u)) calc(-8 * var(--u)) var(--color-mac-term-shadow),
+    0 calc(3 * var(--u)) calc(10 * var(--u)) calc(-2 * var(--u)) var(--color-mac-term-shadow);
+  --shadow-mac-window:
+    0 0 0 calc(0.5 * var(--u)) var(--color-mac-window-edge),
+    0 calc(18 * var(--u)) calc(44 * var(--u)) calc(-10 * var(--u)) var(--color-mac-term-shadow),
+    0 calc(3 * var(--u)) calc(10 * var(--u)) calc(-2 * var(--u)) var(--color-mac-term-shadow);
+  --shadow-linux-window:
+    0 0 calc(14 * var(--u)) calc(5 * var(--u)) rgb(0 0 0 / 0.15),
+    0 0 calc(5 * var(--u)) calc(2 * var(--u)) rgb(0 0 0 / 0.1),
+    0 0 0 calc(1 * var(--u)) rgb(0 0 0 / 0.05);
+  /* Fluent 2's shadow64, shadow28 and shadow16 by elevation, each with its layer's 1 pixel edge */
+  --shadow-win-window:
+    0 0 0 calc(1 * var(--u)) var(--color-win-window-edge),
+    0 calc(32 * var(--u)) calc(64 * var(--u)) var(--color-win-shadow),
+    0 0 calc(8 * var(--u)) var(--color-win-shadow-wide),
+    0 0 calc(2 * var(--u)) var(--color-win-shadow-tight);
+  --shadow-win-flyout:
+    0 0 0 calc(1 * var(--u)) var(--color-win-flyout-edge),
+    0 calc(14 * var(--u)) calc(28 * var(--u)) var(--color-win-shadow),
+    0 0 calc(8 * var(--u)) var(--color-win-shadow-wide),
+    0 0 calc(2 * var(--u)) var(--color-win-shadow-tight);
+  --shadow-win-tip:
+    0 0 0 calc(1 * var(--u)) var(--color-win-flyout-edge),
+    0 calc(8 * var(--u)) calc(16 * var(--u)) var(--color-win-shadow-tip);
+  --shadow-win-control:
+    inset 0 0 0 calc(1 * var(--u)) var(--color-win-control-edge),
+    inset 0 calc(-1 * var(--u)) var(--color-win-edge-bottom),
+    inset 0 calc(1 * var(--u)) var(--color-win-edge-top);
+  /* a text field's edge, its bottom in the strong stroke */
+  --shadow-win-field:
+    inset 0 0 0 calc(1 * var(--u)) var(--color-win-control-edge),
+    inset 0 calc(-1 * var(--u)) var(--color-win-strong);
+  --shadow-mac-control: 0 calc(0.5 * var(--u)) calc(1 * var(--u)) var(--color-mac-window-btn-edge);
+  --shadow-mac-knob: 0 calc(0.5 * var(--u)) calc(1.5 * var(--u)) rgb(0 0 0 / 0.3);
+  --shadow-mac-group: 0 0 0 calc(0.5 * var(--u)) var(--color-mac-window-sep);
+  --shadow-mac-list: 0 0 0 calc(0.5 * var(--u)) var(--color-mac-window-edge);
 
   /* hairlines half a point wide: on the bottom (b), top (t), left (l) or right (r) edge */
-  --inset-shadow-sep-b: inset 0 calc(-0.5 * var(--u)) var(--color-win-sep);
-  --inset-shadow-sep-t: inset 0 calc(0.5 * var(--u)) var(--color-win-sep);
-  --inset-shadow-sep-r: inset calc(-0.5 * var(--u)) 0 var(--color-win-sep);
-  --inset-shadow-bar-b: inset 0 calc(-0.5 * var(--u)) var(--color-bar-edge);
-  --inset-shadow-tw-b: inset 0 calc(-0.5 * var(--u)) var(--color-tw-sep);
-  --inset-shadow-mn-l: inset calc(0.5 * var(--u)) 0 var(--color-mn-sep);
-  --inset-shadow-light: inset 0 0 0 calc(0.5 * var(--u)) var(--color-tw-tl-edge);
+  --inset-shadow-mac-window-b: inset 0 calc(-0.5 * var(--u)) var(--color-mac-window-sep);
+  --inset-shadow-mac-window-t: inset 0 calc(0.5 * var(--u)) var(--color-mac-window-sep);
+  --inset-shadow-mac-window-r: inset calc(-0.5 * var(--u)) 0 var(--color-mac-window-sep);
+  --inset-shadow-mac-bar-b: inset 0 calc(-0.5 * var(--u)) var(--color-mac-bar-edge);
+  --inset-shadow-mac-term-b: inset 0 calc(-0.5 * var(--u)) var(--color-mac-term-sep);
+  --inset-shadow-mac-menu-l: inset calc(0.5 * var(--u)) 0 var(--color-mac-menu-sep);
+  --inset-shadow-mac-light: inset 0 0 0 calc(0.5 * var(--u)) var(--color-mac-term-tl-edge);
+  --inset-shadow-linux-bar-b: inset 0 calc(-1 * var(--u)) var(--color-linux-bar-shade);
+  --inset-shadow-win-layer-tl: inset calc(1 * var(--u)) calc(1 * var(--u))
+    var(--color-win-layer-edge);
+  --inset-shadow-win-taskbar: inset 0 calc(1 * var(--u)) var(--color-win-divider);
+  --inset-shadow-win-layer-edge: inset 0 0 0 calc(1 * var(--u)) var(--color-win-layer-edge);
+  --inset-shadow-win-strong: inset 0 0 0 calc(1 * var(--u)) var(--color-win-strong);
 }
 
 @font-face {
@@ -320,12 +436,13 @@
   }
 }
 
-/* a figure's desk: 600 points wide, a point being --u, and every spacing utility inside counts points */
+/* a figure's desk, --units wide in units of --u, which every spacing utility inside counts: on macOS
+   600 points of at most 1.25 pixels, and desk-px-* for a desk of pixels no larger than the page's */
 @utility desk {
-  --u: min(1.25px, 100cqi / 600);
+  --u: min(var(--u-max, 1.25px), 100cqi / var(--units, 600));
   --spacing: var(--u);
   position: relative;
-  width: calc(600 * var(--u));
+  width: calc(var(--units, 600) * var(--u));
   max-width: 100%;
   margin-inline: auto;
   overflow: hidden;
@@ -340,12 +457,17 @@
     ),
     linear-gradient(var(--color-wall-a), var(--color-wall-b));
   font: 400 calc(13 * var(--u)) / calc(16 * var(--u)) var(--font-mac);
-  color: var(--color-win-text);
+  color: var(--color-mac-window-text);
   text-align: left;
   -webkit-font-smoothing: auto;
   -moz-osx-font-smoothing: auto;
   -webkit-user-select: none;
   user-select: none;
+}
+
+@utility desk-px-* {
+  --units: --value(integer);
+  --u-max: 1px;
 }
 
 /* CHANGELOG.md's Markdown, rendered by lib/changelog.ts */

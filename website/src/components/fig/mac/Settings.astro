@@ -1,0 +1,107 @@
+---
+// The top of the Limits pane, in LimitsSettings.swift's words; each height cuts the window 8 points below its first group.
+import Lights from "./Lights.astro";
+import Switch from "./Switch.astro";
+import { clock } from "../../../data/world.ts";
+
+interface Props {
+  show: "switch" | "warm";
+}
+const { show } = Astro.props;
+const tabs = [
+  ["general", "General", "sf-gear"],
+  ["limits", "Limits", "sf-gauge"],
+  ["renewal", "Renewal", "sf-cal"],
+  ["commandLine", "Command Line", "sf-term"],
+  ["updates", "Updates", "sf-down"],
+];
+const heights = { switch: "h-257", warm: "h-336" } as const;
+const group = "rounded-u-8 bg-mac-window-bg shadow-mac-group *:not-first:inset-shadow-mac-window-t";
+const row = "flex min-h-36 items-center gap-12 px-10 py-6";
+const label = "min-w-0 flex-1";
+const small = "block text-u-12/15 text-mac-window-sub";
+const head = "px-10 pb-6 font-bold";
+const control = "rounded-u-5 bg-mac-window-btn shadow-mac-control";
+// two arrows, each a 7 by 4 point fill clipped to a triangle
+const stepper = [
+  "flex h-21 w-13 flex-col",
+  "before:flex-1 before:bg-linear-to-b before:from-mac-window-sub before:to-mac-window-sub before:bg-size-[calc(var(--spacing)*7)_calc(var(--spacing)*4)] before:bg-center before:bg-no-repeat before:[clip-path:polygon(50%_30%,75%_65%,25%_65%)]",
+  "after:flex-1 after:bg-linear-to-b after:from-mac-window-sub after:to-mac-window-sub after:bg-size-[calc(var(--spacing)*7)_calc(var(--spacing)*4)] after:bg-center after:bg-no-repeat after:[clip-path:polygon(25%_35%,75%_35%,50%_70%)]",
+];
+---
+
+<div class:list={["desk", heights[show]]} aria-hidden="true" data-output>
+  <div
+    class="absolute top-24 left-1/2 w-500 -translate-x-1/2 overflow-hidden rounded-u-12 bg-mac-window-bg text-mac-window-text shadow-mac-window"
+  >
+    <div
+      class="relative flex justify-center gap-2 bg-mac-window-side pt-30 pb-6 inset-shadow-mac-window-b"
+    >
+      <Lights window />
+      <span class="absolute inset-x-0 top-7 text-center font-bold">Limits</span>
+      {tabs.map(([id, name, icon]) => <span
+        class:list={[
+          "flex min-w-62 flex-col items-center gap-2 rounded-u-6 px-4 pt-4 pb-3 text-u-11/13",
+          id === "limits" ? "bg-mac-window-pick text-mac-window-blue" : "text-mac-window-sub",
+        ]}
+      >
+        <svg class="size-22 shrink-0">
+          <use href={`#${icon}`} />
+        </svg>
+        {name}
+      </span>)}
+    </div>
+    <div class="bg-mac-window-form px-20 pt-14 pb-16">
+      {show === "switch" && (
+        <>
+          <p class={head}>Before an account runs out</p>
+          <div class={group}>
+            <div class={row}>
+              <span class={label}>Switch Claude Code automatically</span>
+              <Switch on />
+            </div>
+            <div class={row}>
+              <span class={label}>Switch when a limit reaches 95%</span>
+              <span class:list={[control, ...stepper]}></span>
+            </div>
+            <div class={row}>
+              <span class:list={[small, "pb-2"]}
+                >Watching work: 40% of its weekly limit, as of {clock.read}.</span
+              >
+            </div>
+          </div>
+        </>
+      )}
+      {show === "warm" && (
+        <>
+          <p class={head}>Warm up limits</p>
+          <div class={group}>
+            <div class={row}>
+              <span class={label}>From</span>
+              <span class:list={[control, "px-6 py-1 tabular-nums"]}>07:00</span>
+            </div>
+            <div class={row}>
+              <span class={label}>To</span>
+              <span class:list={[control, "px-6 py-1 tabular-nums"]}>23:00</span>
+            </div>
+            <div class={row}>
+              <span class={label}>
+                personal · Max 20x<small class={small}>Warms up again at {clock.warmsAgain}</small>
+              </span>
+              <Switch on />
+            </div>
+            <div class={row}>
+              <span class={label}>work · Max 20x</span>
+              <Switch />
+            </div>
+            <div class={row}>
+              <span class:list={[small, "pb-2"]}
+                >Next warm-up: personal at {clock.warmsAgain}.</span
+              >
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  </div>
+</div>

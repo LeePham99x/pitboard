@@ -1,10 +1,10 @@
 ---
-title: "Fix accounts, usage and renewal"
+title: "Fix accounts and usage"
 sidebarTitle: "Accounts and usage"
-description: "Fix a tool on another account than Pitboard shows, a locked keychain, old usage numbers, daily renewal and opening at login."
+description: "Fix a tool on another account than Pitboard shows, a login store Pitboard cannot read, old usage numbers and a tool Pitboard cannot find."
 ---
 
-[Troubleshooting](/troubleshooting) covers Claude Code over SSH, runs as root and how to report a problem.
+[Troubleshooting](/troubleshooting) covers Claude Code over SSH and how to report a problem. [Fix Pitboard refusing every change](/troubleshooting/refused-changes) covers runs as root or as administrator, and [Fix daily renewal and starting at sign-in](/troubleshooting/renewal) covers the schedule.
 
 ## Claude Code shows another account than Pitboard
 
@@ -12,7 +12,7 @@ description: "Fix a tool on another account than Pitboard shows, a locked keycha
 
 Pitboard warns with the cause, such as `config_names_another` or `in_use_unconfirmed`, and [Warning codes](/reference/errors#warning-codes) gives each fix.
 
-After a switch, an open session keeps the old account and its `/usage` for up to about 33 seconds. While a login file sits behind the keychain, it keeps them until its next renewal: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+After a switch, an open session keeps the old account and its `/usage` for up to about 33 seconds. While a login file sits behind the keychain, or on Windows behind Credential Manager, it keeps them until its next renewal: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
 
 ## macOS says the keychain is locked
 
@@ -24,15 +24,25 @@ error: the credential store could not be read: the keychain is locked and cannot
 
 Unlock it, then run the command again. Meanwhile `pitboard doctor` marks each parked login `not read: the keychain is locked`. Those parked logins need no sign-in.
 
-## Codex keeps the old account
+## Windows says Credential Manager cannot be reached
 
-Everything that runs Codex keeps its account until it starts again. [Restart what runs Codex](/guides/switch#restart-what-runs-codex) says how to restart each without losing a login.
+A sign-in over SSH with a key cannot reach Credential Manager, so Pitboard cannot tell where Claude Code keeps its login, and stops with `credential_store_locked`:
 
-If the switch refused Codex's login store, see [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account).
+```text
+error: the credential store could not be read: Credential Manager cannot be reached from this logon, as in a sign-in over SSH with a key; run Pitboard from a desktop session
+```
 
-## A parked login has expired
+Run the command again from a desktop session. Nothing is wrong with the login, and no account needs a sign-in.
 
-`pitboard status` shows `login expired` beside the account, and Pitboard's menu shows **Needs signing in again**. [Sign in to the account again](/guides/sign-in-again), then [turn on daily renewal](/guides/renewal#turn-on-daily-renewal) to keep it from happening.
+## The Claude Code login in Credential Manager cannot be read
+
+On Windows, Pitboard stops with `credential_store_unreadable` and says that Claude Code cannot read the login either. Measured with Claude Code 2.1.302 on 18 October 2026: moving a login from `.credentials.json` into Credential Manager left part of it missing, and lost it.
+
+Run `claude auth logout`, which deletes what is left, then sign in to Claude Code again. Where another account is enrolled, `pitboard use` puts its login in place instead. The account whose login was lost then reads `login replaced outside Pitboard`: [sign in to it again](/guides/sign-in-again).
+
+## Claude Code does not start in Windows PowerShell
+
+Windows PowerShell's default execution policy, `Restricted`, refuses the `claude.ps1` that npm installs, and `claude` fails with `PSSecurityException`. Run `claude.cmd` in its place, as in `claude.cmd auth logout`. Measured with Windows PowerShell 5.1 and Claude Code 2.1.302 on 18 October 2026.
 
 ## Usage shows old numbers
 
@@ -42,41 +52,31 @@ With no reason, Pitboard asked moments ago, and [waits](/concepts/usage#how-ofte
 
 ## Pitboard cannot find a tool
 
-The command line says:
+The command line looks for `claude` and `codex` on your `PATH`, and says:
 
 ```text
 error: `claude` is not on this machine, and Pitboard signs in with Claude Code's own sign-in. Install Claude Code, or point Pitboard at it.
 ```
 
-The app's **Add Account** dialog says **Pitboard can't find Claude Code on this Mac.** or **Pitboard can't find the Codex CLI on this Mac.**, links to how to install it, and dims **Sign In**.
+The app's dialog for adding an account says Pitboard cannot find Claude Code or the Codex CLI, links how to install it, and dims the sign-in.
 
 Install the tool. For Codex, install OpenAI's Codex CLI: Pitboard does not use the copy inside the ChatGPT app. If the tool is installed, add its folder to your `PATH`, or set `PITBOARD_CLAUDE` or `PITBOARD_CODEX` to its path.
 
-The app looks for `claude` and `codex` on your login shell's `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It looks each time the dialog opens and each time Pitboard comes to the front, so return to the dialog after you install. It sees `PITBOARD_CLAUDE` and `PITBOARD_CODEX` only when `launchctl setenv` set them.
+<Tabs>
+  <Tab title="macOS">
+    The app looks on your login shell's `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It sees `PITBOARD_CLAUDE` and `PITBOARD_CODEX` only when `launchctl setenv` set them.
+  </Tab>
+  <Tab title="Windows">
+    The app looks on the `Path` Windows gives a program started from Start, then where each tool's installers put it:
 
-## Daily renewal stopped working
+    | Tool | Folders |
+    | --- | --- |
+    | Claude Code | `.local\bin` in your user folder |
+    | Codex | `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`, or the folder `CODEX_INSTALL_DIR` names |
+    | Both | `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links` and `scoop\shims` in your user folder |
 
-`pitboard doctor` flags its `renewal schedule` line:
+    It sees `PITBOARD_CLAUDE` and `PITBOARD_CODEX` only when they are set for your Windows account, not in one terminal.
+  </Tab>
+</Tabs>
 
-| The line says | Cause |
-| --- | --- |
-| `which is not there any more` | The Pitboard the schedule runs was moved or removed. |
-| `which is the app itself and not a command line` | The schedule runs the app, which renews nothing. |
-| `does not say which Pitboard it runs` | The schedule's file names no program. |
-
-Turn **Renew parked logins daily** off and on in **Settings** > **Renewal**, or run:
-
-```sh
-pitboard schedule uninstall
-pitboard schedule install
-```
-
-### The schedule uses another proxy
-
-`pitboard doctor` warns on its `renewal schedule's proxy` line when the schedule's proxy differs from your shell's. Run `pitboard schedule install` from a shell where the proxy variables are right.
-
-In the app, turning **Renew parked logins daily** off and on gives the schedule only the proxy variables `launchctl setenv` set.
-
-## Pitboard does not open at login
-
-Turn on **Open Pitboard at login** in **Settings** > **General**. If macOS is waiting for you to allow it, click **Open Login Items Settings** and allow Pitboard there.
+The app looks again each time the dialog opens and each time its window comes to the front, so return to the dialog after you install.

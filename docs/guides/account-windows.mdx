@@ -4,11 +4,22 @@ sidebarTitle: "Account windows"
 description: "Open claude.ai or chatgpt.com as each account in a window of its own, and send pages there from your browser."
 ---
 
+The app opens account windows on macOS and Windows, and Linux has no app. Sending a page from your browser to an account works on macOS only, because Windows lists only a signed Pitboard in its share sheet.
+
 Each window keeps its own website data, so your accounts stay signed in side by side. A Claude Code account's window is on claude.ai, a Codex account's on chatgpt.com. [How account windows keep their data](/concepts/account-windows) says where it is and when Pitboard deletes it.
 
 ## Open an account window
 
-In Pitboard's menu in the menu bar, choose **Open claude.ai as work**. When the site has several accounts, choose **Open claude.ai**, then the account. In the Pitboard window, Control-click an account and choose **Open claude.ai** or **Open chatgpt.com**.
+<Tabs>
+  <Tab title="macOS">
+    In Pitboard's menu in the menu bar, choose **Open claude.ai as work**. When the site has several accounts, choose **Open claude.ai**, then the account. In the Pitboard window, Control-click an account and choose **Open claude.ai** or **Open chatgpt.com**.
+  </Tab>
+  <Tab title="Windows">
+    Right-click Pitboard's icon in the notification area and select **Open claude.ai as work**. When the site has several accounts, select **Open claude.ai**, then the account. In the Pitboard window, right-click an account and select **Open claude.ai** or **Open chatgpt.com**.
+
+    A window needs the Microsoft Edge WebView2 Runtime 144.0.3719.77 or later, which Windows Update keeps up to date.
+  </Tab>
+</Tabs>
 
 A window's title is its account's label. Links to other sites open in your default browser, and anything you connect there goes to the account your browser is signed in to. [Account windows](/reference/account-windows#account-windows) lists every place a window opens from, and [Downloads](/reference/account-windows#downloads) where it saves files.
 
@@ -20,10 +31,10 @@ The first time Pitboard opens an account's window, a note at its top names the e
 
 <Steps>
   <Step title="Enter the email">
-    Enter the email address the note names, then click **Continue with email**.
+    Enter the email address the note names, then continue with email.
   </Step>
   <Step title="Tap the link on your phone">
-    Open the email on your phone and tap its link. On this Mac, the link would open in your browser instead of the window.
+    Open the email on your phone and tap its link. On this computer, the link would open in your browser instead of the window.
   </Step>
   <Step title="Enter the code">
     In the window, enter the code claude.ai shows on your phone.
@@ -32,18 +43,22 @@ The first time Pitboard opens an account's window, a note at its top names the e
 
 ### chatgpt.com
 
-Enter the account's email address, then its password or the code chatgpt.com emails you. Or click **Continue with Microsoft** or **Continue with Apple**. Passkeys do not work: macOS offers them to a web page only in an app it lets act as a browser.
+Enter the account's email address, then its password or the code chatgpt.com emails you, or sign in with Microsoft or Apple.
+
+On macOS, passkeys do not work: the system offers them to a web page only in an app it lets act as a browser. On Windows, whether they work has not been measured.
 
 ## What a window cannot do
 
 - Gmail, Google Drive and Google Calendar cannot be connected, since connecting them needs Google's sign-in.
 - In a claude.ai window, Google single sign-on does not work either.
 - The window refuses the camera and the microphone, so voice mode does not work.
-- Web notifications do not work.
+- On macOS, web notifications do not work.
 - Pitboard cannot see who is signed in to a window. Its title names the account it belongs to.
 - A window stays with its own account after a switch.
 
 ## Open a page from your browser
+
+On macOS, you can send the page your browser shows to an account's window.
 
 <Steps>
   <Step title="Share the page">
@@ -65,6 +80,15 @@ If **Pitboard** is not in the Share menu, see [Pitboard is missing from the Shar
 
 ## Sign a window out
 
-Bring the account's window to the front, choose **File** > **Remove Website Data**, then click **Remove**. The window starts again at the site's home page, with the sign-in note. The site is not told, so the account stays signed in on your other devices and browsers.
+<Tabs>
+  <Tab title="macOS">
+    Bring the account's window to the front, choose **File** > **Remove Website Data**, then click **Remove**.
+  </Tab>
+  <Tab title="Windows">
+    In the account's window, select the three dots at the end of the toolbar, then **Remove website data**, then **Remove**.
+  </Tab>
+</Tabs>
+
+The window starts again at the site's home page, with the sign-in note. The site is not told, so the account stays signed in on your other devices and browsers.
 
 [Forgetting the account](/guides/accounts#forget-an-account) deletes its window's data too.

@@ -9,17 +9,7 @@ import mono from "../assets/fonts/JetBrainsMono-2.304-500.ttf?inline";
 import lockup from "../assets/logo/lockup-color.svg?raw";
 import template from "../assets/logo/template.svg?raw";
 import css from "../styles/global.css?raw";
-import { describe, render, type Assets, type Card } from "./card.ts";
-
-const cards = {
-  home: { kind: "home" },
-  changelog: {
-    kind: "page",
-    label: "Changelog",
-    title: "What each release added, changed and fixed",
-  },
-  download: { kind: "page", label: "Download", title: "Pitboard for macOS and Linux" },
-} satisfies Record<string, Card>;
+import { cards, describe, render, type Assets, type Card } from "./card.ts";
 
 export type CardName = keyof typeof cards;
 

@@ -1,69 +1,79 @@
 ---
 title: "Install Pitboard"
 sidebarTitle: "Install"
-description: "Install the command line or the app with the install script or Homebrew, and keep it updated."
+description: "Install the app or the command line on macOS, Windows or Linux, and keep it updated."
 ---
 
 ## What you need
 
-- For the command line: macOS on Apple silicon or Intel, or Linux on x86_64 or aarch64.
-- For the app: macOS 14 or later, on Apple silicon or Intel.
-- For Claude Desktop accounts: macOS.
-- Claude Code, OpenAI's Codex CLI or Claude Desktop, signed in to one of your accounts. Read [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) or [Before you add a Claude Desktop account](/guides/claude-desktop#before-you-add-a-claude-desktop-account) first.
+| System | The command line | The app |
+| --- | --- | --- |
+| macOS | Apple silicon or Intel | macOS 14 or later, on Apple silicon or Intel |
+| Windows | Windows 11 24H2 or later, or Windows Server 2025, on x64 or ARM64 | The same as the command line |
+| Linux | x86_64 or aarch64, on any distribution | None |
 
-The app includes the command line, so install one or the other.
+The app includes the command line, so install one or the other. On an older Windows, Pitboard [changes nothing](/troubleshooting/refused-changes#pitboard-changes-nothing-on-this-version-of-windows).
 
-The Linux builds are static and run on any distribution. On Linux, Pitboard builds and passes its tests, but has not been run with real logins.
+You also need Claude Code, OpenAI's Codex CLI or Claude Desktop, signed in to one of your accounts. Claude Desktop accounts need macOS. Read [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) or [Before you add a Claude Desktop account](/guides/claude-desktop#before-you-add-a-claude-desktop-account) first.
 
-There is no Windows release. A Windows build answers only `--version`, `--help`, `completions` and `manpage`, and refuses the rest with [`windows_not_released`](/reference/errors#windows).
+Pitboard for Windows is in beta, and its files are not signed. It was run with real Claude Code logins on 18 October 2026, with Claude Code 2.1.302. Codex sign-ins and switches on Windows have not been measured.
+
+On Linux, Pitboard builds and passes its tests, but has not been run with real logins.
+
+## Install the app
+
+<Tabs>
+  <Tab title="macOS">
+    Download the app from [Download Pitboard](https://usepitboard.com/download), then move `Pitboard.app` to your Applications folder before you open it. Until then, macOS runs it from a temporary copy, and the app cannot turn on [daily renewal](/guides/renewal) or link its command line.
+
+    Or install it with Homebrew. The `pitboard-app` cask also puts the app's command line on your `PATH`, with its man page and completions:
+
+    ```sh
+    brew install --cask datlechin/tap/pitboard-app
+    ```
+
+    Without the cask, put the app's command line on your `PATH` from **Settings** > **Command Line**: click **Install Command Line Tool**, then enter an administrator's password when macOS asks. It then updates with the app. [Command line](/reference/settings#command-line) says when the button shows. You can also run `/Applications/Pitboard.app/Contents/Helpers/pitboard`.
+  </Tab>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Download the installer">
+        From [Download Pitboard](https://usepitboard.com/download#windows), download the ARM64 installer for a PC with an Arm processor, or the x64 one for any other. **Settings** > **System** > **About** names the processor under **System type**. The x64 installer also runs on an Arm PC, under emulation.
+      </Step>
+      <Step title="Open the installer">
+        If Windows shows **Windows protected your PC**, select **More info**, then **Run anyway**. What Microsoft Edge shows as it downloads the installer has not been measured.
+
+        It installs Pitboard for your Windows account alone, with no administrator prompt. It puts the command line on your `PATH`, where a terminal opened after the install finds it.
+      </Step>
+      <Step title="Open Pitboard">
+        Open **Pitboard** from Start. Its icon starts among the hidden icons of the notification area: drag it onto the taskbar to keep it in sight.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+Linux has no app: install the command line.
 
 ## Install with the script
+
+On macOS and Linux, the install script installs the command line:
 
 ```sh
 curl -fsSL https://usepitboard.com/install.sh | sh
 ```
 
-The script installs the command line of the most recent release, not a pre-release and not the app. It puts `pitboard` in `~/.local/bin`, and the man page and the bash, zsh and fish completions under `~/.local/share`.
-
-- It needs `curl` or `wget`, and `sha256sum` or `shasum`. Without `curl`, run `wget -qO- https://usepitboard.com/install.sh | sh`.
-- It checks its download against the release's checksums. [Check the install script](/install/verify#check-the-install-script) checks the script itself.
-- As root or under `sudo`, it installs nothing: Pitboard [changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root).
-
-The script changes no shell profile. Where `~/.local/bin` is not on your `PATH`, it prints the command that puts it there for your shell:
-
-```text
-/Users/me/.local/bin is not on your PATH. To put it there, run this, then open another terminal:
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-```
-
-If another `pitboard` comes first on your `PATH`, the script names it. Remove that copy, or put `~/.local/bin` before it. Daily renewal may run the copy you remove: see [Daily renewal stopped working](/troubleshooting/accounts#daily-renewal-stopped-working).
-
-zsh loads the completion only after a change to `~/.zshrc`, as [`completions`](/reference/integration-commands#completions) says.
-
-To install into another folder, set `PITBOARD_INSTALL_DIR` to its full path. The man page and completions go in the `share` folder beside it, here `~/tools/share`:
-
-```sh
-curl -fsSL https://usepitboard.com/install.sh | PITBOARD_INSTALL_DIR="$HOME/tools/bin" sh
-```
-
-Each release has its own copy of the script, which installs that release: `https://github.com/datlechin/pitboard/releases/download/v<version>/install.sh`.
+[The install script](/install/script) says where it puts each file, what it needs and how to choose another folder.
 
 ## Install with Homebrew
 
+On macOS and Linux, the `pitboard` cask installs the command line, with its man page and completions:
+
 ```sh
-brew install datlechin/tap/pitboard              # the command line
-brew install --cask datlechin/tap/pitboard-app   # the app
+brew install datlechin/tap/pitboard
 ```
 
-Both casks install the man page and the completions, and the `pitboard-app` cask puts the command line inside the app on your `PATH`. Homebrew installs only one of the two, since both put `pitboard` there.
+It and the `pitboard-app` cask both put `pitboard` on your `PATH`, so Homebrew installs only one of the two.
 
 [Other ways to install](/install/other-ways) covers Cargo, release files and building the app from source.
-
-## Put the bundled command line on your PATH
-
-Without the `pitboard-app` cask, click **Install Command Line Tool** in **Settings** > **Command Line**, then enter an administrator's password when macOS asks. `/usr/local/bin/pitboard` then points into the app, so the command line updates with it.
-
-The button shows only when Pitboard finds no other `pitboard`: [Command Line](/reference/settings#command-line) lists every case. You can also run `/Applications/Pitboard.app/Contents/Helpers/pitboard`.
 
 ## Update Pitboard
 
@@ -71,13 +81,11 @@ The button shows only when Pitboard finds no other `pitboard`: [Command Line](/r
 | --- | --- |
 | The install script | Run the script again, with the same `PITBOARD_INSTALL_DIR` if you set one. |
 | The `pitboard` cask | `brew upgrade pitboard` |
-| The app, from its cask or a release file | It updates itself. |
-| `cargo binstall` | `cargo binstall pitboard` |
-| `cargo install` | `cargo install --locked pitboard` |
-| A release tarball | Replace the files with the next release's. |
-| An app you built | Build it again. |
+| The app on macOS, from its cask or a release file | It updates itself. |
+| The app on Windows | It updates itself to each full release. To install a later beta, open its installer. |
+| Cargo, a release file or a build of your own | As [Other ways to install](/install/other-ways) says for each. |
 
-The app checks for an update once a day and then offers **Install Pitboard** in its menu. [Updates](/reference/settings#updates) lists its update settings. `brew upgrade --greedy` also upgrades the `pitboard-app` cask.
+[Updates](/reference/settings#updates) lists the app's update settings. `brew upgrade --greedy` also upgrades the `pitboard-app` cask.
 
 Keep a command line installed apart from the app at the app's version. An older one refuses a file the app wrote, with `was written by a newer Pitboard`.
 

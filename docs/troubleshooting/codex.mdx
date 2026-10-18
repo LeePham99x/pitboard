@@ -1,0 +1,31 @@
+---
+title: "Fix Codex accounts"
+sidebarTitle: "Codex"
+description: "Fix a Codex login store Pitboard refuses, a signed-out Codex or an API key, and Codex keeping the old account."
+---
+
+[Use Pitboard with Codex](/guides/codex) says what Codex needs and how to restart it after a switch.
+
+## Codex keeps its login outside its file store
+
+Codex's setting `cli_auth_credentials_store` chooses where Codex keeps its login, and Pitboard refuses every store but `file`. The `Codex login store` line of `pitboard doctor` names the store and the place that chose it. If it says `cannot tell`, fix the place it names.
+
+If that place is a `config.toml`, yours or the system's, set the file store in your own, in Codex's home:
+
+```toml title="~/.codex/config.toml"
+cli_auth_credentials_store = "file"
+```
+
+Then run `codex login` and sign in with ChatGPT.
+
+A store set in `requirements.toml`, `managed_config.toml` or a managed preference overrides yours, and only an administrator can change it. [Codex files](/reference/files#codex-files) says where each other store keeps the login, and lists every place Codex reads the setting from.
+
+## Codex is signed out or uses an API key
+
+If Codex is signed out, switch to an enrolled Codex account with `pitboard use codex/work`, or run `codex login` and sign in with ChatGPT. If it uses an API key, run `codex login` and sign in with ChatGPT.
+
+## Codex keeps the old account
+
+Everything that runs Codex keeps its account until it starts again. [Restart what runs Codex](/guides/codex#restart-what-runs-codex) says how to restart each without losing a login.
+
+If the switch refused Codex's login store, see [Codex keeps its login outside its file store](#codex-keeps-its-login-outside-its-file-store).

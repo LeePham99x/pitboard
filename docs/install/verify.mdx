@@ -1,20 +1,20 @@
 ---
 title: "Verify a download"
-description: "Check that a release file came from Pitboard's release workflow, using attestations, checksums and Gatekeeper."
+description: "Check that a release file came from Pitboard's release workflow, using attestations, checksums and signatures."
 ---
 
 ## What each release attests
 
 An attestation is a signed record, kept by GitHub, of the workflow and commit that built a file. Every release attests these files:
 
-- each command line tarball
-- the app's zip file
-- a CycloneDX bill of materials (`.cdx.json`) beside each tarball and the app
+- each command line archive: a tarball for macOS or Linux, a zip for Windows
+- the macOS app's zip file and the Windows app's installers
+- a CycloneDX bill of materials (`.cdx.json`) beside each archive, the macOS app and each installer
 - `install.sh`, the [install script](/install#install-with-the-script)
-- `SHA256SUMS`, the checksums of the tarballs, the app and `install.sh`
-- `appcast.xml`, the feed the app updates from
+- `SHA256SUMS`, the checksums of the archives, the macOS app, the installers and `install.sh`
+- `appcast.xml` and `appcast-windows.xml`, the feeds the apps update from
 
-A pre-release, tagged like `v0.10.0-rc1`, has no `appcast.xml`.
+Only a full release published as the latest carries the feeds. A release candidate, tagged like `v1.2.0-rc1`, or a beta, tagged like `v1.3.0-beta.1`, has neither.
 
 Checking an attestation needs the [GitHub CLI](https://cli.github.com), `gh`, signed in to a GitHub account.
 
@@ -23,7 +23,7 @@ Checking an attestation needs the [GitHub CLI](https://cli.github.com), `gh`, si
 In the download's folder, run this with the file's name:
 
 ```sh
-gh attestation verify Pitboard-v0.10.0-macos.zip --repo datlechin/pitboard
+gh attestation verify Pitboard-v<version>-macos.zip --repo datlechin/pitboard
 ```
 
 When a workflow in `datlechin/pitboard` attested that exact file, `gh` prints `Verification succeeded!` and exits with status 0. A changed file has no attestation, and the command fails.
@@ -31,8 +31,7 @@ When a workflow in `datlechin/pitboard` attested that exact file, `gh` prints `V
 With `--repo` alone, `gh` accepts an attestation from any workflow in the repository. Add `--signer-workflow` to accept only the release workflow:
 
 ```sh
-gh attestation verify Pitboard-v0.10.0-macos.zip --repo datlechin/pitboard \
-  --signer-workflow datlechin/pitboard/.github/workflows/release.yml
+gh attestation verify Pitboard-v<version>-windows-x64.msi --repo datlechin/pitboard --signer-workflow datlechin/pitboard/.github/workflows/release.yml
 ```
 
 ## Check the checksums
@@ -60,10 +59,18 @@ sha256sum -c SHA256SUMS --ignore-missing
 `--ignore-missing` skips the files you did not download. A file that matches prints:
 
 ```text
-Pitboard-v0.10.0-macos.zip: OK
+Pitboard-v<version>-macos.zip: OK
 ```
 
 A file that differs prints `FAILED`, and the command exits with status 1.
+
+On Windows, in PowerShell:
+
+```powershell
+Select-String -Path SHA256SUMS -Pattern (Get-ChildItem Pitboard-*.msi, pitboard-*.zip | Get-FileHash).Hash
+```
+
+It prints the line of `SHA256SUMS` that holds the checksum of each installer and zip in the folder. A file of that release whose line it does not print differs from the one the release published.
 
 Homebrew and the install script check what they install against the checksums the release workflow took. Each refuses a download changed on the release page later.
 
@@ -82,34 +89,47 @@ After `Verification succeeded!`, run the file you checked:
 sh install.sh
 ```
 
-## Check the signature on macOS
+## Check the signature
 
-The macOS command line and app are signed with a Developer ID and notarised by Apple. Files for Linux are not signed.
+The macOS command line and app are signed with a Developer ID and notarised by Apple. Linux files are not signed. The [code signing policy](/install/code-signing-policy) says which Windows files are signed, and from which release.
 
-The app carries its notarisation ticket. Gatekeeper fetches the command line's ticket from Apple when you first open a copy downloaded in a browser.
+<Tabs>
+  <Tab title="macOS">
+    The app carries its notarisation ticket. Gatekeeper fetches the command line's ticket from Apple when you first open a copy downloaded in a browser.
 
-`spctl` asks Gatekeeper whether macOS would open a file. For the app:
+    `spctl` asks Gatekeeper whether macOS would open a file. For the app:
 
-```sh
-spctl --assess --type execute -v /Applications/Pitboard.app
-```
+    ```sh
+    spctl --assess --type execute -v /Applications/Pitboard.app
+    ```
 
-```text
-/Applications/Pitboard.app: accepted
-source=Notarized Developer ID
-```
+    ```text
+    /Applications/Pitboard.app: accepted
+    source=Notarized Developer ID
+    ```
 
-For the command line, use `--type install`, since `--type execute` accepts only apps. In the folder the tarball unpacked into:
+    For the command line, use `--type install`, since `--type execute` accepts only apps. In the folder the tarball unpacked into:
 
-```sh
-spctl --assess --type install -v pitboard
-```
+    ```sh
+    spctl --assess --type install -v pitboard
+    ```
 
-```text
-pitboard: accepted
-source=Notarized Developer ID
-```
+    ```text
+    pitboard: accepted
+    source=Notarized Developer ID
+    ```
 
-Any developer's notarised file is `accepted`. With `-vvv` in place of `-v`, an `origin` line names the signer. For Pitboard's files, it ends with the team identifier `(D7HJ5TFYCU)`.
+    Any developer's notarised file is `accepted`. With `-vvv` in place of `-v`, an `origin` line names the signer. For Pitboard's files, it ends with the team identifier `(D7HJ5TFYCU)`.
+  </Tab>
+  <Tab title="Windows">
+    In PowerShell, in the download's folder, run this with the installer's name, or with `pitboard.exe` from the zip:
+
+    ```powershell
+    Get-AuthenticodeSignature Pitboard-v<version>-windows-x64.msi
+    ```
+
+    For a file that is not signed, its `Status` reads `NotSigned`. The release workflow checks each program of a release with no signer this way.
+  </Tab>
+</Tabs>
 
 For what else Pitboard protects against, see [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md#in-scope).

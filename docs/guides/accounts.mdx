@@ -5,76 +5,80 @@ description: "Enrol the account each tool is signed in to, add more through a si
 
 Pitboard switches only between accounts you enrol. Each one gets a label, the name you switch to it by.
 
-Claude Desktop accounts are added inside Claude, as [Use Pitboard with Claude Desktop](/guides/claude-desktop) shows.
+Claude Desktop accounts are added inside Claude, on macOS, as [Use Pitboard with Claude Desktop](/guides/claude-desktop) shows.
 
 ## Add the account you are signed in to
 
 For OpenAI's Codex CLI, check [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) first.
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     In the **Accounts** pane of the Pitboard window, click **Name** in the tip **Give this account a name**. Enter a name such as `personal`, then click **Save**.
-
-    The tip shows a Codex login only once a Codex account is enrolled. To enrol your first one, follow [Add Codex accounts](/guides/codex#add-codex-accounts).
   </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard enroll personal          # Claude Code
-    pitboard enroll codex/personal    # Codex
-    ```
-
-    ```text
-    Enrolled personal (me@example.com), the account signed in now.
-    Add another without signing out of it: pitboard enroll <label> --sign-in
-    ```
+  <Tab title="Windows">
+    In the **Accounts** pane of the Pitboard window, select **Name** in the tip **Give this account a name**. Enter a name such as `personal`, then select **Save**.
   </Tab>
 </Tabs>
 
-Enrolling it parks nothing: Pitboard parks its login the first time you switch away, as [Parked logins](/concepts/switching#parked-logins) explains.
+The tip shows a Codex login only once a Codex account is enrolled: [Add Codex accounts](/guides/codex#add-codex-accounts) enrols the first. On the command line:
 
-Enrolling a Claude Code login that Pitboard has not identified before needs the network, to ask Anthropic which account it is.
+```sh
+pitboard enroll personal          # Claude Code
+pitboard enroll codex/personal    # Codex
+```
+
+```text
+Enrolled personal (me@example.com), the account signed in now.
+Add another without signing out of it: pitboard enroll <label> --sign-in
+```
 
 ## Add another account
 
 Pitboard runs the tool's own sign-in in a private directory, so the account in use stays signed in.
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     <Steps>
       <Step title="Open the dialog">
-        Click Pitboard's item in the menu bar, then choose **Add Account**. If the dialog has a **Tool** pop-up menu, choose **Claude Code** or **Codex**.
+        Click Pitboard's item in the menu bar, then choose **Add Account**. Choose **Claude Code** or **Codex** in the **Tool** pop-up menu.
       </Step>
       <Step title="Name the account">
         Enter a name such as `work`, then click **Sign In**.
       </Step>
       <Step title="Sign in">
-        Sign in as the account you are adding, in the browser that opens. If the page gives you a code, paste it into the **Code** field, then click **Submit Code**.
-
-        To use another browser or browser profile on this Mac, click **Copy Link** and paste the address there. If no browser opens, click **Open**.
+        Sign in as the account you are adding, in the browser that opens. If a **Code** field appears, paste the code the page gives you, then click **Submit Code**. To sign in from another browser, click **Copy Link** and paste the address there. If no browser opens, click **Open**.
       </Step>
     </Steps>
-
-    If the dialog says Pitboard cannot find the tool, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
   </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard enroll work --sign-in          # Claude Code
-    pitboard enroll codex/work --sign-in    # Codex
-    ```
-
-    When your browser opens, sign in as the account you are adding.
-
-    ```text
-    Enrolled work (me@company.com). Switch to it with: pitboard use work
-    ```
-
-    For what `--sign-in` runs, see [`enroll`](/reference/account-commands#enroll).
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Open the dialog">
+        Right-click Pitboard's icon in the notification area, then select **Add account**, or press Ctrl+N in the Pitboard window. Under **Tool**, select **Claude Code** or **Codex**.
+      </Step>
+      <Step title="Name the account">
+        Enter a name such as `work`, then select **Sign in**.
+      </Step>
+      <Step title="Sign in">
+        Sign in as the account you are adding, in the browser that opens. If a **Code** field appears, paste the code the page gives you, then select **Submit code**. To sign in from another browser, select **Copy link** and paste the address there. If no browser opens, select **Open**.
+      </Step>
+    </Steps>
   </Tab>
 </Tabs>
 
-If the browser signs in to an account already enrolled under another label, Pitboard refuses and names that label.
+If the dialog says Pitboard cannot find the tool, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). On the command line, sign in as the account you are adding when your browser opens. If Claude Code asks for a code, paste in the one the browser shows.
 
-Pitboard counts each organisation your Anthropic account belongs to as a separate account. Enrol each under its own label, and sign in to that organisation in the browser. Your personal ChatGPT plan and each workspace you belong to are separate Codex accounts in the same way.
+```sh
+pitboard enroll work --sign-in          # Claude Code
+pitboard enroll codex/work --sign-in    # Codex
+```
+
+```text
+Enrolled work (me@company.com). Switch to it with: pitboard use work
+```
+
+Where nothing is signed in to the tool, as on a new computer, [switch to the account](/guides/switch) to put its login in use.
+
+Each organisation your Anthropic account belongs to is a separate account, as are your personal ChatGPT plan and each workspace you belong to. Enrol each under its own label, and sign in to that organisation or workspace in the browser.
 
 <Warning>
   Do not add an account with Claude Code's `/login` or with `codex login`. Each replaces the login in use without Pitboard parking it first, so the account that was in use needs a browser sign-in. `codex login` also revokes the login it replaces: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
@@ -82,66 +86,66 @@ Pitboard counts each organisation your Anthropic account belongs to as a separat
 
 ## Choose a label
 
-A label is one word, such as `work`. When you enrol an account, write the label for its tool:
+When you enrol an account, write its label for its tool:
 
 | Tool | Label |
 | --- | --- |
 | Claude Code | `work` |
 | Codex | `codex/work` |
-| Claude Desktop | `desktop/work` |
+| Claude Desktop, on macOS | `desktop/work` |
 
-In the app, choose the tool and enter the name without its prefix.
-
-Other commands take `work` alone while only one tool has a `work` account. Otherwise, write `claude/work`, `codex/work` or `desktop/work`. [Labels](/reference/commands#labels) has the full rules.
+In the app, choose the tool and enter the name alone. [Labels](/reference/commands#labels) gives the rules for a label.
 
 ## Rename an account
 
-Renaming changes only the label. The account keeps its parked login, and a Claude Code or Codex account's [account window](/guides/account-windows) stays signed in.
+Renaming changes only the label. The account keeps its parked login, and its [account window](/guides/account-windows) stays signed in.
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     In the **Accounts** pane, Control-click the account, then choose **Rename**. Enter the new name, then click **Rename**.
   </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard rename wrong right
-    ```
-
-    ```text
-    Renamed wrong to right (me@company.com).
-    ```
-
-    A rename stays inside its tool: `pitboard rename codex/work job` gives `codex/job`.
+  <Tab title="Windows">
+    In the **Accounts** pane, right-click the account and select **Rename**, or select it and press F2. Enter the new name, then select **Rename**.
   </Tab>
 </Tabs>
 
+On the command line:
+
+```sh
+pitboard rename wrong right
+```
+
 ## Forget an account
 
-Forgetting an account deletes its parked login and what Pitboard keeps beside it on this Mac:
+To forget the account in use, switch to another account first.
+
+Forgetting an account deletes its parked login and what Pitboard keeps beside it on this computer:
 
 | Tool | Deleted with the parked login |
 | --- | --- |
 | Claude Code, Codex | Everything the account's [window](/guides/account-windows) keeps, its sign-in included |
 | Claude Desktop | The folders Pitboard set aside for the account |
 
-To forget the account in use, switch to another account first.
+On Windows, a window's data goes once every account window has closed.
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     In the **Accounts** pane, select the account and press Delete, or Control-click it and choose **Forget**. Click **Forget** to confirm.
   </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard forget old
-    ```
-
-    ```text
-    Forget old and delete its parked login? Adding it again needs a browser sign-in. [y/N] y
-    Forgot old (old@example.com).
-    ```
-
-    To skip the question, add `--yes`.
+  <Tab title="Windows">
+    In the **Accounts** pane, select the account and press Delete, or right-click it and select **Forget**. Select **Forget** to confirm.
   </Tab>
 </Tabs>
+
+On the command line, add `--yes` to skip the question:
+
+```sh
+pitboard forget old
+```
+
+```text
+Forget old and delete its parked login? Adding it again needs a browser sign-in. [y/N] y
+Forgot old (old@example.com).
+```
 
 Pitboard does not revoke the login it deletes. That login stays valid until it expires: see [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md#out-of-scope).

@@ -7,7 +7,7 @@ Removing the program alone leaves every parked login on the machine.
 
 ## Delete parked logins first
 
-`pitboard uninstall` turns off daily renewal, deletes every parked login this Pitboard wrote, then deletes `~/.pitboard`.
+`pitboard uninstall` turns off daily renewal, deletes every parked login this Pitboard wrote, then deletes the Pitboard directory, `~/.pitboard`. On Windows, the directory is `%LOCALAPPDATA%\Pitboard`.
 
 <Warning>
   `pitboard uninstall` cannot be undone. Each tool stays signed in to the account in use. Every other account needs a sign-in again before you can use it.
@@ -15,10 +15,10 @@ Removing the program alone leaves every parked login on the machine.
 
 <Steps>
   <Step title="Quit the app">
-    If the app is open, click Pitboard's item in the menu bar, then choose **Quit Pitboard**. `pitboard uninstall` refuses while it runs.
+    If the app is open, click Pitboard's item in the menu bar, then choose **Quit Pitboard**. On Windows, right-click Pitboard's icon in the notification area, then select **Exit**. `pitboard uninstall` refuses while the app runs.
   </Step>
   <Step title="Remove the status line">
-    If Claude Code's status line runs `pitboard statusline`, delete the `statusLine` field from `~/.claude/settings.json`, or the call from your own script. Each run recreates `~/.pitboard`.
+    If Claude Code's status line runs `pitboard statusline`, delete the `statusLine` field from `~/.claude/settings.json`, or the call from your own script. On Windows, the file is `%USERPROFILE%\.claude\settings.json`. Each run makes the Pitboard directory again.
   </Step>
   <Step title="Quit Claude">
     If a Claude Desktop account is parked, quit Claude with Command-Q. `pitboard uninstall` refuses while Claude is open.
@@ -37,6 +37,12 @@ Removing the program alone leaves every parked login on the machine.
     ```
 
     If you installed with the script, run `~/.local/bin/pitboard uninstall`.
+
+    On Windows, run the copy the installer put in place:
+
+    ```powershell
+    & "$env:LOCALAPPDATA\Programs\Pitboard\bin\pitboard.exe" uninstall
+    ```
   </Step>
 </Steps>
 
@@ -48,9 +54,11 @@ Turned off the daily renewal schedule.
 ~/.pitboard is gone. Remove Pitboard itself the way you installed it.
 ```
 
+Deleting the directory by hand leaves daily renewal on, which `pitboard schedule uninstall` turns off. On Linux and Windows, the parked logins are files in the directory and go with it.
+
 On macOS, deleting `~/.pitboard` by hand leaves the parked logins of Claude Code and OpenAI's Codex CLI in the keychain, still valid. Nothing else names them, so `pitboard uninstall` cannot find them. If you already deleted it, delete the `pitboard-park-` items in Keychain Access.
 
-If you set `PITBOARD_HOME`, or `pitboard uninstall` refuses, keeps `~/.pitboard` or leaves parked logins, see [`uninstall`](/reference/maintenance-commands#uninstall).
+If you set `PITBOARD_HOME`, or `pitboard uninstall` refuses, keeps the directory or leaves parked logins, see [`uninstall`](/reference/maintenance-commands#uninstall).
 
 ## Remove Pitboard itself
 
@@ -60,8 +68,9 @@ If you set `PITBOARD_HOME`, or `pitboard uninstall` refuses, keeps `~/.pitboard`
 | `pitboard` cask | `brew uninstall --cask pitboard` |
 | `pitboard-app` cask | `brew uninstall --cask pitboard-app` |
 | `cargo binstall` or `cargo install` | `cargo uninstall pitboard` |
-| A release tarball | Delete `pitboard`, and the man page and completion files if you copied them. |
-| The app from a release download | Move `Pitboard.app` to the Trash. |
+| A release tarball or zip | Delete `pitboard` or `pitboard.exe`, and the man page and completion files if you copied them. |
+| The app on macOS, from a release download | Move `Pitboard.app` to the Trash. |
+| The app on Windows | In **Settings** > **Apps** > **Installed apps**, select **Uninstall** in the menu beside **Pitboard**. |
 
 For the install script:
 
@@ -88,9 +97,11 @@ If you clicked **Install Command Line Tool** in **Settings** > **Command Line**,
 sudo rm /usr/local/bin/pitboard
 ```
 
+On Windows, uninstalling the app removes `%LOCALAPPDATA%\Programs\Pitboard`, its Start shortcut, its `PATH` entry, its `pitboard://` links, its start at sign-in and `%LOCALAPPDATA%\Pitboard App`, where the account windows keep their sign-ins. It leaves the parked logins, the Pitboard directory and daily renewal, so run `pitboard uninstall` first.
+
 ## Remove files Pitboard made as root
 
-Pitboard 0.7.0 and earlier did not refuse to run as root or under `sudo`. What those runs made belongs to root, and Pitboard [changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). Delete it by hand from a root shell, such as `sudo -i` starts.
+Pitboard 0.7.0 and earlier did not refuse to run as root or under `sudo`. What those runs made belongs to root, and Pitboard [changes nothing as root](/troubleshooting/refused-changes#pitboard-changes-nothing-as-root). Delete it by hand from a root shell, such as `sudo -i` starts.
 
 On Linux:
 

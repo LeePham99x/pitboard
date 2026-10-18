@@ -108,13 +108,13 @@ In the order of `pitboard --help`:
 | `use`, after a switch | `from`, `to`, `provider`, `changed` (`true`), `parked_at` (when the login of `from` was parked), `adoption_ceiling_seconds` and `adoption`. |
 | `use`, where nothing was signed in | The same, with `from` and `parked_at` set to `null`. |
 | `forget` | `label` and `email`. |
-| `stow` | `stowed`, `false` when no login file sits behind the keychain. When `true`, also `path`, the file deleted, and `login`, what became of its login: a code from [`stow`](/reference/recovery-commands#stow). Then `account`, the label of the login's account or `null`, and `dropped`, the file's other keys. |
+| `stow` | `stowed`, `false` when no login file sits behind the keychain or Credential Manager. When `true`, also `path`, the file deleted, and `login`, what became of its login: a code from [`stow`](/reference/recovery-commands#stow). Then `account`, the label of the login's account or `null`, and `dropped`, the file's other keys. |
 | `abandon` | `abandoned`, `true` when it gave up a Claude Code or Codex switch, with `from`, `to` and `logins_kept`, a count. `moves_given_up`, one object per Claude Desktop move it gave up, as [Moves given up](/reference/json-output#moves-given-up) lists, or an empty array. |
 | `repair` | `given_back`, objects with `label` and `service`, the parked login's name. `deleted`, `strangers` and `unreadable`, lists of parked login names, as [`repair`](/reference/recovery-commands#repair) explains. `set_aside`, the names of the folders it set aside in `parks/`. |
 | `adopt` | `adopted`, `false` when the Pitboard directory was already this computer's. When `true`, also `accounts`, the labels kept, `logins_dropped`, the labels whose parked login was dropped, and `set_aside`, the labels whose Claude Desktop parked login was set aside. |
 | `renew` | `accounts`, one object per parked login that was due, with `label`, `provider` and `outcome`; and `renewed`, a count. `outcome` is `renewed`, `parked_login_refused`, `renewal_deferred` or an error code, as [`renew`](/reference/maintenance-commands#renew) explains. |
-| `schedule install` | `installed` (`true`) and `path`. |
-| `schedule status` | `installed`. When `true`, also `path` and `every_seconds` (`86400`). Where Pitboard has no scheduler to write, also `supported` (`false`). |
+| `schedule install` | `installed` (`true`) and `path`, the job's file. On Windows, `task`, the task's path in Task Scheduler, in place of `path`. |
+| `schedule status` | `installed`. When `true`, also `every_seconds` (`86400`) and `path`, or `task` on Windows. Where Pitboard has no scheduler to write, also `supported` (`false`). |
 | `schedule uninstall` | `installed` (`false`) and `removed`, `false` when nothing was scheduled. |
 | `log` | `entries`, oldest first, each with `at`, `caller` (`cli`, `app` or `unknown`), `verb`, `subject` and `outcome`, as [`log`](/reference/maintenance-commands#log) explains. |
 | `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), the booleans `home_removed`, `warming_up` (a warm-up running kept the directory) and `schedule_removed`, and `home_kept_by`, the paths of the files that could not be removed, which kept the directory. |
@@ -135,7 +135,7 @@ A Claude Desktop account has no email address, so `email` is empty wherever one 
 | Case | `adoption` | `adoption_ceiling_seconds` |
 | --- | --- | --- |
 | Claude Code | `{"follows":"polling","within_seconds":33}` | `33` |
-| Claude Code on macOS, while a login file sits behind the keychain | `{"follows":"renewal","path":"/Users/you/.claude/.credentials.json"}` | `null` |
+| Claude Code, while a login file sits behind the keychain or Credential Manager | `{"follows":"renewal","path":"/Users/you/.claude/.credentials.json"}` | `null` |
 | Codex | `{"follows":"restart","program":"codex"}` | `null` |
 | Claude Desktop | `{"follows":"open","app":"Claude"}` | `null` |
 
@@ -159,18 +159,18 @@ The `environment` of `doctor`. It is `{}` where a variable naming a folder is em
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `config_file` | string | Claude Code's config file, such as `~/.claude.json`. |
-| `storage_dir` | string | The folder that holds Claude Code's login and locks, and picks its keychain item's name: `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `CLAUDE_CONFIG_DIR` or `~/.claude`. |
-| `credential_service` | string | The keychain item that holds Claude Code's login on macOS, such as `Claude Code-credentials`. |
-| `credential_store` | string | Where Pitboard found Claude Code's login: `keychain`, `file`, `absent`, `unknown` or `unreadable`. |
+| `storage_dir` | string | The folder that holds Claude Code's login file and locks, and picks the name of its keychain or Credential Manager item: `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `CLAUDE_CONFIG_DIR` or `~/.claude`. |
+| `credential_service` | string | The name of the item that holds Claude Code's login in the keychain on macOS, or in Credential Manager on Windows, such as `Claude Code-credentials`. |
+| `credential_store` | string | Where Pitboard found Claude Code's login: `keychain`, `credential_manager`, `file`, `absent`, `unknown` or `unreadable`. |
 | `home` | string | The Pitboard directory. |
-| `codex` | object | `home`, Codex's folder, `~/.codex` or `CODEX_HOME`. `present`, whether that folder exists. `backend`, where Codex keeps its login: `file`, `keyring`, `auto`, `ephemeral`, `secrets` or `unknown`. `login_present`, whether `auth.json` exists, or `null` for any store but `file`. `version`, the version of OpenAI's Codex CLI, or `null`. |
+| `codex` | object | `home`, Codex's folder: `CODEX_HOME`, or else `.codex` in your home, in your profile folder on Windows. `present`, whether that folder exists. `backend`, where Codex keeps its login: `file`, `keyring`, `auto`, `ephemeral`, `secrets` or `unknown`. `login_present`, whether `auth.json` exists, or `null` for any store but `file`. `version`, the version of OpenAI's Codex CLI, or `null`. |
 | `desktop` | object | `data_folder`, Claude's data folder, or `null` where Pitboard leaves Claude Desktop alone. `present`, whether that folder exists. `build`, the version of `/Applications/Claude.app`, or `null`. |
 
 ## Status data
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `slot` | object | The Claude Code login this output is about. `service` names its keychain item on macOS, and no item on Linux. `default` is `true` for `Claude Code-credentials`, the item used when no [environment variable](/reference/files#environment-variables) picks another. |
+| `slot` | object | The Claude Code login this output is about. `service` names its item in the keychain on macOS or in Credential Manager on Windows, and no item on Linux. `default` is `true` for `Claude Code-credentials`, the item used when no [environment variable](/reference/environment-variables) picks another. |
 | `signed_in` | object or null | The Claude Code account in use: `account_uuid`, `email` and `organization_uuid`. With `--offline`, the account Anthropic last named for the login stored. |
 | `signed_in_error` | string or null | Why `signed_in` is `null`, such as `nothing is signed in` or `not asked`. |
 | `accounts` | array | One object per enrolled account, Claude Code's first, and the account in use first within each tool. A login in use that no account matches gets one too, and so does a login Pitboard could not read, use or identify. |
@@ -286,6 +286,7 @@ For `warm_up_halted`, `reason` is one of these:
 | `custom_oauth_endpoint` | `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, so Pitboard does not act on Claude Code. |
 | `warm_up_auth_overridden` | Claude Code's managed settings sign it in another way. |
 | `claude_not_found` | Claude Code is not installed where Pitboard looks. |
+| `warm_up_unbuilt` | Pitboard runs on Windows, where it warms up no account. |
 
 [When it holds back](/guides/warm-up#when-it-holds-back) says when each ends.
 
