@@ -31,6 +31,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Startup turned Pitboard off, instead of showing on while Windows does not start it.
 - On Windows, removing Pitboard deletes its notification registration under
   `HKCU\Software\Classes`, which outlived the removal.
+- On Windows, updating the app replaces `pitboard.exe` where it is, instead of leaving none for
+  about 2 seconds, in which Claude Code's status line found no `pitboard`.
 - `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
   new PC with nothing enrolled no longer reads as broken.
 - `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex

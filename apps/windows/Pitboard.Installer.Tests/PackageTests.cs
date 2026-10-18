@@ -199,7 +199,7 @@ public sealed class PackageTests
         foreach (var (action, command, when, condition) in new[]
         {
             ("RegisterShare", "PitboardShareExe --register", Deferred, "NOT REMOVE"),
-            ("UnregisterShare", "PitboardExe --unregister-share", Deferred, "REMOVE = \"ALL\""),
+            ("UnregisterShare", "PitboardExe --unregister-share", Deferred, "REMOVE = \"ALL\" AND NOT UPGRADINGPRODUCTCODE"),
             ("RegisterShareRollback", "PitboardExe --unregister-share", Rollback, "NOT REMOVE"),
         })
         {
