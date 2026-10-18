@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "linden",
   "name": "Pitboard",
   "description": "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see what each Claude Code and Codex account has left.",
   "colors": {
