@@ -20,24 +20,29 @@ Pitboard records each answer with the login's fingerprint, and asks again only o
 
 When the config has named another account since Anthropic last answered, something may have signed in. Reads that send no request then warn with `in_use_unconfirmed`. `pitboard status` settles it, and the app starts such a read once by itself.
 
-
 ## Claude Desktop
 
 Pitboard asks claude.ai nothing, and knows a login by a fingerprint of its session cookie. [Claude Desktop logins](/concepts/claude-desktop#claude-desktop-logins) says how.
 
 ## A lapsed login in use
 
-Pitboard never asks Anthropic to identify a login with an expired access token. Where it must ask and that token has expired, it renews Claude Code's login first. Claude Code renews its login only while a session uses it, and a [login file behind the keychain](/concepts/open-sessions#a-login-file-behind-the-keychain) can keep every session off it.
+Pitboard never asks Anthropic to identify a login with an expired access token. Where it must ask and that token has expired, it renews Claude Code's login first. Claude Code renews its login only while a session uses it, and a [login file behind the keychain or Credential Manager](/concepts/open-sessions#a-login-file-behind-the-keychain-or-credential-manager) can keep every session off it.
 
 As read in 2.1.294, Pitboard renews it as Claude Code does. It takes the lock a session takes to renew, and reads the login again under it. A login a session renewed meanwhile is asked about as it is. Otherwise Pitboard sends the refresh token, and saves the answer only where the stored login still holds that token.
 
 Until the answer is saved, a copy waits in Pitboard's store. If Pitboard stops first or the save fails, the next change saves it, or the next read that must identify the login. While the copy waits, no change renews, parks, replaces or puts away that login. Each stops and says why.
 
-On macOS, Pitboard's store is the keychain that holds Claude Code's login. If the keychain is locked before Pitboard sends the refresh token, Pitboard sends nothing. Where macOS cannot ask for your password, as over SSH, a keychain that locks while Anthropic answers takes neither the copy nor the answer, and the stored login stops working. A change then says to run `claude` and sign in, and a read marks the account in use `login_refused`.
-
 A read renews the login only while no other Pitboard command runs. Asking for usage never renews it.
 
-If Anthropic no longer accepts the login, Pitboard changes nothing. A change stops with [`session_expired`](/reference/errors#switching), and a read marks the account in use `login_refused`.
+## When the store cannot be reached
+
+On macOS, Pitboard's store is the keychain that holds Claude Code's login. If the keychain is locked before Pitboard sends the refresh token, Pitboard sends nothing. Where macOS cannot ask for your password, as over SSH, a keychain that locks while Anthropic answers takes neither the copy nor the answer, and the stored login stops working. A change then says to run `claude` and sign in, and a read marks the account in use `login_refused`.
+
+On Windows, a sign-in over SSH with a key cannot reach Credential Manager, so Pitboard cannot tell where Claude Code's login is. It identifies and renews nothing, and a change to a Claude Code account stops with `credential_store_locked`. The same sign-in may not open Pitboard's parked logins, which are sealed to your Windows account: a change that needs one stops with `credential_sealed`.
+
+## A login Anthropic refuses
+
+If Anthropic no longer accepts Claude Code's login in use, Pitboard changes nothing with it, and a read marks the account in use `login_refused`. Where Anthropic refuses it for good, a switch stops with [`live_login_refused`](/reference/errors#switching), and puts the other account's login in its place once you agree. Other changes stop with `session_expired`.
 
 ## When Pitboard renews a login in use
 
@@ -45,6 +50,6 @@ Pitboard renews a login a tool may be using in three cases only:
 
 - A change or a read renews Claude Code's login in use where it must identify it, as [A lapsed login in use](#a-lapsed-login-in-use) describes.
 - [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token.
-- A warm-up of the account in use renews its login where the access token would lapse within 5 minutes.
+- A warm-up of the account in use renews its login where the access token would lapse within 5 minutes. Pitboard warms up no account on Windows.
 
 Each holds [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile, so no session spends the same refresh token. Pitboard never renews Codex's login in use.

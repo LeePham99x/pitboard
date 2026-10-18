@@ -3,7 +3,7 @@ title: "How switching works"
 description: "Every switch parks the login in use and puts a parked one in its place, whoever starts it."
 ---
 
-Claude Code and OpenAI's Codex CLI each read one stored login. Claude Desktop keeps its login in Claude's own files. Pitboard keeps every other account's login in its own store.
+Claude Code and OpenAI's Codex CLI each read one stored login. Claude Desktop keeps its login in Claude's own files, and Pitboard switches it on macOS only. Pitboard keeps every other account's login in its own store.
 
 ## Parked logins
 
@@ -22,13 +22,23 @@ You start a switch in the app or with `pitboard use`. Pitboard starts one by its
 5. Records the switch in `journal.json`, with fingerprints of both logins.
 6. Parks the outgoing login: Claude Code's OAuth block and account entries, not its MCP server logins, or Codex's whole `auth.json`.
 7. Reads the login in use again, and stops with `signed_in_account_changed` if it changed.
-8. Writes the incoming login. On macOS, a failed keychain write never falls back to Claude Code's plaintext file.
+8. Writes the incoming login where the tool keeps its own.
 9. Reads the login back and records the incoming account as in use, then releases Claude Code's locks. As read in 2.1.284, a `/logout` that gives up waiting for the write lock deletes the login anyway, so the read-back comes first.
-10. For Claude Code, backs up the config to `~/.pitboard/backups/`, then writes the incoming account into it without `profileFetchedAt`.
+10. For Claude Code, copies its config into `backups` in Pitboard's directory, then writes the incoming account into the config without `profileFetchedAt`.
+
+On macOS, a failed keychain write never falls back to Claude Code's plaintext file. On Windows, where Credential Manager is Claude Code's store, a failed write there never falls back to `.credentials.json` either.
 
 An automatic switch decides once, under the lock, from the login and files as they are then. Two runs reading the same numbers make one switch.
 
 A Claude Desktop switch moves Claude's files instead, while Claude is closed: [What a Claude Desktop switch does](/concepts/claude-desktop#what-a-claude-desktop-switch-does) has its steps.
+
+## Switches that park nothing
+
+Where nothing is signed in to Claude Code or Codex, as on a new computer, a switch puts the incoming login in place and parks nothing. Where the tool has not made its folder yet, Pitboard makes it, private to you.
+
+Where Anthropic refuses for good the login Claude Code has in use, that login no longer works and cannot be parked. A switch then stops with `live_login_refused` and moves nothing. Once you agree, with **Replace** in the app or `pitboard use --yes`, it puts the incoming login in place of the refused one.
+
+Both run under the same locks, journal and read-back as a switch. A write that does not hold stops with `install_failed` or `replace_failed`, and the incoming account keeps its parked login.
 
 ## Open sessions
 

@@ -3,17 +3,29 @@ title: "Security and privacy"
 description: "Pitboard keeps parked logins on your machine, sends them only to the service that issued them, and has no telemetry."
 ---
 
-Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI, and the files that hold a Claude Desktop login. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) lists what Pitboard protects against and how to report a vulnerability. [How account windows keep their data](/concepts/account-windows) covers each window's sign-in.
+Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI, and on macOS the files that hold a Claude Desktop login. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) lists what Pitboard protects against and how to report a vulnerability. [How account windows keep their data](/concepts/account-windows) covers each window's sign-in.
 
 ## Where parked logins are kept
 
-On macOS, Claude Code and Codex parked logins are keychain items whose names start with `pitboard-park-`. Pitboard reads and writes them, and Claude Code's item, only through `/usr/bin/security`, the one program that item trusts.
+<Tabs>
+  <Tab title="macOS">
+    Claude Code and Codex parked logins are keychain items whose names start with `pitboard-park-`. Pitboard reads and writes them, and Claude Code's item, only through `/usr/bin/security`, the one program that item trusts.
 
-On Linux, parked logins are files in `~/.pitboard/vault/`, at mode 0600 in a 0700 directory, and Claude Code keeps its own login in a plaintext `~/.claude/.credentials.json`. Any process running as you can read both. `pitboard doctor` fails if anyone else has access to either, and warns for Codex's `auth.json`.
+    Codex keeps its own login in a plaintext `auth.json`. `pitboard doctor` fails if anyone else has access to a login file Claude Code left behind the keychain, and warns for Codex's `auth.json`.
+  </Tab>
+  <Tab title="Windows">
+    Parked logins are files in `vault` in Pitboard's directory, `%LOCALAPPDATA%\Pitboard`. Pitboard seals each with Windows' data protection under your own Windows account, never the machine's, so no other account can open one. Pitboard makes its folders and files reachable only by you, SYSTEM and Administrators.
 
-A Claude Desktop parked login is Claude's own files and three keys of `config.json`, in a folder under `~/.pitboard/parks` that only you can open. Pitboard renames them there and back, and never copies them. It reads no keychain item for Claude Desktop, `Claude Safe Storage` included, and decrypts no cookie. Of the session cookie, it keeps only a fingerprint. `pitboard doctor` fails if anyone else has access to `parks`. [Folders in parks](/reference/files#folders-in-parks) has the layout.
+    Claude Code keeps its own login in a plaintext `.credentials.json`, which takes the access list of its folder, or in Credential Manager, which every sign-in of yours on that PC reads. Codex keeps its login in a plaintext `auth.json`. `pitboard doctor` fails if anyone else can reach a parked login or Claude Code's file, and warns for Codex's `auth.json`, each time with the `icacls` commands that fix it.
+  </Tab>
+  <Tab title="Linux">
+    Parked logins are files in `~/.pitboard/vault/`, at mode 0600 in a 0700 directory, and Claude Code keeps its own login in a plaintext `~/.claude/.credentials.json`. Any process running as you can read both. `pitboard doctor` fails if anyone else has access to either, and warns for Codex's `auth.json`.
+  </Tab>
+</Tabs>
 
 A Claude Code parked login holds the OAuth block and the account's other fields, such as `trustedDeviceToken`. Whether restoring a device token spares a re-verification has not been measured. A Codex parked login is the whole `auth.json`, which can also hold an OpenAI API key, as read in Codex 0.154.0.
+
+On macOS, a Claude Desktop parked login is Claude's own files and three keys of `config.json`, in a folder under `~/.pitboard/parks` that only you can open. Pitboard renames them there and back, and never copies them. It reads no keychain item for Claude Desktop, `Claude Safe Storage` included, and decrypts no cookie. Of the session cookie, it keeps only a fingerprint. `pitboard doctor` fails if anyone else has access to `parks`. [Folders in parks](/reference/files#folders-in-parks) has the layout.
 
 ## What leaves your machine
 
@@ -27,8 +39,8 @@ Pitboard has no server of its own and sends no request for a Claude Desktop acco
 | `platform.claude.com/v1/oauth/token` | A refresh token and the client id it was issued to | Renewing a Claude Code parked login, or the login in use in the [three cases](/concepts/identity#when-pitboard-renews-a-login-in-use) where Pitboard does |
 | `chatgpt.com/backend-api/wham/usage` | An access token and the ChatGPT account id | A Codex account's usage, and checking a login before a switch to it |
 | `auth.openai.com/oauth/token` | A refresh token and Codex's client id | Renewing a Codex parked login |
-| claude.ai, chatgpt.com, their sign-in pages and what their pages load | What the site keeps in that window | An account window, through WebKit |
-| `github.com/datlechin/pitboard/releases` | Nothing of yours | The app's [update check](/reference/settings#updates) and downloads, and the tarball the install script downloads |
+| claude.ai, chatgpt.com, their sign-in pages and what their pages load | What the site keeps in that window | An account window, through WebKit on macOS or WebView2 on Windows |
+| `github.com/datlechin/pitboard/releases` | Nothing of yours | The app's [update check](/reference/settings#updates) and downloads, its feed `appcast.xml` on macOS and `appcast-windows.xml` on Windows, and the tarball the install script downloads |
 | `usepitboard.com/install.sh` | Nothing of yours | The line in [Install with the script](/install#install-with-the-script): a redirect, kept at Cloudflare, to the script on GitHub |
 
 GitHub redirects each release download to `release-assets.githubusercontent.com`, as measured on 12 October 2026. The command line never checks for updates.
@@ -44,3 +56,5 @@ Pitboard hands a login to `security` in hex on standard input, where `ps` cannot
 Past it, Pitboard passes the login as an argument, which another process running as you could read while the call lasts. A switch, a `--sign-in` enrolment or `pitboard stow` that does this says so. A renewal does not. `pitboard doctor` warns while Claude Code's login is that large.
 
 With `PITBOARD_NO_ARGV=1`, Pitboard refuses such a write. It then parks no Codex account, and leaves a parked login that size unrenewed. Opened from Finder or at login, the app lacks your shell's `PITBOARD_NO_ARGV`. A renewal schedule installed while it is set keeps it.
+
+On Windows, no login goes on an argument line: Credential Manager takes one of any size in pieces. `PITBOARD_NO_ARGV` changes nothing there, and `pitboard doctor` warns while it is set.
