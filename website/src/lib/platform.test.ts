@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { platforms, shownOn, type Platform } from "./platform.ts";
+import { partOf, platforms, shownOn, type Platform } from "./platform.ts";
 
 const source = readFileSync(new URL("./platform.ts", import.meta.url), "utf8");
 
@@ -10,6 +10,7 @@ const matches: Record<string, (reader: Platform | null) => boolean> = {
   "platform-macos": (reader) => reader === "macos" || reader === null,
   "platform-windows": (reader) => reader === "windows",
   "platform-linux": (reader) => reader === "linux",
+  "no-js": (reader) => reader === null,
 };
 
 function shows(classes: string, reader: Platform | null): boolean {
@@ -57,8 +58,23 @@ test("a figure has a macOS drawing, and shows no drawing it was not given", () =
   assert.throws(() => shownOn("linux", ["macos", "windows"]));
 });
 
+// Every set of platforms a part of a page is for: one, or macOS and Linux, which share a script.
+const parts: Platform[][] = [["macos"], ["windows"], ["linux"], ["macos", "linux"]];
+
+test("a part of a page shows to the readers of its platforms, and to all without JavaScript", () => {
+  for (const on of parts) {
+    for (const reader of platforms) {
+      assert.equal(shows(partOf(on), reader), on.includes(reader), `${reader} of ${on}`);
+    }
+    assert.ok(shows(partOf(on), null), `${on} without JavaScript`);
+  }
+  assert.equal(partOf(["linux", "macos"]), partOf(["macos", "linux"]));
+  assert.throws(() => partOf([]));
+});
+
 test("platform.ts writes each set of classes whole, where Tailwind finds it", () => {
   for (const drawn of sets) {
     for (const p of drawn) assert.ok(source.includes(`"${shownOn(p, drawn)}"`), shownOn(p, drawn));
   }
+  for (const on of parts) assert.ok(source.includes(`"${partOf(on)}"`), partOf(on));
 });

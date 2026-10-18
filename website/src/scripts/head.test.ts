@@ -23,10 +23,11 @@ interface Visit {
   hint?: string;
   // null when the browser refuses storage
   stored?: Record<string, string> | null;
+  hash?: string;
 }
 
 // runs head.js against a stand-in page and returns the attributes it set on the root
-function visit({ ua, touch = 0, hint, stored = {} }: Visit) {
+function visit({ ua, touch = 0, hint, stored = {}, hash = "" }: Visit) {
   const attrs: Record<string, string> = {};
   runInNewContext(script, {
     document: {
@@ -36,6 +37,7 @@ function visit({ ua, touch = 0, hint, stored = {} }: Visit) {
       },
       querySelectorAll: () => [],
     },
+    location: { hash },
     navigator: {
       userAgent: ua,
       maxTouchPoints: touch,
@@ -84,4 +86,15 @@ test("opens the command line for Linux until the reader chooses a surface", () =
   assert.equal(visit({ ua: LINUX, stored: { tab: "app" } })["data-surface"], "app");
   assert.equal(visit({ ua: WINDOWS })["data-surface"], "app");
   assert.equal(visit({ ua: MAC, stored: { tab: "cli" } })["data-surface"], "cli");
+});
+
+test("shows the platform a link names for the visit, over the stored one and the detected one", () => {
+  assert.equal(visit({ ua: MAC, hash: "#windows" })["data-platform"], "windows");
+  assert.equal(visit({ ua: WINDOWS, hash: "#linux" })["data-platform"], "linux");
+  assert.equal(
+    visit({ ua: LINUX, stored: { platform: "windows" }, hash: "#macos" })["data-platform"],
+    "macos",
+  );
+  assert.equal(visit({ ua: WINDOWS, hash: "#release-files" })["data-platform"], "windows");
+  assert.equal(visit({ ua: MAC, stored: null, hash: "#linux" })["data-platform"], "linux");
 });
