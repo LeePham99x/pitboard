@@ -1755,11 +1755,11 @@ const CLAUDE_CODES_OWN: &[&str] = &[
     "credential",
     "fallback_login",
     "storage_v5",
-    "daemon",
+    "claude_daemon",
     "claude_version",
     "warm_up",
     "status_line",
-    "auth",
+    "auth_source",
 ];
 
 // The tool whose section a check is in; None for Claude Code's and Pitboard's own.
@@ -8646,24 +8646,46 @@ mod tests {
     /// program it does not use. Everything about Pitboard itself is still checked.
     #[test]
     fn a_machine_with_only_codex_is_not_judged_on_claude_code() {
-        let mut facts = facts();
-        facts.claude_present = false;
-        facts.config = Err(Error::ClaudeConfigMissing {
-            path: PathBuf::from("/nowhere/.claude.json"),
+        let mut windows = facts();
+        windows.os = Os::Windows;
+        windows.fallback_login = Some(FallbackLogin {
+            path: windows.credential_file.clone(),
+            fingerprint: Ok(None),
         });
-        facts.codex.present = true;
-        let checks = evaluate(&facts);
+        windows.status_line = Some(StatusLineFact {
+            git_bash: claude::GitBash {
+                found: None,
+                passed_over: None,
+            },
+            powershell: None,
+            pitboard: None,
+            runs_pitboard: false,
+        });
+        let made: Vec<&str> = evaluate(&windows).iter().map(|c| c.code).collect();
+        // A name no check makes hides nothing, and the loop under it would pass over it.
         for own in CLAUDE_CODES_OWN {
-            assert!(
-                checks.iter().all(|c| c.code != *own),
-                "{own} is about Claude Code, which is not here"
-            );
+            assert!(made.contains(own), "{own} is no check's code");
         }
-        assert!(
-            checks.iter().any(|c| c.code == "state"),
-            "Pitboard's own still is"
-        );
-        assert!(checks.iter().any(|c| c.code.starts_with("codex_")));
+
+        for mut facts in [facts(), windows] {
+            facts.claude_present = false;
+            facts.config = Err(Error::ClaudeConfigMissing {
+                path: PathBuf::from("/nowhere/.claude.json"),
+            });
+            facts.codex.present = true;
+            let checks = evaluate(&facts);
+            for own in CLAUDE_CODES_OWN {
+                assert!(
+                    checks.iter().all(|c| c.code != *own),
+                    "{own} is about Claude Code, which is not here"
+                );
+            }
+            assert!(
+                checks.iter().any(|c| c.code == "state"),
+                "Pitboard's own still is"
+            );
+            assert!(checks.iter().any(|c| c.code.starts_with("codex_")));
+        }
     }
 
     #[test]

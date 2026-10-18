@@ -264,7 +264,7 @@ Digests differ from one report to the next. Both reports write a proxy's user na
 | `Codex` | Pitboard finds `codex`, Codex's directory, `~/.codex` or `CODEX_HOME`, exists, or a Codex account is enrolled |
 | `Claude Desktop` | A Claude Desktop account is enrolled, or a folder is set aside |
 
-When another tool's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5` and `claude_version`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
+When another tool's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5`, `claude_daemon`, `claude_version` and `auth_source`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
 
 Some Codex levels depend on whether a Codex account is enrolled:
 
