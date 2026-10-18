@@ -26,8 +26,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    The entries under it become the release notes.
 3. At the bottom of `CHANGELOG.md`, point `[Unreleased]` at `v<version>...HEAD`. Add a
    `[<version>]` line that compares the previous tag with `v<version>`.
-4. For a full release, add a line for the version in `website/src/data/highlights.ts`, 60
-   characters at most. The site's build fails without it. A beta has none.
+4. For every release, betas included, add a line for the version in
+   `website/src/data/highlights.ts`, 60 characters at most. The site's build fails without it.
 5. In `Cargo.toml`, set `version` under `[workspace.package]`. `pitboard-core` has a
    version of its own: if `crates/pitboard-core`, or what it takes from the root
    `Cargo.toml`, changed since that version reached crates.io, raise it in

@@ -14,7 +14,7 @@ import {
   type Release,
 } from "./github.ts";
 import type { Platform } from "./platform.ts";
-import { ahead, newestFull, shown } from "./shown.ts";
+import { ahead, shown } from "./shown.ts";
 
 // An offline build takes each beta recorded in fixtures/ as published.
 const recordedReleases = import.meta.glob<unknown>("../data/fixtures/release-v*.json", {
@@ -67,7 +67,7 @@ async function load(): Promise<SiteData> {
   const log = (line: string) => console.log(`[site] ${line}`);
   const all = parseChangelog(changelogText);
   // the release commit fails here, not the pull requests after the release is out
-  const newest = newestFull(all);
+  const [newest] = all;
   if (newest) highlight(newest.version);
   const latest = await readRelease({
     fetch,
