@@ -10,6 +10,7 @@ public interface IStartupItem
 
     bool Read();
 
+    // Settings > Apps > Startup turned it off, so Windows will not start it, and only Settings turns it on again.
     bool TurnedOff();
 
     void Write(bool starts);
@@ -34,6 +35,8 @@ public sealed class StartAtSignIn(IStartupItem item)
 
     public bool On { get; private set; }
 
+    public bool TurnedOff { get; private set; }
+
     public string? Failed { get; private set; }
 
     public string? Refusal => item.Refusal;
@@ -44,10 +47,12 @@ public sealed class StartAtSignIn(IStartupItem item)
         try
         {
             On = item.Read();
+            TurnedOff = item.TurnedOff();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or SecurityException)
         {
             On = false;
+            TurnedOff = false;
             Failed = error.Message;
         }
 

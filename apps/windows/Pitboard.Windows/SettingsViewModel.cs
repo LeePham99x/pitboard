@@ -12,7 +12,7 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 {
     public const string SignInNote = "Settings > Apps > Startup can turn it off too.";
 
-    public const string TurnedOffNote = "";
+    public const string TurnedOffNote = "Turned off in Settings > Apps > Startup, where you can turn it on again.";
 
     public const string BetaNote = "A beta updates itself to 1.0.0 once that is out. Install a later beta by hand.";
 
@@ -63,9 +63,9 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 
     public bool StartsAtSignIn => _start.On;
 
-    public bool CanStartAtSignIn => _start.Refusal is null;
+    public bool CanStartAtSignIn => _start.Refusal is null && !_start.TurnedOff;
 
-    public string StartupNote => _start.Refusal ?? SignInNote;
+    public string StartupNote => _start.Refusal ?? (_start.TurnedOff ? TurnedOffNote : SignInNote);
 
     public string? StartupFailed => _start.Failed;
 

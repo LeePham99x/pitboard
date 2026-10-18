@@ -2,7 +2,8 @@ using Microsoft.Win32;
 
 namespace Pitboard.Windows;
 
-// The values of the person's own Run key, each a command Windows starts as they sign in.
+// The values of the person's own Run key, each a command Windows starts as they sign in, and what Settings > Apps >
+// Startup keeps of each in StartupApproved, which only it writes.
 public interface IRunKey
 {
     string? Value(string name);
@@ -18,13 +19,19 @@ public sealed class RegistryRunKey : IRunKey
 {
     public const string Path = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
+    public const string ApprovedPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
     public string? Value(string name)
     {
         using var key = Registry.CurrentUser.OpenSubKey(Path);
         return key?.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
     }
 
-    public byte[]? Approval(string name) => null;
+    public byte[]? Approval(string name)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(ApprovedPath);
+        return key?.GetValue(name) as byte[];
+    }
 
     public void Write(string name, string command)
     {
@@ -57,17 +64,21 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
             && Launching.Arguments(command).FirstOrDefault() is { } program
             && string.Equals(program, exe, StringComparison.OrdinalIgnoreCase);
 
-    // Paths are compared as Windows compares them, without case.
-    public bool Read() =>
-        Refusal is null && string.Equals(key.Value(Name), Command(exe), StringComparison.OrdinalIgnoreCase);
+    public bool Read() => Written() && !OffInSettings();
 
-    public bool TurnedOff() => false;
+    // Windows starts no Run value Settings turned off, and lists none that is not there to turn on again.
+    public bool TurnedOff() => Written() && OffInSettings();
 
     public void Write(bool starts)
     {
         if (Refusal is { } refusal)
         {
             throw new InvalidOperationException(refusal);
+        }
+
+        if (starts && TurnedOff())
+        {
+            throw new InvalidOperationException(SettingsViewModel.TurnedOffNote);
         }
 
         if (!starts)
@@ -89,4 +100,11 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
 
         key.Write(Name, command);
     }
+
+    // Paths are compared as Windows compares them, without case.
+    private bool Written() =>
+        Refusal is null && string.Equals(key.Value(Name), Command(exe), StringComparison.OrdinalIgnoreCase);
+
+    // Odd is off: Settings wrote 01 there on the session's PC (build 26300, 2026-10-18).
+    private bool OffInSettings() => key.Approval(Name) is [var first, ..] && (first & 1) == 1;
 }
