@@ -162,12 +162,13 @@ A Claude Desktop account whose parked login's folder is gone, as after `state.js
 | --- | --- |
 | `Gave personal back a parked login that nothing named.` | It gave a login back. One line per login |
 | `Deleted 1 parked login(s) Pitboard wrote down here and nothing recorded.` | No account could take logins that `pending` names |
-| `1 parked login(s) here belong to no account Pitboard knows and were not written down by this one. Left alone: the keychain is shared by the whole machine, and they may be another Pitboard's.` | No account could take logins that `pending` does not name |
-| `1 could not be read this time and were left alone. Unlock the keychain and run this again.` | It could not read logins, as while the keychain is locked |
+| `1 parked login(s) here belong to no account Pitboard knows and were not written down by this one. Left alone: the keychain is shared by the whole machine, and they may be another Pitboard's.` | On macOS, no account could take logins that `pending` does not name |
+| `1 parked login(s) here belong to no account Pitboard knows and were not written down by this one. Left alone: Pitboard deletes only a parked login it wrote down.` | On Linux and Windows, no account could take logins that `pending` does not name |
+| `1 could not be read this time and were left alone. Unlock the keychain and run this again.` | On macOS, it could not read logins, as while the keychain is locked |
+| `1 could not be read this time and were left alone. Run this again from a desktop session.` | On Windows, it could not open logins, as in a sign-in over SSH with a key |
+| `1 could not be read this time and were left alone.` | On Linux, it could not read logins |
 | ``Set aside 1 folder(s) in /Users/you/.pitboard/parks that hold what no account here can take. Nothing was deleted; `pitboard doctor` lists them.`` | No account could take folders |
 | `Every parked login here is accounted for.` | It found nothing to do |
-
-On Linux and Windows, "keychain" in these lines means the `vault` folder in Pitboard's directory, which no other Pitboard directory uses.
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `repair` refuses with `custom_oauth_endpoint`, exit status 3.
 

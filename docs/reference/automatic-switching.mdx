@@ -65,4 +65,17 @@ While one of these holds, Pitboard does not decide whether to switch.
 
 Pitboard records each try in `autoswitch.json` before anything moves, so a try stopped partway still counts. The next try waits 1 minute, and each failure in a row doubles the wait, up to 15 minutes. A failure that may pass, such as Anthropic out of reach, does not count toward `attempts_spent`.
 
-A try refused over the account it would switch to passes that account over until the limit resets, and the next try picks another at once. These refusals do: the account is no longer enrolled, its parked login is missing, expired, refused, damaged or another account's, Anthropic refuses for good to identify or renew that login, or Anthropic has put the account on hold.
+These refusals over the account a try would switch to pass that account over until the limit resets. The next try picks another at once.
+
+| Code | When |
+| --- | --- |
+| `account_unknown` | The account is no longer enrolled. |
+| `nothing_parked` | The account has no parked login. |
+| `parked_credential_missing` | Its parked login is missing. |
+| `parked_login_expired` | Its parked login has expired. |
+| `parked_login_refused` | Anthropic no longer accepts its parked login. |
+| `parked_credential_corrupt` | Its parked login is damaged. |
+| `parked_login_belongs_elsewhere` | Its parked login is another account's. |
+| `identity_unverifiable` | Anthropic refuses for good to identify its parked login. |
+| `renewal_failed` | Anthropic refuses for good to renew its parked login. |
+| `account_on_hold` | Anthropic has put the account on hold. |
