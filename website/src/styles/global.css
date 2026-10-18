@@ -6,8 +6,10 @@
 @custom-variant js (&:where(.js *));
 @custom-variant no-js (&:where(:root:not(.js) *));
 @custom-variant scrolled (&:where(.scrolled *));
-@custom-variant os-linux (&:where([data-os="linux"] *));
-@custom-variant os-windows (&:where([data-os="windows"] *));
+/* the platform head.js chose; without JavaScript, macOS */
+@custom-variant platform-macos (&:where(:root:not([data-platform="windows"], [data-platform="linux"]) *));
+@custom-variant platform-windows (&:where([data-platform="windows"] *));
+@custom-variant platform-linux (&:where([data-platform="linux"] *));
 @custom-variant os-mobile (&:where([data-os="mobile"] *));
 @custom-variant surface-app (&:where([data-surface="app"] *));
 @custom-variant surface-cli (&:where([data-surface="cli"] *));

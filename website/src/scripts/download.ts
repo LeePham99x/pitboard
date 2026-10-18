@@ -1,15 +1,15 @@
-// CSS order already shows the reader's system first; this moves it in the DOM so focus follows.
-const os = document.documentElement.getAttribute("data-os");
+// CSS order already shows the reader's platform first; this moves it in the DOM so focus follows.
+const platform = document.documentElement.getAttribute("data-platform");
 const first =
-  os === "linux"
+  platform === "linux"
     ? document.getElementById("command-line")
-    : os === "windows"
+    : platform === "windows"
       ? document.getElementById("windows")
       : null;
 const before =
-  os === "linux"
+  platform === "linux"
     ? document.getElementById("app")
-    : os === "windows"
+    : platform === "windows"
       ? document.getElementById("get")
       : null;
 if (first && before) before.parentNode?.insertBefore(first, before);

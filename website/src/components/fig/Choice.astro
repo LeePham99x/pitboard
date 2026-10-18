@@ -1,0 +1,27 @@
+---
+// Pressed buttons for one of the choices site.ts keeps on the root; the first option is its default.
+interface Props {
+  name: "surface" | "platform";
+  label: string;
+  options: [value: string, text: string][];
+  class?: string;
+}
+const { name, label, options, class: extra } = Astro.props;
+const button =
+  "cursor-pointer rounded-xs px-2.5 py-0.75 font-mono text-label font-medium text-fg aria-pressed:bg-ink aria-pressed:text-on-ink";
+---
+
+<div
+  class:list={["flex w-fit gap-0.5 rounded-sm border border-edge p-0.5 no-js:hidden", extra]}
+  role="group"
+  aria-label={label}
+>
+  {options.map(([value, text], i) => <button
+    class={button}
+    type="button"
+    {...{ [`data-${name}`]: value }}
+    aria-pressed={i === 0 ? "true" : "false"}
+  >
+    {text}
+  </button>)}
+</div>

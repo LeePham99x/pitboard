@@ -118,55 +118,39 @@ function phoneMenu() {
   }
 }
 
-// a box that scrolls sideways becomes a focusable region, named by the caption in data-scroll
-function scrollers() {
-  const boxes = all("[data-scroll]");
-  if (!boxes.length) return;
-  const check = () => {
-    for (const b of boxes) {
-      if (b.offsetParent === null) continue;
-      if (b.scrollWidth > b.clientWidth + 1) {
-        b.tabIndex = 0;
-        b.setAttribute("role", "region");
-        b.setAttribute("aria-labelledby", b.dataset.scroll!);
-      } else {
-        b.removeAttribute("tabindex");
-        b.removeAttribute("role");
-        b.removeAttribute("aria-labelledby");
-      }
-    }
-  };
-  check();
-  addEventListener("resize", check);
-  document.addEventListener("surface", check);
-  document.fonts?.ready.then(check);
+// Each choice the root keeps as data-<name>, and the key that stores it.
+const keys = { surface: "tab", platform: "platform" } as const;
+type Choice = keyof typeof keys;
+interface Chosen {
+  name: Choice;
+  value: string;
 }
 
-// The install tabs and the App and Command line buttons over each figure share one choice.
-function surfaces() {
-  const tabs = all<HTMLButtonElement>("[role=tab][data-surface]");
-  const picks = all<HTMLButtonElement>("button[data-surface]:not([role=tab])");
+// The tabs and pressed buttons carrying a choice's attribute set it, and all of them follow it.
+function choice(name: Choice) {
+  const tabs = all<HTMLButtonElement>(`[role=tab][data-${name}]`);
+  const picks = all<HTMLButtonElement>(`button[data-${name}]:not([role=tab])`);
   if (!tabs.length && !picks.length) return;
-  const mark = (name: string) => {
+  const mark = (value: string) => {
     for (const t of tabs) {
-      const on = t.dataset.surface === name;
+      const on = t.dataset[name] === value;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
     }
-    for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset.surface === name));
+    for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset[name] === value));
   };
-  const select = (name: string, focus: HTMLElement | null) => {
-    mark(name);
-    d.setAttribute("data-surface", name);
+  const select = (value: string, focus: HTMLElement | null) => {
+    mark(value);
+    d.dataset[name] = value;
     focus?.focus();
-    put("tab", name);
-    document.dispatchEvent(new CustomEvent("surface", { detail: name }));
+    put(keys[name], value);
+    document.dispatchEvent(new CustomEvent<Chosen>("choice", { detail: { name, value } }));
   };
-  for (const b of picks) b.addEventListener("click", () => select(b.dataset.surface!, null));
+  for (const b of picks) b.addEventListener("click", () => select(b.dataset[name]!, null));
   for (const tl of all("[role=tablist]")) {
-    const own = all<HTMLButtonElement>("[role=tab]", tl);
+    const own = all<HTMLButtonElement>(`[role=tab][data-${name}]`, tl);
     own.forEach((t, i) => {
-      t.addEventListener("click", () => select(t.dataset.surface!, null));
+      t.addEventListener("click", () => select(t.dataset[name]!, null));
       t.addEventListener("keydown", (e) => {
         let n: HTMLButtonElement | null = null;
         if (e.key === "ArrowRight") n = own[(i + 1) % own.length];
@@ -175,12 +159,13 @@ function surfaces() {
         else if (e.key === "End") n = own[own.length - 1];
         if (n) {
           e.preventDefault();
-          select(n.dataset.surface!, n);
+          select(n.dataset[name]!, n);
         }
       });
     });
   }
-  mark(d.getAttribute("data-surface") || "app");
+  const now = d.dataset[name];
+  if (now) mark(now);
 }
 
 function copying() {
@@ -302,12 +287,13 @@ function demo() {
   if (d.getAttribute("data-surface") === "app") watch();
   else {
     const on = (e: Event) => {
-      if ((e as CustomEvent).detail === "app") {
-        document.removeEventListener("surface", on);
+      const { name, value } = (e as CustomEvent<Chosen>).detail;
+      if (name === "surface" && value === "app") {
+        document.removeEventListener("choice", on);
         watch();
       }
     };
-    document.addEventListener("surface", on);
+    document.addEventListener("choice", on);
   }
 }
 
@@ -316,8 +302,8 @@ openTarget();
 addEventListener("hashchange", openTarget);
 theming();
 phoneMenu();
-scrollers();
-surfaces();
+choice("surface");
+choice("platform");
 copying();
 afterDownload();
 demo();

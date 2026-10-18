@@ -1,5 +1,7 @@
 ---
 // An app figure and, with a `cli` slot, its terminal twin; captions and descriptions are HTML.
+import Choice from "./Choice.astro";
+
 interface Side {
   caption: string;
   describe: string;
@@ -15,21 +17,20 @@ const { app, cli, class: extra, pick = true } = Astro.props;
 const both = cli !== undefined && Astro.slots.has("cli");
 const onApp = both ? "block surface-cli:hidden" : "block";
 const onCli = "block surface-app:hidden no-js:mt-6";
-const button =
-  "cursor-pointer rounded-xs px-2.5 py-0.75 font-mono text-label font-medium text-fg aria-pressed:bg-ink aria-pressed:text-on-ink";
 ---
 
 <figure class:list={["min-w-0", extra]}>
-  {both && pick && <div
-    class="mb-3 flex w-fit gap-0.5 rounded-sm border border-edge p-0.5 no-js:hidden"
-    role="group"
-    aria-label="Show Pitboard as"
-  >
-    <button class={button} type="button" data-surface="app" aria-pressed="true">App</button>
-    <button class={button} type="button" data-surface="cli" aria-pressed="false">
-      Command line
-    </button>
-  </div>}
+  {both && pick && (
+    <Choice
+      class="mb-3"
+      name="surface"
+      label="Show Pitboard as"
+      options={[
+        ["app", "App"],
+        ["cli", "Command line"],
+      ]}
+    />
+  )}
   <div class="@container">
     <div class={onApp}><slot /></div>
     {both && <div class={onCli}>

@@ -72,7 +72,7 @@ const jsonLd = [
       </div>
     </div>
 
-    <div class="pt-16 os-windows:pt-(--block-space) max-sm:pt-12" id="get">
+    <div class="pt-16 platform-windows:pt-(--block-space) max-sm:pt-12" id="get">
       <div
         class="wrap grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-12 gap-y-(--block-space) max-lg:grid-cols-[minmax(0,1fr)]"
       >
@@ -85,19 +85,19 @@ const jsonLd = [
             App
           </h2>
           <div class="mt-7">
-            <p class:list={[body, "hidden os-linux:block"]}>
+            <p class:list={[body, "hidden platform-linux:block"]}>
               The app is for macOS; on Linux, use the command line.
             </p>
-            <div class="os-linux:mt-5">
+            <div class="platform-linux:mt-5">
               <MacDownload
-                class="os-linux:bg-transparent os-linux:text-ink os-linux:inset-ring os-linux:inset-ring-edge os-linux:hover:bg-sunken"
+                class="platform-linux:bg-transparent platform-linux:text-ink platform-linux:inset-ring platform-linux:inset-ring-edge platform-linux:hover:bg-sunken"
                 href={zip.url}
               />
             </div>
             <p class:list={[note, "mt-3"]}>
               <code>{zip.name}</code>, <span class="whitespace-nowrap">{formatSize(zip.size)}</span>
             </p>
-            <p class:list={[body, "mt-4 os-linux:hidden"]}>
+            <p class:list={[body, "mt-4 platform-linux:hidden"]}>
               The app needs macOS 14 or later, on Apple silicon or Intel.
             </p>
             <p class:list={[body, "mt-4"]}>
@@ -117,7 +117,7 @@ const jsonLd = [
         </section>
 
         <section
-          class="min-w-0 border-t border-rule pt-(--block-in) os-linux:-order-1"
+          class="min-w-0 border-t border-rule pt-(--block-in) platform-linux:-order-1"
           id="command-line"
           aria-labelledby="cli-title"
         >
@@ -303,7 +303,7 @@ const jsonLd = [
       id="windows"
       titleId="windows-title"
       title="Windows"
-      class="os-windows:-order-2 os-windows:pt-16"
+      class="platform-windows:-order-2 platform-windows:pt-16"
     >
       <div class="prose">
         <p>
