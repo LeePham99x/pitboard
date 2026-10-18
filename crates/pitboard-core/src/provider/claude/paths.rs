@@ -471,6 +471,20 @@ mod tests {
     }
 
     #[test]
+    fn a_config_that_starts_with_a_byte_order_mark_is_read() {
+        let root = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(root.path().to_path_buf());
+        let mut bytes = "\u{feff}".as_bytes().to_vec();
+        bytes.extend(br#"{"oauthAccount":{"accountUuid":"a","emailAddress":"a@b.c"}}"#);
+        std::fs::write(root.path().join(".claude.json"), bytes).expect("written");
+        let config = load_config(&ctx).expect("read past the mark");
+        assert_eq!(
+            config_account(&config).map(|account| account.email),
+            Some("a@b.c".to_string())
+        );
+    }
+
+    #[test]
     fn the_config_account_needs_an_email_and_an_account() {
         let full = serde_json::json!({"oauthAccount": {
             "emailAddress": "a@b.c", "accountUuid": "u", "organizationUuid": "o",

@@ -383,6 +383,26 @@ mod tests {
     }
 
     #[test]
+    fn a_settings_file_that_starts_with_a_byte_order_mark_is_read() {
+        let (ctx, config, _s) = home();
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend(
+            json!({
+                "env": {"ANTHROPIC_API_KEY": "sk-ant-something"},
+                "statusLine": {"type": "command", "command": "pitboard statusline"},
+            })
+            .to_string()
+            .into_bytes(),
+        );
+        std::fs::write(config.join("settings.json"), bytes).expect("written");
+        assert_eq!(overrides(&ctx).len(), 1);
+        assert_eq!(
+            status_line_command(&ctx).as_deref(),
+            Some("pitboard statusline")
+        );
+    }
+
+    #[test]
     fn an_ordinary_machine_has_nothing_in_the_way() {
         let (ctx, config, _s) = home();
         write(&config.join("settings.json"), json!({"theme": "dark"}));
