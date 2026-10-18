@@ -1,5 +1,5 @@
 ---
-import Terminal from "./Terminal.astro";
+import Terminal from "./mac/Terminal.astro";
 import type { Session } from "../../data/sessions.ts";
 
 interface Props {
@@ -10,10 +10,10 @@ const { session } = Astro.props;
 
 <div class="desk flex min-h-0 items-center justify-center py-20" aria-hidden="true" data-output>
   <Terminal title={session.title} solo>
-    <div><span class="text-tw-dim">%</span> {session.command}</div>
+    <div><span class="text-mac-term-dim">%</span> {session.command}</div>
     {session.output.map((line) => (
       <div set:html={line || " "} />
     ))}
-    <div><span class="text-tw-dim">%</span> <span class="bg-tw-dim"> </span></div>
+    <div><span class="text-mac-term-dim">%</span> <span class="bg-mac-term-dim"> </span></div>
   </Terminal>
 </div>

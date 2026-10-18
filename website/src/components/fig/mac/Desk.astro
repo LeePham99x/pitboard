@@ -3,9 +3,16 @@
 import MenuBar from "./MenuBar.astro";
 import MenuItem from "./MenuItem.astro";
 import Terminal from "./Terminal.astro";
-import { session } from "../../data/desk.ts";
-import { clock, tools, type Moment } from "../../data/world.ts";
-import { isInUse, listed, menuBarTitle, menuLine, menuTitle, statusLine } from "../../lib/words.ts";
+import { session } from "../../../data/desk.ts";
+import { clock, tools, type Moment } from "../../../data/world.ts";
+import {
+  isInUse,
+  listed,
+  menuBarTitle,
+  menuLine,
+  menuTitle,
+  statusLine,
+} from "../../../lib/words.ts";
 
 interface Props {
   demo?: boolean;
@@ -38,10 +45,10 @@ const either = (
   demo && before !== after
     ? `<span class="${was}">${before}</span><span class="${now}">${after}</span>`
     : after;
-const row = "relative mx-5 flex items-center rounded-pt-6 py-4 pr-13 pl-25";
-const sep = "my-4.5 mr-16 ml-30 h-px bg-mn-sep";
+const row = "relative mx-5 flex items-center rounded-u-6 py-4 pr-13 pl-25";
+const sep = "my-4.5 mr-16 ml-30 h-px bg-mac-menu-sep";
 const rule =
-  "bg-linear-to-b from-tw-rule to-tw-rule bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
+  "bg-linear-to-b from-mac-term-rule to-mac-term-rule bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
 ---
 
 <div class="desk h-668" id={demo ? "demo" : undefined} aria-hidden="true" data-output>
@@ -50,7 +57,7 @@ const rule =
       <div set:html={line} />
     ))}
     <div class={rule}></div>
-    <div>&gt; <span class="bg-tw-dim"> </span></div>
+    <div>&gt; <span class="bg-mac-term-dim"> </span></div>
     <div class={rule}></div>
     <div
       set:html={
@@ -66,7 +73,7 @@ const rule =
         <span set:html={either(menuBarTitle("before"), menuBarTitle("after"))} />
       </MenuItem>
       <div
-        class="absolute top-26 left-0 w-max rounded-pt-10 bg-mn-bg py-5 whitespace-nowrap text-mn-text normal-nums shadow-menu backdrop-blur-xl backdrop-saturate-180 transition-opacity duration-200 demo-shut:opacity-0"
+        class="absolute top-26 left-0 w-max rounded-u-10 bg-mac-menu-bg py-5 whitespace-nowrap text-mac-menu-text normal-nums shadow-mac-menu backdrop-blur-xl backdrop-saturate-180 transition-opacity duration-200 demo-shut:opacity-0"
       >
         {moments.map((moment) => <div
           class:list={[
@@ -77,7 +84,9 @@ const rule =
           {tools.map(([tool, name], i) => (
             <>
               {i > 0 && <div class={sep} />}
-              <div class="pt-4.5 pr-18 pb-4 pl-30 text-pt-11 font-bold text-mn-dim">{name}</div>
+              <div class="pt-4.5 pr-18 pb-4 pl-30 text-u-11 font-bold text-mac-menu-dim">
+                {name}
+              </div>
               {listed(tool, moment).map((a) => {
                 const pick = demo && moment === "before" && tool === "claude" && a.label === "work";
                 return <div
@@ -85,7 +94,7 @@ const rule =
                     row,
                     "pt-3",
                     {
-                      "bg-mn-hl text-white demo-moving:bg-transparent demo-moving:text-inherit":
+                      "bg-mac-menu-hl text-white demo-moving:bg-transparent demo-moving:text-inherit":
                         pick,
                     },
                   ]}
@@ -99,8 +108,8 @@ const rule =
                     <span class="block">{menuTitle(a)}</span>
                     <span
                       class:list={[
-                        "block text-pt-11/15",
-                        pick ? "text-inherit demo-moving:text-mn-sub" : "text-mn-sub",
+                        "block text-u-11/15",
+                        pick ? "text-inherit demo-moving:text-mac-menu-sub" : "text-mac-menu-sub",
                       ]}
                     >
                       {menuLine(a, moment)}
@@ -119,16 +128,18 @@ const rule =
             <div class:list={[row, { "pt-3": a.sub }]}>
               <span class="flex-1">
                 <span class="block">{a.title}</span>
-                {a.sub && <span class="block text-pt-11/15 text-mn-sub">{a.sub}</span>}
+                {a.sub && <span class="block text-u-11/15 text-mac-menu-sub">{a.sub}</span>}
               </span>
               <span
-                class="ml-24 grid grid-cols-[calc(var(--spacing)*12)_calc(var(--spacing)*10)] text-mn-dim"
+                class="ml-24 grid grid-cols-[calc(var(--spacing)*12)_calc(var(--spacing)*10)] text-mac-menu-dim"
               >
                 {a.keys &&
                   [...a.keys].map((k, j) => <i class:list={["not-italic", { "text-center": j > 0 }]}
                     >{k}</i
                   >)}
-                {a.more && <svg class="col-start-2 size-10 shrink-0 justify-self-end text-mn-sub">
+                {a.more && <svg
+                  class="col-start-2 size-10 shrink-0 justify-self-end text-mac-menu-sub"
+                >
                   <use href="#sf-chev" />
                 </svg>}
               </span>

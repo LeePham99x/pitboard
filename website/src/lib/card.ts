@@ -145,7 +145,7 @@ function menu(c: Colors): El {
     svg(
       "0 0 20 20",
       `<path d="${line["sf-check"]}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
-      c["mn-text"],
+      c["mac-menu-text"],
     ),
     pt(12),
     pt(12),
@@ -154,7 +154,7 @@ function menu(c: Colors): El {
   const sep = h("div", {
     height: 1,
     margin: `${pt(4.5)}px ${pt(16)}px ${pt(4.5)}px ${pt(30)}px`,
-    backgroundColor: c["mn-sep"],
+    backgroundColor: c["mac-menu-sep"],
   });
   const sections = MENU.flatMap((tool, i) => [
     ...(i > 0 ? [sep] : []),
@@ -164,7 +164,7 @@ function menu(c: Colors): El {
         padding: `${pt(4.5)}px ${pt(18)}px ${pt(4)}px ${pt(30)}px`,
         fontSize: pt(11),
         fontWeight: 700,
-        color: c["mn-dim"],
+        color: c["mac-menu-dim"],
       },
       nameOf(tool),
     ),
@@ -181,7 +181,7 @@ function menu(c: Colors): El {
         h("div", {}, menuTitle(a)),
         h(
           "div",
-          { fontSize: pt(11), lineHeight: `${pt(15)}px`, color: c["mn-sub"] },
+          { fontSize: pt(11), lineHeight: `${pt(15)}px`, color: c["mac-menu-sub"] },
           menuLine(a, "after"),
         ),
       ),
@@ -196,14 +196,14 @@ function menu(c: Colors): El {
       flexDirection: "column",
       padding: `${pt(5)}px 0`,
       borderRadius: pt(10),
-      backgroundColor: c["mn-bg"],
+      backgroundColor: c["mac-menu-bg"],
       boxShadow: [
-        `0 0 0 ${pt(0.5)}px ${c["mn-edge"]}`,
-        `inset 0 0 0 ${pt(0.5)}px ${c["mn-rim"]}`,
-        `0 ${pt(12)}px ${pt(36)}px ${pt(-4)}px ${c["mn-shadow"]}`,
-        `0 ${pt(2)}px ${pt(8)}px ${pt(-2)}px ${c["mn-shadow"]}`,
+        `0 0 0 ${pt(0.5)}px ${c["mac-menu-edge"]}`,
+        `inset 0 0 0 ${pt(0.5)}px ${c["mac-menu-rim"]}`,
+        `0 ${pt(12)}px ${pt(36)}px ${pt(-4)}px ${c["mac-menu-shadow"]}`,
+        `0 ${pt(2)}px ${pt(8)}px ${pt(-2)}px ${c["mac-menu-shadow"]}`,
       ].join(", "),
-      color: c["mn-text"],
+      color: c["mac-menu-text"],
     },
     ...sections,
   );
@@ -211,7 +211,7 @@ function menu(c: Colors): El {
 
 // MenuBar.astro, with the clock's time alone so the menu clears the headline
 function menuBar(assets: Assets, c: Colors): El {
-  const color = c["bar-text"];
+  const color = c["mac-bar-text"];
   const item = (children: El[], style: Style = {}) =>
     h(
       "div",
@@ -243,8 +243,8 @@ function menuBar(assets: Assets, c: Colors): El {
       alignItems: "center",
       justifyContent: "flex-end",
       paddingRight: pt(6),
-      backgroundColor: c["bar-bg"],
-      boxShadow: `inset 0 ${pt(-0.5)}px 0 ${c["bar-edge"]}`,
+      backgroundColor: c["mac-bar-bg"],
+      boxShadow: `inset 0 ${pt(-0.5)}px 0 ${c["mac-bar-edge"]}`,
       color,
       fontSize: pt(13),
       lineHeight: `${pt(16)}px`,
@@ -256,7 +256,7 @@ function menuBar(assets: Assets, c: Colors): El {
         h("div", {}, menuBarTitle("after")),
         menu(c),
       ],
-      { position: "relative", backgroundColor: c["bar-hl"] },
+      { position: "relative", backgroundColor: c["mac-bar-hl"] },
     ),
     glyph("ic-batt", 25, 12),
     glyph("ic-wifi", 16, 12),

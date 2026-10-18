@@ -22,7 +22,7 @@ const assets: Assets = {
 test("takes the site's dark colours, whatever commas their light half holds", () => {
   const c = darkColors(assets.css);
   assert.equal(c["page"], "#090b0b");
-  assert.equal(c["mn-bg"], "rgb(36 36 36 / 0.78)");
+  assert.equal(c["mac-menu-bg"], "rgb(36 36 36 / 0.78)");
   assert.equal(c["white"], "#ffffff");
   assert.deepEqual(darkColors("--color-x: light-dark(rgb(0 0 0 / 0.1), #fff);"), { x: "#fff" });
 });
