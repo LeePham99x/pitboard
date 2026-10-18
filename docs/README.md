@@ -30,18 +30,29 @@ mint broken-links --check-anchors --check-redirects
 mint a11y
 ```
 
+The website's checks read this folder too, and CI runs them on a change here. Its tests fail
+on a link from outside `docs/` to a page or heading that is gone, and its build fails on a
+link from a page here to an id usepitboard.com does not have. Run them as
+[Website](../CONTRIBUTING.md#website) says.
+
 ## Where things go
 
 - Each page goes in the folder its sidebar group uses, such as `guides/` for
   **Use Pitboard**, and in that group in `docs.json`. `index`, `quickstart`, `install`,
   `troubleshooting` and `security` sit at the top.
-- Images go in `images/` and are referenced as `/images/name.png`.
+- Images go in `images/` and are referenced as `/images/name.png`. The apps' UI tests take
+  the pictures of the menu and the window. `menu.png` and `window.png` come from the macOS
+  app, as [Run the debug build](../CONTRIBUTING.md#run-the-debug-build) says.
+  `menu-windows.png` and `window-windows.png` come from CI's `windows-app-pictures`, as
+  [The app on CI](../CONTRIBUTING.md#the-app-on-ci) says.
 - `.mintignore` lists the files Mintlify must not publish, such as `AGENTS.md`.
 
-Pitboard's mark is the board the app's icon and `MenuBarMark.swift` draw. Nothing regenerates
+Pitboard's mark is the board the apps' icons and `MenuBarMark.swift` draw. Nothing regenerates
 its copies, so change them together:
 
 - `favicon.svg`, `favicon-dark.svg` and `logo/` in this folder: the site icons and header logos.
+- `apps/windows/Icon/`: the drawings `make-ico.py` turns into the Windows app's `Pitboard.ico`
+  and the share package's logos.
 - `website/public/`: `favicon.svg`, `favicon.ico`, `apple-touch-icon.png`, the `icon-*.png`
   files and `og.png`.
 - `website/src/assets/logo/`: the lockup in the site's header and the mark in its drawn menu bar.
@@ -52,5 +63,6 @@ and `packaging/tap-README.md`, and the pages in `website/` link pages by path. T
 copies on crates.io and in release tarballs keep their links.
 
 A redirect maps only a path, so a heading those files link, such as
-`security#what-leaves-your-machine`, keeps its text. The app's **Pitboard Help** item and
-the Linux renewal unit link only the site's root, so no move breaks them.
+`security#what-leaves-your-machine`, keeps its text. The macOS app's **Pitboard Help** item,
+the Windows app's **Pitboard help** item and the Linux renewal unit link only the site's root,
+so no move breaks them.
