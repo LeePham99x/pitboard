@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Version } from "./changelog.ts";
-import { ahead, newestFull, recentReleases, shown } from "./shown.ts";
+import { ahead, recentReleases, shown } from "./shown.ts";
 
 const at = (version: string): Version => ({
   version,
@@ -36,17 +36,24 @@ test("keeps a version off the site until its release is published", () => {
   );
 });
 
-test("the highlight and Recent releases skip a beta", () => {
-  assert.equal(newestFull(all)?.version, "0.16.0");
-  assert.equal(newestFull([at("1.0.0-beta.1")]), undefined);
-  const site = shown(all, "0.15.0", new Set(["1.0.0-beta.2", "1.0.0-beta.1"]));
-  assert.deepEqual(
-    recentReleases(site).map((v) => v.version),
-    ["0.15.0", "0.14.0"],
-  );
-  const many = ["1.1.0-beta.1", "1.0.2", "1.0.1", "1.0.0", "1.0.0-beta.1", "0.15.0"].map(at);
-  assert.deepEqual(
-    recentReleases(many).map((v) => v.version),
-    ["1.0.2", "1.0.1", "1.0.0"],
-  );
+test("Recent releases put the newest published beta above the three newest full releases", () => {
+  const many = ["1.0.0-beta.2", "1.0.0-beta.1", "0.15.0", "0.14.0", "0.13.0", "0.12.0"].map(at);
+  const recent = (latest: string, published: string[], versions = many) =>
+    recentReleases(shown(versions, latest, new Set(published))).map((v) => v.version);
+  assert.deepEqual(recent("0.15.0", ["1.0.0-beta.2", "1.0.0-beta.1"]), [
+    "1.0.0-beta.2",
+    "0.15.0",
+    "0.14.0",
+    "0.13.0",
+  ]);
+  assert.deepEqual(recent("0.15.0", []), ["0.15.0", "0.14.0", "0.13.0"]);
+  // at 1.0.0 the beta falls below the latest release and leaves the table
+  const later = ["1.1.0-beta.1", "1.0.0", "1.0.0-beta.1", "0.15.0", "0.14.0"].map(at);
+  assert.deepEqual(recent("1.0.0", [], later), ["1.0.0", "0.15.0", "0.14.0"]);
+  assert.deepEqual(recent("1.0.0", ["1.1.0-beta.1"], later), [
+    "1.1.0-beta.1",
+    "1.0.0",
+    "0.15.0",
+    "0.14.0",
+  ]);
 });
