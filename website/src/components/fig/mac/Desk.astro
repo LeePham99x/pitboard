@@ -51,8 +51,11 @@ const rule =
   "bg-linear-to-b from-mac-term-rule to-mac-term-rule bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
 ---
 
-<div class="desk h-668" id={demo ? "demo" : undefined} aria-hidden="true" data-output>
-  <Terminal title="claude" class="top-156 bottom-14 left-14 w-416">
+<div class="desk h-668" data-demo-desk={demo ? "" : undefined} aria-hidden="true" data-output>
+  <Terminal
+    title="claude"
+    class="top-156 bottom-14 left-14 w-416 [&_.elbow]:mr-2 [&_.elbow]:ml-1 [&_.elbow]:size-6 [&_.elbow]:align-[calc(var(--spacing)*3)]"
+  >
     {session.map((line) => (
       <div set:html={line} />
     ))}

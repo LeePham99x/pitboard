@@ -1,11 +1,15 @@
 ---
 import template from "../assets/logo/template.svg?raw";
-import { bar, line, symbolic } from "../data/glyphs.ts";
+import tray from "../../../apps/windows/Icon/icon-16.svg?raw";
+import { bar, fluent, line, symbolic } from "../data/glyphs.ts";
 
 const paths = [...template.matchAll(/<path\b[^>]*?\sd="([^"]+)"/g)];
 if (paths.length !== 2) throw new Error("template.svg is not the kit's two paths");
 const [board, dim] = paths.map((m) => m[1]);
 const dimOpacity = /fill-opacity="([^"]+)"/.exec(template)?.[1] ?? "0.35";
+// the Windows app's colour icon, its gradient's id made the page's own
+const trayBody = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(tray)?.[1].replaceAll("face", "pb-tray-face");
+if (!trayBody) throw new Error("icon-16.svg has no body");
 ---
 
 <svg class="absolute size-0 overflow-hidden" aria-hidden="true" focusable="false">
@@ -43,4 +47,8 @@ const dimOpacity = /fill-opacity="([^"]+)"/.exec(template)?.[1] ?? "0.35";
   {Object.entries(symbolic).map(([id, body]) => (
     <symbol id={id} viewBox="0 0 16 16" set:html={body} />
   ))}
+  <symbol id="pb-tray" viewBox="0 0 16 16" set:html={trayBody} />
+  {Object.entries(fluent).map(([id, d]) => <symbol id={id} viewBox="0 0 20 20">
+    <path d={d} fill="currentColor"></path>
+  </symbol>)}
 </svg>

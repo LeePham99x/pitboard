@@ -5,6 +5,7 @@ import {
   accounts,
   inUse,
   logged,
+  toolOn,
   tools,
   type Account,
   type Limit,
@@ -43,6 +44,11 @@ export const isInUse = (a: Account, moment: Moment) => inUse[moment][a.tool] ===
 
 export const toolAccounts = (tool: Tool) => accounts.filter((a) => a.tool === tool);
 
+export const toolsOn = (platform: Platform) =>
+  tools.filter(([tool]) => toolOn[tool].includes(platform));
+
+const toolName = (tool: Tool) => tools.find(([t]) => t === tool)![1];
+
 // As every listing gives a tool's accounts: the one in use first (status.rs `assemble`).
 export const listed = (tool: Tool, moment: Moment) =>
   [...toolAccounts(tool)].sort((a, b) => Number(isInUse(b, moment)) - Number(isInUse(a, moment)));
@@ -60,13 +66,21 @@ export function menuLine(a: Account, moment: Moment): string {
 }
 
 // The in-use account closest to running out, a tie going to Claude Code (reference/mac-app#menu-bar-item).
-export function menuBarTitle(moment: Moment): string {
-  const fullest = (a: Account) => Math.max(...a.limits.map((l) => l.used));
-  const shown = (["claude", "codex"] as Tool[])
+const fullest = (a: Account) => Math.max(...a.limits.map((l) => l.used));
+const titled = (moment: Moment) =>
+  (["claude", "codex"] as Tool[])
     .map((tool) => accounts.find((a) => a.tool === tool && isInUse(a, moment))!)
     .reduce((best, a) => (fullest(a) > fullest(best) ? a : best));
+
+export function menuBarTitle(moment: Moment): string {
+  const shown = titled(moment);
   return `${shown.label} ${fullest(shown)}%`;
 }
+
+// The icon's tooltip in the notification area: the menu bar's words, and the tool once two are shown
+// (present/accounts.rs `menu_bar`).
+export const trayTip = (moment: Moment) =>
+  `Pitboard, ${menuBarTitle(moment)}, ${toolName(titled(moment).tool)}`;
 
 export function runsOutNote(a: Account, moment: Moment): string | null {
   const l = isInUse(a, moment) ? a.limits.find((l) => l.runsOut) : undefined;
@@ -97,7 +111,7 @@ function bar(limit: Limit): string {
 
 // A tool's heading in `pitboard`, with what is true of all its accounts said once on it.
 export function statusHeading(tool: Tool): string {
-  const name = `<b>${tools.find(([t]) => t === tool)![1]}</b>`;
+  const name = `<b>${toolName(tool)}</b>`;
   return tool === "desktop"
     ? `${name}${span("dim", " · Pitboard reads no usage for Claude Desktop")}`
     : name;
@@ -180,10 +194,14 @@ const verbs: Record<string, string> = { use: "Switch", enroll: "Enrol", "warm-up
 const callers = { app: "Pitboard app", cli: "Command line" };
 const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 
-// As the menu bar app dates a change: "13 Oct 2026 at 20:49".
-const macDate = (e: Logged) => {
-  const [year, month, day] = e.day.split("-").map(Number);
-  return `${day} ${months[month - 1]} ${year} at ${e.time.slice(0, 5)}`;
+// As each app dates a change: "13 Oct 2026 at 20:49" on macOS, and in the en-GB regional format's
+// "g" on Windows, "13/10/2026 20:49".
+const dated = (e: Logged, platform: Platform) => {
+  const [year, month, day] = e.day.split("-");
+  const time = e.time.slice(0, 5);
+  return platform === "windows"
+    ? `${day}/${month}/${year} ${time}`
+    : `${Number(day)} ${months[Number(month) - 1]} ${year} at ${time}`;
 };
 
 export const activity = (platform: Platform) =>
@@ -191,7 +209,7 @@ export const activity = (platform: Platform) =>
     .filter((e) => !e.on || e.on.includes(platform))
     .reverse()
     .map((e) => ({
-      date: macDate(e),
+      date: dated(e, platform),
       change: verbs[e.verb],
       account: e.account,
       result: "Done",

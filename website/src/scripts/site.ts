@@ -241,60 +241,68 @@ function afterDownload() {
   }
 }
 
+// The menu demo on the desk of the platform shown, once most of it is in view. A desk the Command
+// line tab hides waits for the App tab, and another platform's desk plays it again.
 function demo() {
-  const fig = document.getElementById("demo");
-  if (!fig) {
+  const desks = all("[data-demo-desk]");
+  if (!desks.length) {
     d.removeAttribute("data-demo");
     return;
   }
   if (d.getAttribute("data-demo") !== "start") return;
-  let ran = false;
+  const steps: [number, string | null][] = [
+    [500, "move"],
+    [1400, "hl"],
+    [1900, "pick"],
+    [2100, "shut"],
+    [2900, "reach"],
+    [3800, null],
+  ];
+  let timers: number[] = [];
+  let io: IntersectionObserver | null = null;
+  let started = false;
   const run = () => {
-    if (ran) return;
-    ran = true;
-    const steps: [number, string | null][] = [
-      [500, "move"],
-      [1400, "hl"],
-      [1900, "pick"],
-      [2100, "shut"],
-      [2900, "reach"],
-      [3800, null],
-    ];
     for (const [at, state] of steps) {
-      setTimeout(() => {
-        if (state) d.setAttribute("data-demo", state);
-        else d.removeAttribute("data-demo");
-      }, at);
+      timers.push(
+        window.setTimeout(() => {
+          if (state) d.setAttribute("data-demo", state);
+          else d.removeAttribute("data-demo");
+        }, at),
+      );
     }
   };
   const watch = () => {
+    io?.disconnect();
+    const fig = desks.find((desk) => desk.offsetParent !== null);
+    if (!fig) return;
+    started = true;
     if (!("IntersectionObserver" in window)) {
       run();
       return;
     }
-    const io = new IntersectionObserver(
+    const seen = new IntersectionObserver(
       (es) => {
         if (es.some((e) => e.isIntersecting)) {
-          io.disconnect();
+          seen.disconnect();
           run();
         }
       },
       { threshold: 0.6 },
     );
-    io.observe(fig);
+    io = seen;
+    seen.observe(fig);
   };
-  // a figure hidden by the Command line tab waits until the App tab shows it
-  if (d.getAttribute("data-surface") === "app") watch();
-  else {
-    const on = (e: Event) => {
-      const { name, value } = (e as CustomEvent<Chosen>).detail;
-      if (name === "surface" && value === "app") {
-        document.removeEventListener("choice", on);
-        watch();
-      }
-    };
-    document.addEventListener("choice", on);
-  }
+  document.addEventListener("choice", (e) => {
+    const { name, value } = (e as CustomEvent<Chosen>).detail;
+    if (name === "platform") {
+      for (const t of timers) clearTimeout(t);
+      timers = [];
+      started = false;
+      d.setAttribute("data-demo", "start");
+      watch();
+    } else if (name === "surface" && value === "app" && !started) watch();
+  });
+  watch();
 }
 
 head();

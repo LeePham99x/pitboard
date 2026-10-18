@@ -1,0 +1,16 @@
+---
+// A tooltip: 4 pixel corners and the flyout's shadow at a tooltip's elevation.
+interface Props {
+  class?: string;
+}
+const { class: extra } = Astro.props;
+---
+
+<span
+  class:list={[
+    "rounded-u-4 bg-win-flyout px-8 pt-5 pb-7 font-win text-u-12/16 whitespace-nowrap text-win-text shadow-win-tip",
+    extra,
+  ]}
+>
+  <slot />
+</span>

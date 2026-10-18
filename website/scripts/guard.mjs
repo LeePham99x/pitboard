@@ -11,7 +11,8 @@ const DOCS_RULES = join(DOCS, "AGENTS.md");
 
 const BUDGETS = {
   html: {
-    "index.html": 30_000,
+    // its figures drawn for each platform: the size measured with them, and a fifth more
+    "index.html": 49_000,
     "download.html": 30_000,
     "404.html": 30_000,
     "changelog.html": 80_000,

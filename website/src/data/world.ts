@@ -115,6 +115,13 @@ export const clock = {
   runOut: "Wed 14 Oct 07:56",
 };
 
+// The same moments as Windows says them in the en-GB regional format: its taskbar's time over its
+// date, and the app's "t" and "g" (WindowsLocalTime.cs).
+export const windowsClock = {
+  taskbar: { time: "20:51", date: "13/10/2026" },
+  runOut: { time: "07:56", date: "14/10/2026" },
+};
+
 // The accounts turned on for warm-up on each system. Windows warms up none, since Claude Code there
 // does not read the token a warm-up hands it (duty/warm/mod.rs).
 export const warmUp: { from: string; to: string; accounts: Record<Platform, string[]> } = {

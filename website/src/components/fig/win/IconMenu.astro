@@ -1,0 +1,80 @@
+---
+// The notification-area icon's MenuFlyout as IconMenuFlyout.cs builds it from IconMenu.cs: rows
+// 32 pixels apart on narrow padding, a radio bullet beside each account in use, and Open Pitboard,
+// the click's default, in bold. With `demo`, site.ts plays the switch to work; `submenu` opens a
+// site's accounts.
+import { iconMenu, type MenuEntry } from "../../../data/windows.ts";
+import type { Moment } from "../../../data/world.ts";
+
+interface Props {
+  demo?: boolean;
+  updates?: boolean;
+  submenu?: string;
+  class?: string;
+}
+const { demo = false, updates = false, submenu, class: extra } = Astro.props;
+const moments: Moment[] = demo ? ["before", "after"] : ["after"];
+const flyout =
+  "rounded-u-8 bg-win-flyout py-2 font-win text-u-14/20 whitespace-nowrap text-win-text shadow-win-flyout";
+const row = "relative mx-4 my-2 flex h-28 items-center rounded-u-4 pr-11 pl-39";
+// the row the demo's pointer chooses, and the site whose submenu is open
+const picked = (e: MenuEntry, moment: Moment) =>
+  demo && moment === "before" && "account" in e && e.label === "work";
+const open = (e: MenuEntry) => submenu !== undefined && "site" in e && e.site === submenu;
+---
+
+<div
+  class:list={[
+    "min-w-210 transition-opacity duration-200",
+    flyout,
+    { "demo-shut:opacity-0": demo },
+    extra,
+  ]}
+>
+  {moments.map((moment) => <div
+    class:list={[
+      { "hidden demo-before:block": demo && moment === "before" },
+      { "demo-before:hidden": demo && moment === "after" },
+    ]}
+  >
+    {iconMenu(moment, updates).map((group, i) => (
+      <>
+        {i > 0 && <div class="my-1 h-1 bg-win-divider" />}
+        {group.map((e) =>
+          "heading" in e ? (
+            <div class:list={[row, "text-win-text-off"]}>{e.heading}</div>
+          ) : "account" in e ? (
+            <div
+              class:list={[
+                row,
+                {
+                  "bg-win-subtle demo-moving:bg-transparent demo-pick:bg-win-subtle-2": picked(
+                    e,
+                    moment,
+                  ),
+                },
+              ]}
+            >
+              {e.checked && (
+                <span
+                  class="absolute top-1/2 left-14 -mt-2.5 size-5 rounded-circle bg-win-text-2"
+                />
+              )}
+              {e.account}
+            </div>
+          ) : (
+            <div class:list={[row, { "font-semibold": e.bold, "bg-win-subtle": open(e) }]}>
+              <span class="flex-1">{e.command}</span>
+              {e.submenu && <svg class="ml-24 size-12 shrink-0 text-win-text-2">
+                <use href="#fl-chevron-right" />
+              </svg>}
+              {open(e) && <div class:list={["absolute -top-4 right-full", flyout]}>
+                {e.submenu!.map((label) => <div class:list={[row, "pl-11"]}>{label}</div>)}
+              </div>}
+            </div>
+          ),
+        )}
+      </>
+    ))}
+  </div>)}
+</div>

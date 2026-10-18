@@ -1,0 +1,22 @@
+---
+// WinUI's NumberBox with its spin buttons inline, at least 120 pixels wide.
+interface Props {
+  value: number;
+}
+const { value } = Astro.props;
+const spin = "flex h-24 w-26 items-center justify-center";
+---
+
+<span
+  class="flex h-32 min-w-120 items-center justify-between rounded-u-4 bg-win-control pr-4 pl-11 text-u-14/20 tabular-nums shadow-win-field"
+>
+  {value}
+  <span class="flex text-win-text-2">
+    <span class={spin}
+      ><svg class="size-12"><use href="#fl-chevron-up"></use></svg></span
+    >
+    <span class={spin}
+      ><svg class="size-12"><use href="#fl-chevron-down"></use></svg></span
+    >
+  </span>
+</span>

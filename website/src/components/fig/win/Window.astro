@@ -1,0 +1,50 @@
+---
+// MainWindow.xaml at 704 pixels, where NavigationView is LeftCompact: the title bar on Mica, the
+// panes' icons with Settings at the foot, and the page on its layer. A `crop` desk shows the top.
+import CaptionButtons from "./CaptionButtons.astro";
+import { app, panes, type Pane } from "../../../data/windows.ts";
+
+interface Props {
+  pane: Pane;
+  crop?: boolean;
+}
+const { pane, crop = false } = Astro.props;
+const item = "relative mx-4 my-2 flex h-36 w-40 items-center justify-center rounded-u-4";
+const items: [Pane, string][] = [
+  ...panes.map(([id, , icon]): [Pane, string] => [id, icon]),
+  ["settings", "fl-settings"],
+];
+---
+
+<div
+  class:list={["desk desk-px-720", crop ? "h-356" : "flex items-center justify-center py-24"]}
+  aria-hidden="true"
+  data-output
+>
+  <div
+    class:list={[
+      "grid w-704 grid-cols-[calc(var(--spacing)*48)_1fr] grid-rows-[calc(var(--spacing)*48)_1fr] overflow-hidden rounded-u-8 bg-win-base font-win text-u-14/20 text-win-text shadow-win-window",
+      crop ? "absolute top-24 left-8" : "relative",
+    ]}
+  >
+    <div class="col-span-2 flex items-center">
+      <span class="ml-4 flex h-36 w-40 items-center justify-center rounded-u-4"
+        ><svg class="size-16"><use href="#fl-navigation"></use></svg></span
+      >
+      <svg class="ml-3 size-16 shrink-0"><use href="#pb-tray"></use></svg>
+      <span class="ml-16 text-u-12/16">{app}</span>
+      <span class="ml-auto self-start"><CaptionButtons height={48} /></span>
+    </div>
+    <div class="flex flex-col pb-4">
+      {items.map(([id, icon]) => <span
+        class:list={[item, { "bg-win-subtle": id === pane, "mt-auto": id === "settings" }]}
+      >
+        {id === pane && <span class="absolute top-10 left-2 h-16 w-3 rounded-u-2 bg-win-accent" />}
+        <svg class="size-16"><use href={`#${icon}`}></use></svg>
+      </span>)}
+    </div>
+    <div class="min-w-0 rounded-tl-u-8 bg-win-layer pt-16 inset-shadow-win-layer-tl">
+      <slot />
+    </div>
+  </div>
+</div>
