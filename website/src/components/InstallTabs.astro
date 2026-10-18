@@ -3,7 +3,7 @@ import { commands } from "../data/commands.ts";
 import { DOCS } from "../data/site.ts";
 import { siteData } from "../lib/data.ts";
 import { appZip, windowsMsi } from "../lib/github.ts";
-import type { Platform } from "../lib/platform.ts";
+import { platforms, shownOn, type Platform } from "../lib/platform.ts";
 import CommandBox from "./CommandBox.astro";
 import DownloadButton from "./DownloadButton.astro";
 import PlatformTabs from "./PlatformTabs.astro";
@@ -18,8 +18,8 @@ const zip = appZip(downloads.macos.release);
 const windows = downloads.windows.release;
 const tabId = (p: Platform) => `tab-${p}-${n}`;
 const panelId = (p: Platform) => `tp-${p}-${n}`;
-// the panels share one cell, so the block keeps its height as the platform changes
-const panel = "js:col-start-1 js:row-start-1 js:min-w-0";
+// each platform's panel to its readers, macOS's without JavaScript
+const panel = (p: Platform) => shownOn(p, platforms);
 const note = "mt-4 max-w-measure text-note text-pretty text-muted";
 const lead = "mt-6 text-note text-fg";
 const after = "js:not-data-shown:hidden";
@@ -27,9 +27,9 @@ const after = "js:not-data-shown:hidden";
 
 <div class={extra}>
   <PlatformTabs label="Install Pitboard" tabId={tabId} panelId={panelId} />
-  <div class="grid pt-7 no-js:pt-0">
+  <div class="flow-root pt-7 no-js:pt-0">
     <div
-      class:list={[panel, "platform-windows:invisible platform-linux:invisible"]}
+      class={panel("macos")}
       role="tabpanel"
       id={panelId("macos")}
       aria-labelledby={tabId("macos")}
@@ -50,7 +50,7 @@ const after = "js:not-data-shown:hidden";
       </p>
     </div>
     <div
-      class:list={[panel, "invisible platform-windows:visible no-js:hidden"]}
+      class={panel("windows")}
       role="tabpanel"
       id={panelId("windows")}
       aria-labelledby={tabId("windows")}
@@ -74,7 +74,7 @@ const after = "js:not-data-shown:hidden";
       </p>
     </div>
     <div
-      class:list={[panel, "invisible platform-linux:visible no-js:hidden"]}
+      class={panel("linux")}
       role="tabpanel"
       id={panelId("linux")}
       aria-labelledby={tabId("linux")}

@@ -7,8 +7,9 @@ export const platformNames: Record<Platform, string> = {
   linux: "Linux",
 };
 
-// The classes that show each of a figure's drawings: a platform's own to its readers, and macOS's
-// to the readers of a platform it has none for. Written whole, so Tailwind finds every class.
+// The classes that show each of a figure's drawings, or each panel of the install block: a
+// platform's own to its readers, and macOS's to the readers of a platform it has none for, and
+// without JavaScript. Written whole, so Tailwind finds every class.
 const shown = {
   macos: { macos: "block", windows: "hidden", linux: "hidden" },
   windows: {
