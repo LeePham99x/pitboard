@@ -18,7 +18,7 @@ const sums = readFileSync(new URL("../data/fixtures/SHA256SUMS", import.meta.url
 
 const API = "https://api.github.com/repos/datlechin/pitboard";
 const WEB = "https://github.com/datlechin/pitboard";
-const SUMS_URL = `${WEB}/releases/download/v0.12.0/SHA256SUMS`;
+const SUMS_URL = `${WEB}/releases/download/v0.15.0/SHA256SUMS`;
 
 type Route = (init: RequestInit) => Response | Promise<Response>;
 
@@ -49,15 +49,15 @@ test("reads the latest release from the API, with digests from SHA256SUMS", asyn
   });
   const lines: string[] = [];
   const r = await readRelease({ fetch: f, token: "t0ken", log: (l) => lines.push(l) });
-  assert.equal(r.version, "0.12.0");
+  assert.equal(r.version, "0.15.0");
   assert.equal(r.source, "api");
   assert.equal(r.assets.length, 13);
-  const zip = r.assets.find((a) => a.name === "Pitboard-v0.12.0-macos.zip");
+  const zip = r.assets.find((a) => a.name === "Pitboard-v0.15.0-macos.zip");
   assert.deepEqual(zip, {
-    name: "Pitboard-v0.12.0-macos.zip",
-    size: 13801164,
-    sha256: "03e9a7864bea72b6f04a951ff8e0b918c70503645760f9c2f766ea8fc3bb7465",
-    url: "https://github.com/datlechin/pitboard/releases/download/v0.12.0/Pitboard-v0.12.0-macos.zip",
+    name: "Pitboard-v0.15.0-macos.zip",
+    size: 18772946,
+    sha256: "7df8a0f6fb7357ebbc8815c450fe1b68bdc1f0305569be44cf8c96c718db51c6",
+    url: "https://github.com/datlechin/pitboard/releases/download/v0.15.0/Pitboard-v0.15.0-macos.zip",
   });
   assert.equal(asked[0].auth, "Bearer t0ken");
   // the token goes to the API only, never to a download
@@ -67,12 +67,12 @@ test("reads the latest release from the API, with digests from SHA256SUMS", asyn
 });
 
 test("stops when SHA256SUMS and GitHub's digest disagree", async () => {
-  const tampered = sums.replace(/^03e9a7864bea/m, "ffffffffffff");
+  const tampered = sums.replace(/^7df8a0f6fb73/m, "ffffffffffff");
   const { f } = server({
     [`GET ${API}/releases/latest`]: () => json(recorded),
     [`GET ${SUMS_URL}`]: () => new Response(tampered),
   });
-  await assert.rejects(readRelease({ fetch: f }), /disagree on Pitboard-v0\.12\.0-macos\.zip/);
+  await assert.rejects(readRelease({ fetch: f }), /disagree on Pitboard-v0\.15\.0-macos\.zip/);
 });
 
 test("stops on a 401 when a token is set, rather than build without it", async () => {
@@ -88,12 +88,12 @@ test("falls back to the release pages on a rate limit, and keeps no signed URL",
   const routes: Record<string, Route> = {
     [`GET ${API}/releases/latest`]: () => json({ message: "API rate limit exceeded" }, 403),
     [`HEAD ${WEB}/releases/latest`]: () =>
-      new Response(null, { status: 302, headers: { location: `${WEB}/releases/tag/v0.12.0` } }),
+      new Response(null, { status: 302, headers: { location: `${WEB}/releases/tag/v0.15.0` } }),
     [`GET ${SUMS_URL}`]: () => new Response(sums),
   };
   for (const a of recorded.assets as { name: string; size: number }[]) {
     // fetch follows the redirect to the signed URL, so the answer is the file's own
-    routes[`HEAD ${WEB}/releases/download/v0.12.0/${a.name}`] = () =>
+    routes[`HEAD ${WEB}/releases/download/v0.15.0/${a.name}`] = () =>
       new Response(null, {
         status: 200,
         headers: { "content-length": String(a.size), "x-final": signed },
@@ -103,13 +103,13 @@ test("falls back to the release pages on a rate limit, and keeps no signed URL",
   const lines: string[] = [];
   const r = await readRelease({ fetch: f, log: (l) => lines.push(l) });
   assert.equal(r.source, "fallback");
-  assert.equal(r.version, "0.12.0");
+  assert.equal(r.version, "0.15.0");
   assert.deepEqual(
     r.assets.map((a) => a.name).sort(),
     [...parseSums(sums).keys(), "SHA256SUMS"].sort(),
   );
   assert.equal(r.assets.find((a) => a.name === "install.sh")?.size, 7818);
-  assert.ok(r.assets.every((a) => a.url.startsWith(`${WEB}/releases/download/v0.12.0/`)));
+  assert.ok(r.assets.every((a) => a.url.startsWith(`${WEB}/releases/download/v0.15.0/`)));
   assert.ok(!JSON.stringify(r).includes("sig="));
   assert.ok(!lines.some((l) => l.includes("sig=")));
 });
@@ -137,7 +137,7 @@ test("reads the recorded fixture offline without the network", async () => {
   const { f, asked } = server({});
   const r = await readRelease({ fetch: f, fixture: { release: recorded, sums } });
   assert.equal(r.source, "fixture");
-  assert.equal(r.version, "0.12.0");
+  assert.equal(r.version, "0.15.0");
   assert.equal(asked.length, 0);
 });
 
@@ -213,23 +213,23 @@ test("lists the release's files in order and fails on one it does not know", asy
   assert.deepEqual(
     rows.map((row) => row.asset.name),
     [
-      "Pitboard-v0.12.0-macos.zip",
-      "pitboard-v0.12.0-aarch64-apple-darwin.tar.gz",
-      "pitboard-v0.12.0-x86_64-apple-darwin.tar.gz",
-      "pitboard-v0.12.0-x86_64-unknown-linux-musl.tar.gz",
-      "pitboard-v0.12.0-aarch64-unknown-linux-musl.tar.gz",
+      "Pitboard-v0.15.0-macos.zip",
+      "pitboard-v0.15.0-aarch64-apple-darwin.tar.gz",
+      "pitboard-v0.15.0-x86_64-apple-darwin.tar.gz",
+      "pitboard-v0.15.0-x86_64-unknown-linux-musl.tar.gz",
+      "pitboard-v0.15.0-aarch64-unknown-linux-musl.tar.gz",
       "install.sh",
       "SHA256SUMS",
       "appcast.xml",
     ],
   );
-  assert.equal(rows[0].bom?.name, "Pitboard-v0.12.0-macos.zip.cdx.json");
+  assert.equal(rows[0].bom?.name, "Pitboard-v0.15.0-macos.zip.cdx.json");
   assert.equal(rows[5].bom, null);
   const more: Release = {
     ...r,
     assets: [
       ...r.assets,
-      { name: "pitboard-v0.12.0-riscv64.tar.gz", size: 1, sha256: null, url: "" },
+      { name: "pitboard-v0.15.0-riscv64.tar.gz", size: 1, sha256: null, url: "" },
     ],
   };
   assert.throws(() => fileRows(more), /does not describe/);
@@ -239,7 +239,7 @@ test("lists a release's Windows zips after the Linux tarballs", async () => {
   const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
   const zips = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"].flatMap((triple) =>
     [".zip", ".zip.cdx.json"].map((end) => ({
-      name: `pitboard-v0.12.0-${triple}${end}`,
+      name: `pitboard-v0.15.0-${triple}${end}`,
       size: 1,
       sha256: null,
       url: "",
@@ -250,14 +250,14 @@ test("lists a release's Windows zips after the Linux tarballs", async () => {
     rows.slice(5, 7).map((row) => [row.asset.name, row.forHtml, row.bom?.name]),
     [
       [
-        "pitboard-v0.12.0-x86_64-pc-windows-msvc.zip",
+        "pitboard-v0.15.0-x86_64-pc-windows-msvc.zip",
         "Command line, Windows on x64",
-        "pitboard-v0.12.0-x86_64-pc-windows-msvc.zip.cdx.json",
+        "pitboard-v0.15.0-x86_64-pc-windows-msvc.zip.cdx.json",
       ],
       [
-        "pitboard-v0.12.0-aarch64-pc-windows-msvc.zip",
+        "pitboard-v0.15.0-aarch64-pc-windows-msvc.zip",
         "Command line, Windows on ARM64",
-        "pitboard-v0.12.0-aarch64-pc-windows-msvc.zip.cdx.json",
+        "pitboard-v0.15.0-aarch64-pc-windows-msvc.zip.cdx.json",
       ],
     ],
   );
@@ -266,23 +266,23 @@ test("lists a release's Windows zips after the Linux tarballs", async () => {
 test("lists a release's MSIs after the macOS app, and the Windows feed after the macOS one", async () => {
   const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
   const windows = [
-    "Pitboard-v0.12.0-windows-x64.msi",
-    "Pitboard-v0.12.0-windows-x64.msi.cdx.json",
-    "Pitboard-v0.12.0-windows-arm64.msi",
-    "Pitboard-v0.12.0-windows-arm64.msi.cdx.json",
+    "Pitboard-v0.15.0-windows-x64.msi",
+    "Pitboard-v0.15.0-windows-x64.msi.cdx.json",
+    "Pitboard-v0.15.0-windows-arm64.msi",
+    "Pitboard-v0.15.0-windows-arm64.msi.cdx.json",
     "appcast-windows.xml",
   ].map((name) => ({ name, size: 1, sha256: null, url: "" }));
   const rows = fileRows({ ...r, assets: [...r.assets, ...windows] });
   assert.deepEqual(
     rows.map((row) => row.asset.name),
     [
-      "Pitboard-v0.12.0-macos.zip",
-      "Pitboard-v0.12.0-windows-x64.msi",
-      "Pitboard-v0.12.0-windows-arm64.msi",
-      "pitboard-v0.12.0-aarch64-apple-darwin.tar.gz",
-      "pitboard-v0.12.0-x86_64-apple-darwin.tar.gz",
-      "pitboard-v0.12.0-x86_64-unknown-linux-musl.tar.gz",
-      "pitboard-v0.12.0-aarch64-unknown-linux-musl.tar.gz",
+      "Pitboard-v0.15.0-macos.zip",
+      "Pitboard-v0.15.0-windows-x64.msi",
+      "Pitboard-v0.15.0-windows-arm64.msi",
+      "pitboard-v0.15.0-aarch64-apple-darwin.tar.gz",
+      "pitboard-v0.15.0-x86_64-apple-darwin.tar.gz",
+      "pitboard-v0.15.0-x86_64-unknown-linux-musl.tar.gz",
+      "pitboard-v0.15.0-aarch64-unknown-linux-musl.tar.gz",
       "install.sh",
       "SHA256SUMS",
       "appcast.xml",
@@ -292,8 +292,8 @@ test("lists a release's MSIs after the macOS app, and the Windows feed after the
   assert.deepEqual(
     [rows[1], rows[2], rows[10]].map((row) => [row.forHtml, row.bom?.name ?? null]),
     [
-      ["The app, Windows on x64", "Pitboard-v0.12.0-windows-x64.msi.cdx.json"],
-      ["The app, Windows on ARM64", "Pitboard-v0.12.0-windows-arm64.msi.cdx.json"],
+      ["The app, Windows on x64", "Pitboard-v0.15.0-windows-x64.msi.cdx.json"],
+      ["The app, Windows on ARM64", "Pitboard-v0.15.0-windows-arm64.msi.cdx.json"],
       ["The feed the Windows app updates from", null],
     ],
   );
