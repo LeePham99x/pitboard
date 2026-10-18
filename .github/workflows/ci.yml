@@ -946,7 +946,8 @@ jobs:
         working-directory: .
         run: |
           if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git diff --quiet HEAD^1 HEAD -- \
-            website CHANGELOG.md docs crates/pitboard/src/watch.rs .github/workflows/ci.yml; then
+            website docs README.md SECURITY.md CHANGELOG.md CONTRIBUTING.md ARCHITECTURE.md \
+            packaging apps crates .github/workflows/ci.yml; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "nothing the site reads changed"
