@@ -23,57 +23,65 @@ The login in use belongs to its tool, which renews it. [When Pitboard renews a l
 
 ## Turn on daily renewal
 
-<Note>
-  To turn it on from the app, quit the app, move it to your Applications folder, then open it again. Until then macOS runs a temporary copy, and the setting cannot be turned on.
-</Note>
+Daily renewal runs `pitboard renew` once a day, from the system's own scheduler. It renews your parked logins and does nothing else.
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     Click Pitboard's item in the menu bar, choose **Settings**, then click **Renewal**. Turn on **Renew parked logins daily**.
+
+    The app must be in your Applications folder: until you move it there, macOS runs a temporary copy, and the setting cannot be turned on.
+
+    A LaunchAgent runs it. The first run comes 24 hours after you turn it on, and a run due while the Mac sleeps is skipped.
   </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard schedule install
-    ```
+  <Tab title="Windows">
+    Right-click Pitboard's icon in the notification area and select **Settings**. Under **Renewal**, turn on **Renew parked logins daily**.
 
-    ```text
-    Parked logins will be renewed daily.
-    /Users/me/Library/LaunchAgents/com.datlechin.pitboard.renew.plist
-
-    It renews your own parked logins and does nothing else: it never switches account and never asks Anthropic for usage.
-    ```
+    A task in Task Scheduler runs it, and only while you are signed in to Windows. The first run comes 24 hours after you turn it on, and Task Scheduler starts a missed run as soon as it can.
+  </Tab>
+  <Tab title="Linux">
+    A systemd user timer runs it. The first run comes 15 minutes after your user's systemd starts, and each next one a day after the last.
   </Tab>
 </Tabs>
 
-Daily renewal runs `pitboard renew` once a day, from a LaunchAgent on macOS or a systemd user timer on Linux. On a Mac, the first run comes 24 hours after you turn it on. A run due while the Mac sleeps is skipped, and the next run renews whatever is still due.
+On the command line:
 
-It keeps the proxy it was turned on with. Behind a proxy, turn it on with `pitboard schedule install` from a shell that sets the proxy. Run it again after the proxy changes. [`schedule`](/reference/maintenance-commands#schedule) lists the variables it keeps.
+```sh
+pitboard schedule install
+```
 
-It renews only the parked logins in `~/.pitboard`. While `PITBOARD_HOME` names another directory, turning it on fails with `schedule_not_default_home`. To renew the parked logins there, run `pitboard renew` yourself with `PITBOARD_HOME` set.
+```text
+Parked logins will be renewed daily.
+/Users/me/Library/LaunchAgents/com.datlechin.pitboard.renew.plist
+
+It renews your own parked logins and does nothing else: it never switches account and never asks Anthropic for usage.
+```
+
+The second line says where the schedule is: on Windows, the task's path, such as `\Pitboard\Renew S-1-5-21-…`.
+
+Each run renews whatever is due. Behind a proxy, turn it on with `pitboard schedule install` from a shell that sets the proxy, and run it again after the proxy changes. [`schedule`](/reference/maintenance-commands#schedule) lists the variables it keeps.
+
+It renews only the parked logins in Pitboard's own directory: `~/.pitboard`, or `%LOCALAPPDATA%\Pitboard` on Windows. While `PITBOARD_HOME` names another directory, turning it on fails with `schedule_not_default_home`. To renew the parked logins there, run `pitboard renew` yourself with `PITBOARD_HOME` set.
 
 ## Check or turn off daily renewal
 
-<Tabs>
-  <Tab title="App">
-    In **Settings** > **Renewal**, the **Renew parked logins daily** setting shows whether it is on. Turn it off to stop daily renewal.
-  </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard schedule status
-    ```
+In the app, **Renew parked logins daily** in the **Renewal** settings shows whether it is on. Turn it off to stop daily renewal.
 
-    ```text
-    Parked logins are renewed every 1d 0h by this computer's own scheduler.
-    /Users/me/Library/LaunchAgents/com.datlechin.pitboard.renew.plist
-    ```
+On the command line:
 
-    To stop it:
+```sh
+pitboard schedule status
+```
 
-    ```sh
-    pitboard schedule uninstall
-    ```
-  </Tab>
-</Tabs>
+```text
+Parked logins are renewed every 1d 0h by this computer's own scheduler.
+/Users/me/Library/LaunchAgents/com.datlechin.pitboard.renew.plist
+```
+
+To stop it:
+
+```sh
+pitboard schedule uninstall
+```
 
 If `pitboard doctor` reports a problem with its `renewal schedule` check, see [Daily renewal stopped working](/troubleshooting/accounts#daily-renewal-stopped-working).
 
@@ -81,20 +89,15 @@ If `pitboard doctor` reports a problem with its `renewal schedule` check, see [D
 
 A parked login that `pitboard` shows as `expires in 2d 3h` needs only a renewal, not a sign-in.
 
-<Tabs>
-  <Tab title="App">
-    In **Settings** > **Renewal**, click **Renew Now**. The line beside the button shows the result `pitboard renew` would print.
-  </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard renew
-    ```
+In the app's **Renewal** settings, **Renew Now** renews them, and the line beside it shows the result `pitboard renew` would print. On Windows, the button is **Renew now**. On the command line:
 
-    ```text
-    Renewed all 2.
-    ```
-  </Tab>
-</Tabs>
+```sh
+pitboard renew
+```
+
+```text
+Renewed all 2.
+```
 
 For every line it can print, see [`renew`](/reference/maintenance-commands#renew).
 

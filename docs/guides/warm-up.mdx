@@ -4,54 +4,52 @@ sidebarTitle: "Warm up"
 description: "Have Pitboard start the five-hour period of the accounts you choose as soon as the last one resets."
 ---
 
+Pitboard warms up Claude Code accounts on macOS and Linux. On Windows, Pitboard warms up no account, because Claude Code there does not read the access token a warm-up hands it.
+
 A five-hour period starts with the account's first request after the last one reset, so one started early resets early. A warm-up has Claude Code send one short message with the account's login as soon as the last period resets. [When a period starts](/concepts/usage#when-a-period-starts) has the measurements.
 
-Warm-up is off for every account until you turn it on for one. Pitboard warms up Claude Code accounts only, between hours you choose, 06:00 to 22:00 by default.
+Warm-up is off for every account until you turn it on for one. Pitboard warms up between hours you choose, 06:00 to 22:00 by default.
 
 ## Turn it on
 
-<Tabs>
-  <Tab title="App">
-    In **Settings** > **Limits**, under **Warm up limits**, turn on each account to warm up. Set the hours with **From** and **To**.
+In the app, turn on each account to warm up in **Settings** > **Limits**, under **Warm up limits**, and set the hours with **From** and **To**. You can also choose **Warm Up Automatically** in an account's shortcut menu in the **Accounts** pane. The app warms up accounts only while it is open, and each account's row says when it warms up next.
 
-    You can also choose **Warm Up Automatically** in an account's shortcut menu in the **Accounts** pane.
+On the command line, turn it on for an account and set the hours:
 
-    The app warms up accounts only while it is open. Each account's row says when it warms up next.
-  </Tab>
-  <Tab title="Command line">
-    Turn it on for an account, and set the hours:
+```sh
+pitboard warm on work
+pitboard warm range 07:00 23:00
+```
 
-    ```sh
-    pitboard warm on work
-    pitboard warm range 07:00 23:00
-    ```
+Then run `pitboard watch` and leave the terminal open. `pitboard warm` lists each account and when it warms up next:
 
-    Then run `pitboard watch` and leave the terminal open. `pitboard warm` lists each account and when it warms up next.
-
-    ```text
-    Pitboard warms up these accounts from 07:00 to 23:00, while the app or `pitboard watch` runs.
-      work      on   warms up again at 14:50
-      personal  off
-    ```
-  </Tab>
-</Tabs>
+```text
+Pitboard warms up these accounts from 07:00 to 23:00, while the app or `pitboard watch` runs.
+  work      on   warms up again at 14:50
+  personal  off
+```
 
 The app, `pitboard watch` and `pitboard warm` share one setting. [`warm`](/reference/account-commands#warm) lists every form of the command.
 
 ## Warm up an account now
 
-<Tabs>
-  <Tab title="App">
-    In the **Accounts** pane, choose **Warm Up Now** in the account's shortcut menu.
-  </Tab>
-  <Tab title="Command line">
-    ```sh
-    pitboard warm now work
-    ```
-  </Tab>
-</Tabs>
+In the **Accounts** pane, choose **Warm Up Now** in the account's shortcut menu, or run:
+
+```sh
+pitboard warm now work
+```
 
 It ignores the hours. It starts nothing while the account's five-hour period is running.
+
+## On Windows
+
+The Windows app dims the hours and accounts under **Warm up limits** and says why, and its account menus have no warm-up items. `pitboard warm` saves what you turn on and prints why nothing warms up:
+
+```text
+Pitboard is not warming up accounts: warm-ups are not available on Windows, where Claude Code does not read the access token a warm-up hands it.
+```
+
+`pitboard warm now` refuses with `warm_up_unbuilt`. As read in the Windows builds of Claude Code 2.1.301, Claude Code reads a token handed to it through `/proc`, which Windows does not have.
 
 ## What a warm-up sends
 

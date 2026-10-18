@@ -6,9 +6,9 @@ description: "Add `pitboard statusline` to Claude Code's settings to see every a
 
 ## Add it to Claude Code
 
-`pitboard` must be on your `PATH`. If you installed only the app, [put the bundled command line on your PATH](/install#put-the-bundled-command-line-on-your-path) first.
+`pitboard` must be on the `PATH` Claude Code runs the line with. If you installed only the app on macOS, [put the bundled command line on your PATH](/install#put-the-bundled-command-line-on-your-path) first. On Windows, the installer puts it there for terminals opened after it ran.
 
-Add a `statusLine` field to `~/.claude/settings.json`, beside the fields already there:
+Add a `statusLine` field to Claude Code's `settings.json`, beside the fields already there. It is in `~/.claude`, or in the folder `CLAUDE_CONFIG_DIR` names. On Windows, `~` is your user folder, such as `C:\Users\me`.
 
 ```json title="~/.claude/settings.json"
 {
@@ -21,7 +21,9 @@ Add a `statusLine` field to `~/.claude/settings.json`, beside the fields already
 
 If the file already has a `statusLine`, [combine it with your own status line](/guides/status-line#combine-it-with-your-own-status-line) instead.
 
-Claude Code runs the command after each response.
+Claude Code runs the command after each response. On macOS and Linux, it runs in your shell.
+
+On Windows, Claude Code runs it in Git Bash where it finds one, then in PowerShell 7, then in Windows PowerShell: read in Claude Code 2.1.301, and measured with 2.1.302. `pitboard statusline` runs the same in each. The `status line` line of `pitboard doctor` names the one Claude Code uses. Where it says no `pitboard` is on its `PATH`, add the folder `pitboard.exe` is in to your `PATH`, then start Claude Code again.
 
 ## Read the line
 
@@ -45,11 +47,13 @@ Every mark, label and colour, such as `?`, `work?` and `unenrolled`, is listed u
 
 ## Combine it with your own status line
 
-If your status line script reads its input with `input=$(cat)`, add this line to it:
+If your status line script runs in bash and reads its input with `input=$(cat)`, add this line to it:
 
 ```sh
 echo "$input" | pitboard statusline
 ```
+
+On Windows, this works where Claude Code runs the line in Git Bash.
 
 Pass the input unchanged: Pitboard reads the session's `session_id` and usage from it. Without `session_id`, it prints the line but records none of the session's usage.
 

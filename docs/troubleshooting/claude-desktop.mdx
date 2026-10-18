@@ -34,3 +34,24 @@ error: Claude's data folder holds `Network`, which this Pitboard has not read, s
 
 A build of Claude made an entry Pitboard has no record of, so Pitboard cannot tell whether it belongs to the account. [Update Pitboard](/install#update-pitboard). If no release reads it yet, [report a problem](/troubleshooting#report-a-problem) with the name. Claude Code and Codex switches go ahead.
 
+## Finish or undo an add or a sign-in again
+
+An add or a sign-in again left halfway keeps Claude signed out and the account in use parked, after a restart too. You leave one with Control-C on the command line, or **Later** in the app. The app then shows **Adding a Claude Desktop account isn't finished** or **Signing in to home again isn't finished**.
+
+To finish, sign in to the account in Claude and quit Claude. Then click **Finish Adding** or **Finish Signing In** on the notice, then **Add the Account Claude Shows** or **Record as home** in the dialog. On the command line, run `pitboard enroll` with the label you were adding or signing in to, such as `pitboard enroll desktop/travel`.
+
+To undo it, click **Put work Back** on the notice, or run `pitboard use desktop/work`. Once Claude is signed in to the account you are adding, the undo is refused: finish the add instead.
+
+## Give up an interrupted move
+
+Give up only when an error about an interrupted move says to. [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted) says what comes first.
+
+In the app, click **Give Up** on the notice **An interrupted move is waiting**, then **Give Up** again to confirm. On the command line:
+
+```sh
+pitboard abandon
+```
+
+```text
+Pitboard gave up the move of `desktop/work`'s login and kept every folder: 1 parked, 1 set aside. Run `pitboard enroll desktop/<label>` for the account Claude shows, or `pitboard use desktop/<label>` where Claude is signed out.
+```

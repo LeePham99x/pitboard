@@ -1,33 +1,37 @@
 ---
 title: "Switch accounts"
-description: "Switch a tool to another enrolled account from the menu bar, the Pitboard window or the command line."
+description: "Switch a tool to another enrolled account from the app's menu, the Pitboard window or the command line."
 ---
 
-A switch puts another account's [parked login](/concepts/switching#parked-logins) in use for Claude Code, OpenAI's Codex CLI or Claude Desktop, and parks the login the tool had.
+A switch puts another account's [parked login](/concepts/switching#parked-logins) in use for Claude Code, OpenAI's Codex CLI or Claude Desktop, and parks the login the tool had. Where nothing is signed in to the tool, as on a new computer, it puts the account's login in use and parks nothing.
 
 ## Switch to another account
 
 <Tabs>
-  <Tab title="App">
+  <Tab title="macOS">
     Click Pitboard's item in the menu bar, then choose the account.
 
     In the Pitboard window, click **Use** in the account's row, double-click the row, or select it and press Return.
   </Tab>
-  <Tab title="Command line">
-    Run `pitboard use` with the account's label, such as `work`, `codex/work` or `desktop/work`.
+  <Tab title="Windows">
+    Right-click Pitboard's icon in the notification area, then select the account.
 
-    ```sh
-    pitboard use work
-    ```
-
-    ```text
-    Switched to work; personal is parked.
-    Claude Code sessions already running follow within 33 seconds.
-    ```
-
-    [Labels](/reference/commands#labels) says how Pitboard matches a label.
+    In the Pitboard window, select **Use** in the account's row, double-click the row, or select it and press Enter.
   </Tab>
 </Tabs>
+
+On the command line, run `pitboard use` with the account's label, such as `work`, `codex/work` or, on macOS, `desktop/work`. [Labels](/reference/commands#labels) says how Pitboard matches a label.
+
+```sh
+pitboard use work
+```
+
+```text
+Switched to work; personal is parked.
+Claude Code sessions already running follow within 33 seconds.
+```
+
+Where nothing was signed in, the first line names the tool instead: `Switched Claude Code to work.`
 
 ## What Pitboard checks first
 
@@ -35,52 +39,39 @@ Pitboard moves nothing until the account you switch to has a parked login, and t
 
 | Tool | Before a switch |
 | --- | --- |
-| Claude Code, Codex | The tool is signed in to an enrolled account. Anthropic or OpenAI confirms over the network that the parked login works and is that account's. |
+| Claude Code, Codex | Anthropic or OpenAI confirms over the network that the parked login works and is that account's. The tool is signed in to an enrolled account, or to nothing. |
 | Claude Desktop | Claude is closed, as [Switch accounts](/guides/claude-desktop#switch-accounts) shows, and signed in to an enrolled account or signed out. Pitboard asks no service. |
 
 An expired or refused parked login needs a [sign-in again](/guides/sign-in-again). [Error and warning codes](/reference/errors) lists every code. `pitboard use` with the account in use moves no login: it only corrects Claude Code's config when that names another account.
+
+## Replace a login Anthropic refuses
+
+When Anthropic refuses for good the login Claude Code has in use, that login no longer works and cannot be parked. A switch then asks before it puts the other account's login in its place, which loses nothing.
+
+In the app, **Replace** in the **Replace Claude Code's Login?** alert goes ahead. On Windows, the dialog is **Replace Claude Code's login?**.
+
+`pitboard use` asks the same at a terminal, ending with `Put work's login in its place? [y/N]`. Without a terminal, or with `--json`, it refuses with `live_login_refused` until you add `--yes`:
+
+```sh
+pitboard use work --yes
+```
 
 ## What happens to open sessions
 
 | Tool | After a switch |
 | --- | --- |
 | Claude Code | Open sessions follow within about 33 seconds, with no restart. The Pitboard window counts down. |
-| Codex | Nothing that runs Codex follows. Restart each, as below. |
+| Codex | Nothing that runs Codex follows. Restart each, as [Restart what runs Codex](/guides/codex#restart-what-runs-codex) says. |
 | Claude Desktop | Claude opens signed in to the account switched to. |
 
-[How open sessions follow a switch](/concepts/open-sessions) says why.
+[How open sessions follow a switch](/concepts/open-sessions) says why, and what was measured on each system.
 
-On macOS, while a login file sits behind the keychain, open Claude Code sessions follow only at their next renewal or restart. Put it away as [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) says.
-
-### Restart what runs Codex
-
-| What runs Codex | What to do |
-| --- | --- |
-| A `codex` session | Quit it and start it again. |
-| The ChatGPT app, OpenAI's desktop app | Quit it with Command-Q, not by closing its windows, and open it again. |
-| Codex's background app server | Run `codex app-server daemon restart`. |
-| Codex in an editor | Run **Developer: Reload Window** in each window that uses Codex. |
-
-Read in the ChatGPT app 26.928.31416 and Codex 0.159.3. The editor row is not measured.
-
-After a Codex switch, Pitboard lists which of these still run. If it cannot read the process list, it warns with `sessions_unknown`.
-
-<Warning>
-  Do not sign out in anything that ran Codex before the switch, such as `/logout` in a `codex` session or **Log Out** in the ChatGPT app. Each holds the parked login, and signing out revokes it at OpenAI: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
-
-  If you did, Control-click the old account in the Pitboard window and choose **Sign In Again**, or run `pitboard enroll codex/personal --sign-in`.
-</Warning>
-
-### Switch while the ChatGPT app is open
-
-While the ChatGPT app is open, a Codex switch in the app asks first. **Quit ChatGPT and Switch** quits it, switches, then opens it again. **Cancel** switches nothing.
-
-If the ChatGPT app has not quit within 30 seconds, nothing changes. The command line never quits an app.
+On macOS, while a login file sits behind the keychain, open Claude Code sessions follow only at their next renewal or restart. On Windows, the same holds for a login file behind Credential Manager. Put it away as [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) says.
 
 ## When an account runs out
 
 When the account in use runs out of a limit, the app offers another account of the same tool, under 100% in every limit, by the rules in [Which account it switches to](/reference/automatic-switching#which-account-it-switches-to). If no account has room, it offers nothing. The command line offers no switch.
 
-The offer is a notification, and **Switch to personal** in Pitboard's menu and window with or without notifications. [Notifications](/reference/app#notifications) shows its words.
+The offer is a notification with a **Switch** button, and **Switch to personal** in Pitboard's menu and window, with or without notifications. [Notifications](/reference/app#notifications) shows its words.
 
 Pitboard can also [switch Claude Code by itself](/guides/automatic-switching) before an account runs out.

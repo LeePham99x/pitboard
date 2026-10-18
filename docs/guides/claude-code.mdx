@@ -4,7 +4,15 @@ sidebarTitle: "Claude Code"
 description: "Check what Claude Code needs before you add an account, add Claude Code accounts and see how they differ."
 ---
 
-Pitboard switches Claude Code on macOS and Linux. A switch puts another account's [parked login](/concepts/switching#parked-logins) where Claude Code reads its login.
+Pitboard switches Claude Code on macOS, Windows and Linux. A switch puts another account's [parked login](/concepts/switching#parked-logins) where Claude Code reads its login:
+
+| System | Where Claude Code keeps its login |
+| --- | --- |
+| macOS | The keychain |
+| Windows | `.credentials.json` in Claude Code's folder, or Credential Manager with that file behind it |
+| Linux | `.credentials.json` in Claude Code's folder |
+
+Claude Code's folder is `~/.claude`, or the folder `CLAUDE_CONFIG_DIR` names. [Claude Code files](/reference/files#claude-code-files) lists what Pitboard reads there.
 
 ## Before you add a Claude Code account
 
@@ -18,9 +26,21 @@ The `what a session authenticates with` line warns and names the setting when Cl
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, Pitboard refuses every change to Claude Code accounts with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/files#custom-oauth-endpoint) says why.
 
+On Windows, Claude Code keeps its login in Credential Manager where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where a feature it caches turns that store on, as read in Claude Code 2.1.301. The `credential store` line of `pitboard doctor` names the store Pitboard reads. Where Credential Manager holds a Claude Code login and nothing Pitboard reads says Claude Code uses it, Pitboard refuses every change until you set the variable in `settings.json`:
+
+```json title="%USERPROFILE%\.claude\settings.json"
+{
+  "env": {
+    "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN": "1"
+  }
+}
+```
+
+A Windows profile that roams takes Credential Manager's items to every PC you sign in to, so a switch on one changes Claude Code's login on the others. The `credential store` line warns about it.
+
 ## Add Claude Code accounts
 
-Add each one as [Add another account](/guides/accounts#add-another-account) shows. In the app, choose **Claude Code** if the dialog has a **Tool** pop-up menu.
+Add each one as [Add another account](/guides/accounts#add-another-account) shows. In the app, choose **Claude Code** under **Tool**.
 
 A label with no prefix enrols a Claude Code account: `pitboard enroll work --sign-in` adds one. `pitboard enroll personal` enrols the account Claude Code is signed in to, as [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to) shows. Where another tool also has a `work`, other commands need `claude/work`: see [Labels](/reference/commands#labels).
 
@@ -30,9 +50,9 @@ If Pitboard says `claude` is not on this machine, see [Pitboard cannot find a to
 
 ## How Claude Code accounts differ
 
-- Open Claude Code sessions follow a switch with no restart. [How open sessions follow a switch](/concepts/open-sessions) says how soon, and what can pin them.
+- Open Claude Code sessions follow a switch with no restart. [How open sessions follow a switch](/concepts/open-sessions) says when, and what can pin them.
 - Pitboard switches only Claude Code by itself: see [Switch before an account runs out](/guides/automatic-switching).
-- Pitboard warms up only Claude Code accounts: see [Warm up accounts](/guides/warm-up).
+- Pitboard warms up only Claude Code accounts, on macOS and Linux: see [Warm up accounts](/guides/warm-up).
 - `pitboard statusline` shows each Claude Code account's usage in Claude Code's status line: see [Show usage in Claude Code's status line](/guides/status-line).
 - Pitboard asks Anthropic to identify a Claude Code login: see [How Pitboard knows whose login it is](/concepts/identity).
 - `/status` in Claude Code can name another account than Pitboard shows: see [Claude Code shows another account than Pitboard](/troubleshooting/accounts#claude-code-shows-another-account-than-pitboard).

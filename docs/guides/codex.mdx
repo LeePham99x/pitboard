@@ -1,14 +1,16 @@
 ---
 title: "Use Pitboard with Codex"
 sidebarTitle: "Codex"
-description: "Check what Codex needs before you enrol an account, add Codex accounts and see how they differ."
+description: "Check what Codex needs before you enrol an account, add Codex accounts and restart Codex after a switch."
 ---
 
 Until you enrol a Codex account, Pitboard lists nothing about OpenAI's Codex CLI, not even the account Codex is signed in to. It asks OpenAI nothing either.
 
+On Windows, Codex sign-ins and switches have not been measured with real logins.
+
 ## Before you enrol a Codex account
 
-Pitboard switches Codex only while Codex is signed in with ChatGPT. Codex must keep that login in its file store: `~/.codex/auth.json`, or `auth.json` in `CODEX_HOME`. To check, run:
+Pitboard switches Codex only while Codex is signed in with ChatGPT and keeps that login in its file store, `auth.json` in Codex's home. The home is `~/.codex`, or the folder `CODEX_HOME` names. On Windows, it is `.codex` in your user folder, such as `C:\Users\me\.codex`, and a `CODEX_HOME` that names no folder stops Codex. To check, run:
 
 ```sh
 pitboard doctor
@@ -18,20 +20,23 @@ In the Codex section, `Codex login store` reads `file`, and `Codex login` reads 
 
 Codex's setting `cli_auth_credentials_store` chooses the store. Pitboard refuses every store but `file`:
 
-| `Codex login store` | Where Codex keeps the login |
-| --- | --- |
-| `keyring` | A keychain item Codex made for itself. |
-| `auto` | The same keychain item, falling back to the file. |
-| `secrets` | An encrypted file whose key is in the keychain: `keyring` or `auto` with `secret_auth_storage` turned on in `[features]`. |
-| `ephemeral` | In memory, for one run of Codex. |
+| `Codex login store` | System | Where Codex keeps the login |
+| --- | --- | --- |
+| `keyring` | macOS, Linux | A keychain item Codex made for itself. |
+| `keyring` | Windows | A Credential Manager item, while `secret_auth_storage` is off. |
+| `auto` | macOS, Linux | The same keychain item, falling back to the file. |
+| `auto` | Windows | The same Credential Manager item, falling back to the file, while `secret_auth_storage` is off. |
+| `secrets` | macOS, Linux | An encrypted file whose key is in the keychain: `keyring` or `auto` with `secret_auth_storage` turned on in `[features]`. |
+| `secrets` | Windows | `secrets\codex_auth.age` in Codex's home, whose key is in Credential Manager: `keyring` or `auto` while `secret_auth_storage` is on, as it is by default. |
+| `ephemeral` | All | In memory, for one run of Codex. |
 
-Read in Codex 0.154.0. Pitboard does not read Codex's keychain stores, because every read would ask you for permission. A login kept in memory leaves nothing to park.
+Read in Codex 0.154.0 on macOS, and in the Windows builds of 0.163.0. On macOS and Linux, Pitboard does not read Codex's keychain stores, because every read would ask you for permission. A login kept in memory leaves nothing to park.
 
-If the store is `file` but Codex is signed out or uses an API key, run `codex login` and sign in with ChatGPT.
+If Codex is signed out, switch to an enrolled Codex account with `pitboard use codex/work`, or run `codex login` and sign in with ChatGPT. If it uses an API key, run `codex login` and sign in with ChatGPT.
 
 ### Use the file store
 
-If the `Codex login store` line names your own `config.toml` or `/etc/codex/config.toml`, set the file store in your own `config.toml`, in `~/.codex` or `CODEX_HOME`:
+If the `Codex login store` line names a `config.toml`, yours or the system's, set the file store in your own, in Codex's home:
 
 ```toml title="~/.codex/config.toml"
 cli_auth_credentials_store = "file"
@@ -39,19 +44,54 @@ cli_auth_credentials_store = "file"
 
 Then run `codex login` and sign in with ChatGPT.
 
-If the line names `/etc/codex/managed_config.toml`, `/etc/codex/requirements.toml` or a managed preference of `com.openai.codex`, only an administrator can change the store. [Codex files](/reference/files#codex-files) lists every place Codex reads the setting from.
+Only an administrator can change a store set in these places:
+
+| System | Places |
+| --- | --- |
+| macOS | `/etc/codex/managed_config.toml`, `/etc/codex/requirements.toml`, and a managed preference of `com.openai.codex` |
+| Windows | `requirements.toml` in `%ProgramData%\OpenAI\Codex` |
+| Linux | `/etc/codex/managed_config.toml` and `/etc/codex/requirements.toml` |
+
+[Codex files](/reference/files#codex-files) lists every place Codex reads the setting from.
 
 ## Add Codex accounts
 
-Add each one as [Add another account](/guides/accounts#add-another-account) shows. In the app, choose **Codex** in the dialog's **Tool** pop-up menu and enter the name alone. On the command line, start the label with `codex/`.
+Add each one as [Add another account](/guides/accounts#add-another-account) shows: in the app, choose **Codex** under **Tool** and enter the name alone, and on the command line, start the label with `codex/`.
 
-In the app, add your first Codex account with **Add Account**. Then name the one Codex is signed in to as in [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to). On the command line, `pitboard enroll codex/personal` enrols that one at once.
+In the app, add your first Codex account that way. Then name the one Codex is signed in to as in [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to). On the command line, `pitboard enroll codex/personal` enrols that one at once.
 
-Adding an account runs `codex login` from OpenAI's Codex CLI. Pitboard does not use the copy inside the ChatGPT app. If the dialog says **Pitboard can't find the Codex CLI on this Mac.**, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
+Adding an account runs `codex login` from OpenAI's Codex CLI. Pitboard does not use the copy inside the ChatGPT app. If the dialog says Pitboard cannot find the Codex CLI, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
+
+## Restart what runs Codex
+
+Nothing that runs Codex follows a switch, so restart each:
+
+| What runs Codex | What to do |
+| --- | --- |
+| A `codex` session | Quit it and start it again. |
+| The ChatGPT app on macOS | Quit it with Command-Q, not by closing its windows, and open it again. |
+| The ChatGPT app on Windows | Quit it from its icon in the notification area, and open it again. |
+| Codex's background app server | Run `codex app-server daemon restart`. |
+| Codex in an editor | Run **Developer: Reload Window** in each window that uses Codex. |
+
+Read in the ChatGPT app 26.928.31416 for macOS and Codex 0.159.3. The ChatGPT app on Windows and the editor row are not measured.
+
+After a Codex switch, Pitboard lists which of these still run. If it cannot read the process list, it warns with `sessions_unknown`.
+
+<Warning>
+  Do not sign out in anything that ran Codex before the switch, such as `/logout` in a `codex` session or **Log Out** in the ChatGPT app. Each holds the parked login, and signing out revokes it at OpenAI: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
+
+  If you did, [sign in to the old account again](/guides/sign-in-again), or run `pitboard enroll codex/personal --sign-in`.
+</Warning>
+
+## Switch while the ChatGPT app is open
+
+While the ChatGPT app is open, a Codex switch in the app asks first. **Quit ChatGPT and Switch** quits it, switches, then opens it again, and **Cancel** switches nothing. On Windows, the button is **Quit ChatGPT and switch**, and quitting the app has not been measured.
+
+If the ChatGPT app has not quit within 30 seconds, nothing changes. The command line never quits an app.
 
 ## How Codex accounts differ
 
-- Nothing that runs Codex follows a switch. Start each again as [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says.
 - Pitboard never switches Codex by itself. [Switch before an account runs out](/guides/automatic-switching) is for Claude Code only.
 - Pitboard identifies a Codex login from the login itself, without asking OpenAI. See [How Pitboard knows whose login it is](/concepts/identity).
 - A switch still asks OpenAI whether the parked login works, by reading that account's usage. The read spends none of its limits: see [Where the numbers come from](/concepts/usage#where-the-numbers-come-from).
