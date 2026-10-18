@@ -5,9 +5,18 @@ description: "Switch Claude Code, Codex and Claude Desktop between your own acco
 
 Without Pitboard, changing account in Claude Code, OpenAI's Codex CLI or Claude Desktop means signing out and signing in again.
 
-<Frame>
-  <img src="/images/menu.png" alt="The Pitboard menu, listing Claude Code and Codex accounts, with a check mark on each one in use, the plan after each Codex account's name and, under each account's name, its usage or that it needs signing in again" width="300" />
-</Frame>
+<Tabs>
+  <Tab title="macOS">
+    <Frame>
+      <img src="/images/menu.png" alt="The Pitboard menu, listing Claude Code and Codex accounts, with a check mark on each one in use, the plan after each Codex account's name and, under each account's name, its usage or that it needs signing in again" width="300" />
+    </Frame>
+  </Tab>
+  <Tab title="Windows">
+    <Frame>
+      <img src="/images/menu-windows.png" alt="The menu of Pitboard's icon in the notification area, listing Claude Code and Codex accounts, with a dot on each one in use and the plan after each Codex account's name" width="212" />
+    </Frame>
+  </Tab>
+</Tabs>
 
 Pitboard keeps the login of each account you are not using, called a [parked login](/concepts/switching#parked-logins). A switch puts the chosen account's parked login where Claude Code, Codex or Claude Desktop reads it. Your history, settings and projects stay where they are.
 
@@ -17,19 +26,26 @@ Pitboard finishes or undoes an [interrupted switch](/concepts/switching#interrup
 
 Pitboard can also [switch Claude Code by itself](/guides/automatic-switching) before the account in use runs out. It is off until you turn it on.
 
-The menu bar app gives each Claude Code and Codex account its own [window on claude.ai or chatgpt.com](/guides/account-windows), where you sign in as that account.
+The app gives each Claude Code and Codex account its own [window on claude.ai or chatgpt.com](/guides/account-windows), where you sign in as that account.
 
 Pitboard has no server of its own and no telemetry. It sends each login only to the service that issued it. [What leaves your machine](/security#what-leaves-your-machine) lists every request.
+
+## Where it runs
+
+| Part | Systems |
+| --- | --- |
+| The command line | macOS, Windows and Linux |
+| The app, which includes the command line | macOS and Windows |
+
+The app runs from the menu bar on macOS, and from its icon in the notification area on Windows. [What you need](/install#what-you-need) gives the versions, the architectures and how far each system is tested.
 
 ## What it works with
 
 | Tool | Systems | Read first |
 | --- | --- | --- |
-| Claude Code | macOS and Linux | [Quickstart](/quickstart) |
-| Codex, signed in with ChatGPT | macOS and Linux | [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) |
+| Claude Code | macOS, Windows and Linux | [Quickstart](/quickstart) |
+| Codex, signed in with ChatGPT | macOS, Windows and Linux | [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) |
 | Claude Desktop | macOS | [Before you add a Claude Desktop account](/guides/claude-desktop#before-you-add-a-claude-desktop-account) |
-
-The command line runs on macOS and Linux. The menu bar app runs on macOS 14 or later and includes the command line. [What you need](/install#what-you-need) gives the architectures and how far each system is tested.
 
 [Tools and sign-ins Pitboard does not support](/concepts/limits#tools-and-sign-ins-pitboard-does-not-support) lists what it leaves out. [Is this allowed](/concepts/limits#is-this-allowed) covers the services' terms.
 
@@ -45,7 +61,7 @@ Pitboard is licensed under [Apache-2.0](https://github.com/datlechin/pitboard/bl
   </Card>
 
   <Card title="Switch accounts" href="/guides/switch">
-    Switch from the menu bar, the Pitboard window or the command line.
+    Switch from the app's menu, the Pitboard window or the command line.
   </Card>
 
   <Card title="How switching works" href="/concepts/switching">

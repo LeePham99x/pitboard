@@ -3,15 +3,19 @@ title: "Quickstart"
 description: "Install Pitboard, enrol two Claude Code accounts, switch between them and read what each has left."
 ---
 
-You need Claude Code signed in to one of your accounts. If it is not, run `claude` and sign in.
+You need Claude Code signed in to one of your accounts. If it is not, run `claude` and sign in. In Windows PowerShell, run a Claude Code installed with npm as `claude.cmd`: its default execution policy, `Restricted`, refuses npm's `claude.ps1`.
 
 <Steps>
   <Step title="Install">
+    On macOS and Linux, install the command line with the script:
+
     ```sh
     curl -fsSL https://usepitboard.com/install.sh | sh
     ```
 
     If it says `~/.local/bin` is not on your `PATH`, do as it says.
+
+    On Windows, install the app as [Install the app](/install#install-the-app) shows. It puts the command line on your `PATH`, so open a terminal after it finishes.
 
     Then check that it runs:
 
@@ -21,7 +25,7 @@ You need Claude Code signed in to one of your accounts. If it is not, run `claud
 
     It prints `pitboard` and its version.
 
-    For the menu bar app, or to install with Homebrew, see [Install Pitboard](/install).
+    For the app on macOS, or to install with Homebrew, see [Install Pitboard](/install).
   </Step>
   <Step title="Enrol the account you are signed in to">
     Pitboard knows each account by a [label](/reference/commands#labels), a short name you choose. Enrol the account in use as `personal`:
@@ -44,7 +48,7 @@ You need Claude Code signed in to one of your accounts. If it is not, run `claud
     Opening Claude Code's sign-in. Sign in as the account to add; the account in use now stays signed in.
     ```
 
-    Sign in as your second account in the browser that opens.
+    Sign in as your second account in the browser that opens. If Claude Code asks for a code, paste in the one the browser shows.
 
     ```text
     Enrolled work (me@company.com). Switch to it with: pitboard use work
@@ -66,7 +70,7 @@ You need Claude Code signed in to one of your accounts. If it is not, run `claud
 
     `personal`'s login stays [parked](/concepts/switching#parked-logins) until you switch back with `pitboard use personal`.
 
-    If the second line names `.credentials.json` instead, a login file sits behind the keychain. To put it away with `pitboard stow`, follow [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+    If the second line names `.credentials.json` instead, a login file sits behind the keychain. On Windows, it sits behind Credential Manager. To put it away with `pitboard stow`, follow [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
   </Step>
   <Step title="See what each account has left">
     ```sh
