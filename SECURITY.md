@@ -1,19 +1,19 @@
 # Security policy
 
-Pitboard moves and parks the logins of Claude Code, OpenAI's Codex CLI and Claude Desktop.
-Each grants full access to a paid account. A Claude Code or Codex login holds a refresh
-token. A Codex parked login is Codex's whole `auth.json`, which can also hold an OpenAI API
-key. A Claude Desktop login is Claude's own files, its session cookie among them. Each of the
-app's account windows keeps a claude.ai or chatgpt.com sign-in.
+Pitboard moves and parks the logins of Claude Code, OpenAI's Codex CLI and, on macOS, Claude
+Desktop. Each grants full access to a paid account. A Claude Code or Codex login holds a
+refresh token. A Codex parked login is Codex's whole `auth.json`, which can also hold an
+OpenAI API key. A Claude Desktop login is Claude's own files, its session cookie among them.
+Each of the app's account windows keeps a claude.ai or chatgpt.com sign-in.
 
 ## Supported versions
 
 | Version | Supported |
 | --- | --- |
-| The most recent release | Yes |
-| Earlier releases | No |
+| The most recent release, and any beta published after it | Yes |
+| Earlier releases and betas | No |
 
-A fix ships in the next release. To update, follow
+Pitboard for Windows is in beta. A fix ships in the next release or beta. To update, follow
 [Update Pitboard](https://docs.usepitboard.com/install#update-pitboard).
 
 ## Report a vulnerability
@@ -24,7 +24,7 @@ Never open a public issue for a vulnerability.
 Include:
 
 - `pitboard --version`
-- your macOS or Linux version
+- your macOS or Linux version, or on Windows the build and the system type, x64 or ARM64
 - the steps that reproduce it
 - the output of `pitboard doctor --json`, if it helps: it prints no token, and replaces email
   addresses and account identifiers with digests
@@ -50,15 +50,19 @@ works.
   switch, and changes nothing if it cannot tell how.
 - No parked login goes untracked, and the next write deletes temporary files a killed run
   left.
-- A locked or unreadable keychain reads as unreadable, never as empty.
+- A locked or unreadable keychain, or a Credential Manager Pitboard cannot reach, reads as
+  unreadable, never as empty.
+- On Windows, each parked login is sealed to your Windows account, never to the machine, and
+  Pitboard's folders and files are open only to you, SYSTEM and Administrators.
 - Pitboard keeps no copy of a login in use, and never installs one Claude Code renewed since.
 - Pitboard renews a login a tool may be using only in the cases
   [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine)
   lists.
 - A switch takes Claude Code's locks before it writes its login, and reads every login back.
 - A Codex login is moved, never copied. One whose tokens and account id disagree is refused.
-- A Claude Desktop login is moved, never copied, and only while Claude is closed. Pitboard
-  reads no keychain item, decrypts no cookie and sends no request for it.
+- On macOS, a Claude Desktop login is moved, never copied, and only while Claude is closed.
+  Pitboard reads no keychain item, decrypts no cookie and sends no request for it. On Windows
+  and Linux, Pitboard reads and changes none of Claude Desktop's files.
 - Pitboard identifies a Claude Desktop login by its session cookie's fingerprint. It takes
   the account Claude names in one case only, and refuses in any other doubt.
 - In Claude's data folder, Pitboard deletes nothing of Claude's. Only `pitboard forget` and
@@ -70,34 +74,38 @@ works.
 - Every release file is attested, and the install script and casks install only files
   matching the release's checksums. See
   [Verify a download](https://docs.usepitboard.com/install/verify).
-- The app installs only an update signed with its update key or, in a Developer ID copy, by
-  the same team.
+- On macOS, the app installs only an update signed with its update key or, in a Developer ID
+  copy, by the same team. On Windows, it installs only an update whose installer is signed
+  with its Windows update key.
 - The release workflow refuses a changed update key without a declared rotation.
 - An account window stays on its site and sign-in pages, and sends other web pages to your
   browser.
 - An account window refuses links to other apps, Google's sign-in, the camera and the
   microphone.
 - Pitboard never reads or changes a window's website data, and adds no script to a page.
-- A download the site's own page did not start asks first, and WebKit quarantines every
-  download.
+- A download the site's own page did not start asks first. On macOS, WebKit quarantines
+  every download.
 - Forgetting an account deletes its window's data. Pitboard deletes only the stores its own
   directory recorded.
 - A `pitboard://` link opens a window only once you choose an account, and never a site's
   sign-in link.
-- The Share extension is sandboxed, with no network, file or shared-folder access, and keeps
-  nothing.
+- On macOS, the Share extension is sandboxed, with no network, file or shared-folder access,
+  and keeps nothing.
 
 ### Out of scope
 
 - Another process running as you, which can read each account window's data as it can a
-  browser's, and a parked Claude Desktop login as it can Claude's own.
+  browser's, and a parked Claude Desktop login as it can Claude's own. On Linux and Windows,
+  it can read every parked login as Pitboard does.
 - Another user with administrator access to your computer.
 - Anyone who can already read your files. On Linux, file modes alone keep parked logins
   private.
-- The sites' own pages and what they embed, which run in WebKit as they would in a browser.
+- The sites' own pages and what they embed, which run in WebKit or WebView2 as they would in a
+  browser.
 - A page a site opens in your browser, which uses your browser's sign-in.
 - A compromised Claude Code, Codex, Claude Desktop or library Pitboard uses. CI checks the
-  Rust libraries for known advisories, and Sparkle only for a newer release.
+  Rust libraries for known advisories, Sparkle only for a newer release, and none of the
+  Windows app's NuGet packages, WinSparkle among them.
 - A changed install script piped to `sh`. Only its attestation shows where it came from.
 - Signing out in a `codex` started before a switch, which revokes the login Pitboard parked.
 - An unused Claude Code or Codex account's parked login, which Pitboard keeps renewing while

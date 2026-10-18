@@ -9,7 +9,9 @@ body:
         you chose, codes, paths and times. No tokens, no email addresses and no account
         identifiers: those become digests, so two mentions of one account line up inside
         your report without naming it, and two reports do not line up with each other.
-        Paths under your home are shortened to `~`.
+        Paths under your home are shortened to `~`. On Windows, paths under your
+        `AppData\Local` folder are shortened to `%LOCALAPPDATA%`, and your user name and SID
+        are hidden.
 
         `pitboard doctor` without `--json` is the one to read yourself; it shows your own
         account, and is not the one to paste.
@@ -34,13 +36,13 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: "`pitboard --version`, `claude --version` and `codex --version` for whichever you use, and your macOS or Linux version."
-      placeholder: "pitboard 0.1.4, Claude Code 2.1.278, codex-cli 0.156.1, macOS 26.1"
+      description: "`pitboard --version`, `claude --version` and `codex --version` for whichever you use, and your macOS or Linux version. On Windows, give the build and the system type, x64 or ARM64, which Settings > System > About shows."
+      placeholder: "pitboard 1.0.0-beta.1, Claude Code 2.1.302, codex-cli 0.163.0, Windows 11 build 26100, x64"
     validations:
       required: true
   - type: textarea
     id: audit
     attributes:
-      label: The last few lines of ~/.pitboard/audit.log
+      label: The last few lines of pitboard log
       description: Optional. Read them before you paste them. A `reclaim` line whose outcome is `discarded` names a parked login, and that name holds an account id.
       render: text
