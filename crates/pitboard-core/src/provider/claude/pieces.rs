@@ -559,11 +559,11 @@ mod tests {
         items
             .set(Permit::for_a_test(), MANIFEST, r#"{"n":9,"l":1}"#)
             .unwrap();
-        assert!(matches!(read(&items, "t"), Err(Error::Unreadable(_))));
+        assert!(matches!(read(&items, "t"), Err(Error::Broken(_))));
         items
             .set(Permit::for_a_test(), MANIFEST, "not a manifest")
             .unwrap();
-        let Err(Error::Unreadable(why)) = read(&items, "t") else {
+        let Err(Error::Broken(why)) = read(&items, "t") else {
             panic!("a bad #m");
         };
         assert_eq!(why, "`t` has a manifest `#m` Claude Code does not write");

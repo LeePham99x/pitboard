@@ -8830,6 +8830,32 @@ mod tests {
         }
     }
 
+    // What Claude Code 2.1.302 left on the session's PC (2026-10-18) as it moved its login
+    // into Credential Manager, which a fresh session read as "Not logged in".
+    #[test]
+    fn pieces_nobody_can_join_are_said_to_be_unreadable_to_claude_code_too() {
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.backend = Ok(store::Backend::CredentialManager);
+        facts.credential = Err(store::Error::Broken(
+            "`Claude Code-credentials/claude-code-user` lacks piece #2 of the 3 its manifest \
+             names"
+                .into(),
+        ));
+        let check = judge_credential(&facts);
+        assert_eq!(check.level, Level::Fail);
+        assert_eq!(
+            check.detail,
+            "`Claude Code-credentials/claude-code-user` lacks piece #2 of the 3 its manifest \
+             names, which Claude Code cannot read either"
+        );
+        assert!(
+            check.advice.starts_with("Run `claude auth logout`"),
+            "{}",
+            check.advice
+        );
+    }
+
     /// What `/logout` leaves is nobody signed in, not a login whose shape moved.
     #[test]
     fn a_signed_out_credential_is_said_to_be_one() {
