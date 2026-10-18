@@ -35,3 +35,19 @@ export const bar: Record<"ic-batt" | "ic-wifi" | "ic-cc", { viewBox: string; bod
     body: '<rect x=".75" y="1" width="14.5" height="5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="3.6" cy="3.5" r="1.5" fill="currentColor"/><rect x=".75" y="8" width="14.5" height="5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12.4" cy="10.5" r="1.5" fill="currentColor"/>',
   },
 };
+
+// GNOME's symbolic icons in a header bar, 16 pixels square, drawn after Adwaita's.
+export const symbolic: Record<
+  "adw-tab-new" | "adw-pan-down" | "adw-grid" | "adw-menu" | "adw-close",
+  string
+> = {
+  "adw-tab-new":
+    '<rect x="1" y="1" width="14" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 4.5v7M4.5 8h7" stroke="currentColor" stroke-width="2"/>',
+  "adw-pan-down":
+    '<path d="m4 6.5 4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  "adw-grid":
+    '<path d="M2 1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1Zm8 0h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1ZM2 9h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Zm8 0h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z" fill="currentColor"/>',
+  "adw-menu": '<path d="M1 3h14M1 8h14M1 13h14" stroke="currentColor" stroke-width="2"/>',
+  "adw-close":
+    '<path d="m4.75 4.75 6.5 6.5m0-6.5-6.5 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+};

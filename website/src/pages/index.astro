@@ -149,14 +149,23 @@ const jsonLd = [
           class="mt-8.75 max-xl:mt-8"
           pick={false}
           app={{
-            caption: "Switching accounts in Pitboard's menu.",
-            describe:
-              "Pitboard's menu open from the menu bar. Claude Code has personal, in use, and work; Codex has main, in use, and spare; Claude Desktop has home, in use, and office. Each Claude Code and Codex account shows its plan and how much of each limit it has used, and each Claude Desktop account reads No usage read. The pointer chooses work and the menu closes; the menu bar shows work 40%. The pointer opens the menu again, with work first and in use. Then the status line of the Claude Code session behind the menu puts work first.",
+            macos: {
+              caption: "Switching accounts in Pitboard's menu.",
+              describe:
+                "Pitboard's menu open from the menu bar. Claude Code has personal, in use, and work; Codex has main, in use, and spare; Claude Desktop has home, in use, and office. Each Claude Code and Codex account shows its plan and how much of each limit it has used, and each Claude Desktop account reads No usage read. The pointer chooses work and the menu closes; the menu bar shows work 40%. The pointer opens the menu again, with work first and in use. Then the status line of the Claude Code session behind the menu puts work first.",
+            },
           }}
           cli={{
-            caption: "The same accounts in a terminal.",
-            describe:
-              "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace. Then Claude Desktop, whose usage Pitboard does not read: home, in use, read 2h 05m ago, and office, whose sign-in may lapse in 25 days 3 hours.",
+            macos: {
+              caption: "The same accounts in a terminal.",
+              describe:
+                "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace. Then Claude Desktop, whose usage Pitboard does not read: home, in use, read 2h 05m ago, and office, whose sign-in may lapse in 25 days 3 hours.",
+            },
+            linux: {
+              caption: "The same accounts in a terminal.",
+              describe:
+                "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace.",
+            },
           }}
         >
           <Desk demo />
@@ -178,14 +187,18 @@ const jsonLd = [
       <Figure
         slot="fig"
         app={{
-          caption: "The Pitboard window after the switch.",
-          describe:
-            "The top of the Accounts pane after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+          macos: {
+            caption: "The Pitboard window after the switch.",
+            describe:
+              "The top of the Accounts pane after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+          },
         }}
         cli={{
-          caption: "Switching from a terminal.",
-          describe:
-            "<code>pitboard use work</code> prints: Switched to work; personal is parked. Claude Code sessions already running follow within 33 seconds.",
+          macos: {
+            caption: "Switching from a terminal.",
+            describe:
+              "<code>pitboard use work</code> prints: Switched to work; personal is parked. Claude Code sessions already running follow within 33 seconds.",
+          },
         }}
       >
         <Accounts moment="after" crop />
@@ -200,14 +213,18 @@ const jsonLd = [
       <Figure
         slot="fig"
         app={{
-          caption: "Claude Desktop in the Pitboard window.",
-          describe:
-            "The Claude Desktop section of the Accounts pane. home is in use: Read 2h 05m ago, with Claude closed. office has a Use button: Its sign-in may lapse in 25 days.",
+          macos: {
+            caption: "Claude Desktop in the Pitboard window.",
+            describe:
+              "The Claude Desktop section of the Accounts pane. home is in use: Read 2h 05m ago, with Claude closed. office has a Use button: Its sign-in may lapse in 25 days.",
+          },
         }}
         cli={{
-          caption: "Switching Claude Desktop from a terminal.",
-          describe:
-            "<code>pitboard use desktop/home</code> prints: Switched to desktop/home; desktop/office is parked. Claude opens signed in to it.",
+          macos: {
+            caption: "Switching Claude Desktop from a terminal.",
+            describe:
+              "<code>pitboard use desktop/home</code> prints: Switched to desktop/home; desktop/office is parked. Claude opens signed in to it.",
+          },
         }}
       >
         <Accounts moment="after" only="desktop" />
@@ -227,14 +244,23 @@ const jsonLd = [
       <Figure
         slot="fig"
         app={{
-          caption: "The Pitboard window.",
-          describe:
-            "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow, then Claude Desktop's home and office.",
+          macos: {
+            caption: "The Pitboard window.",
+            describe:
+              "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow, then Claude Desktop's home and office.",
+          },
         }}
         cli={{
-          caption: "The same accounts in a terminal.",
-          describe:
-            "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare, and the Claude Desktop accounts home and office.",
+          macos: {
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare, and the Claude Desktop accounts home and office.",
+          },
+          linux: {
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare.",
+          },
         }}
       >
         <Accounts moment="before" />
@@ -259,9 +285,11 @@ const jsonLd = [
           <Figure
             slot="fig"
             app={{
-              caption: "The notification when an account runs out.",
-              describe:
-                "A notification from Pitboard: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+              macos: {
+                caption: "The notification when an account runs out.",
+                describe:
+                  "A notification from Pitboard: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+              },
             }}
           >
             <Notice />
@@ -276,14 +304,18 @@ const jsonLd = [
           <Figure
             slot="fig"
             app={{
-              caption: "Settings, in the Limits pane.",
-              describe:
-                "The Limits pane of Pitboard's Settings, with Switch Claude Code automatically turned on and Switch when a limit reaches 95%. Under it: Watching work: 40% of its weekly limit, as of 20:50.",
+              macos: {
+                caption: "Settings, in the Limits pane.",
+                describe:
+                  "The Limits pane of Pitboard's Settings, with Switch Claude Code automatically turned on and Switch when a limit reaches 95%. Under it: Watching work: 40% of its weekly limit, as of 20:50.",
+              },
             }}
             cli={{
-              caption: "The same from a terminal.",
-              describe:
-                "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
+              macos: {
+                caption: "The same from a terminal.",
+                describe:
+                  "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
+              },
             }}
           >
             <Settings show="switch" />
@@ -298,14 +330,18 @@ const jsonLd = [
           <Figure
             slot="fig"
             app={{
-              caption: "Warm-up in the Limits pane.",
-              describe:
-                "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+              macos: {
+                caption: "Warm-up in the Limits pane.",
+                describe:
+                  "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+              },
             }}
             cli={{
-              caption: "The same from a terminal.",
-              describe:
-                "<code>pitboard warm</code> says Pitboard warms up these accounts from 07:00 to 23:00: personal on, warms up again at 22:00; work off.",
+              macos: {
+                caption: "The same from a terminal.",
+                describe:
+                  "<code>pitboard warm</code> says Pitboard warms up these accounts from 07:00 to 23:00: personal on, warms up again at 22:00; work off.",
+              },
             }}
           >
             <Settings show="warm" />
@@ -324,9 +360,11 @@ const jsonLd = [
       <Figure
         slot="fig"
         app={{
-          caption: "Opening a shared link as an account.",
-          describe:
-            "The Open Link window: Open this claude.ai link as: personal, or work, whose window is open. work is chosen, with Cancel and Open buttons.",
+          macos: {
+            caption: "Opening a shared link as an account.",
+            describe:
+              "The Open Link window: Open this claude.ai link as: personal, or work, whose window is open. work is chosen, with Cancel and Open buttons.",
+          },
         }}
       >
         <OpenLink />
@@ -344,14 +382,23 @@ const jsonLd = [
       <Figure
         slot="fig"
         app={{
-          caption: "The Activity pane.",
-          describe:
-            "The Activity pane of the Pitboard window lists the switch to work, the switch to desktop/home and a warm-up of personal, all asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+          macos: {
+            caption: "The Activity pane.",
+            describe:
+              "The Activity pane of the Pitboard window lists the switch to work, the switch to desktop/home and a warm-up of personal, all asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+          },
         }}
         cli={{
-          caption: "The same from a terminal.",
-          describe:
-            "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal, the switch to desktop/home and the switch to work, each ok.",
+          macos: {
+            caption: "The same from a terminal.",
+            describe:
+              "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal, the switch to desktop/home and the switch to work, each ok.",
+          },
+          linux: {
+            caption: "The same from a terminal.",
+            describe:
+              "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal and the switch to work, each ok.",
+          },
         }}
       >
         <Activity />

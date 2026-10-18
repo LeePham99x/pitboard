@@ -1,6 +1,6 @@
 ---
 import template from "../assets/logo/template.svg?raw";
-import { bar, line } from "../data/glyphs.ts";
+import { bar, line, symbolic } from "../data/glyphs.ts";
 
 const paths = [...template.matchAll(/<path\b[^>]*?\sd="([^"]+)"/g)];
 if (paths.length !== 2) throw new Error("template.svg is not the kit's two paths");
@@ -39,5 +39,8 @@ const dimOpacity = /fill-opacity="([^"]+)"/.exec(template)?.[1] ?? "0.35";
   </symbol>
   {Object.entries(bar).map(([id, g]) => (
     <symbol id={id} viewBox={g.viewBox} set:html={g.body} />
+  ))}
+  {Object.entries(symbolic).map(([id, body]) => (
+    <symbol id={id} viewBox="0 0 16 16" set:html={body} />
   ))}
 </svg>

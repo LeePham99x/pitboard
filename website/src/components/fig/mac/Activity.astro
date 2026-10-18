@@ -1,14 +1,7 @@
 ---
 // The Activity pane, with the entries sessions.ts's `pitboard log` prints, in the app's words.
 import Window from "./Window.astro";
-import { clock } from "../../../data/world.ts";
-
-const rows = [
-  [`13 Oct 2026 at ${clock.switched}`, "Switch", "work", "Pitboard app"],
-  [`13 Oct 2026 at ${clock.desktopSwitched}`, "Switch", "desktop/home", "Pitboard app"],
-  [`13 Oct 2026 at ${clock.warmed}`, "Warm-up", "personal", "Pitboard app"],
-  ["10 Oct 2026 at 09:16", "Enrol", "work", "Command line"],
-];
+import { activity } from "../../../lib/words.ts";
 const th = "px-4 py-5 text-left font-normal text-mac-window-sub inset-shadow-mac-window-b";
 ---
 
@@ -24,14 +17,12 @@ const th = "px-4 py-5 text-left font-normal text-mac-window-sub inset-shadow-mac
       </tr>
     </thead>
     <tbody>
-      {rows.map(([date, change, account, by]) => <tr
-        class="*:px-4 *:py-4 even:*:bg-mac-window-stripe"
-      >
-        <td>{date}</td>
-        <td>{change}</td>
-        <td>{account}</td>
-        <td class="text-mac-window-sub">Done</td>
-        <td class="text-mac-window-sub">{by}</td>
+      {activity("macos").map((e) => <tr class="*:px-4 *:py-4 even:*:bg-mac-window-stripe">
+        <td>{e.date}</td>
+        <td>{e.change}</td>
+        <td>{e.account}</td>
+        <td class="text-mac-window-sub">{e.result}</td>
+        <td class="text-mac-window-sub">{e.by}</td>
       </tr>)}
     </tbody>
   </table>

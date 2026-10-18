@@ -1,0 +1,48 @@
+---
+// Ptyxis 49 in a libadwaita 1.8 window, 80 columns of 11 point type; output colours spans g, y, r, dim.
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+const button = "flex h-34 w-34 items-center justify-center";
+const icon = "size-16 shrink-0";
+---
+
+<div
+  class="relative w-732 overflow-hidden rounded-u-15 bg-linux-term-bg shadow-linux-window outline-1 -outline-offset-1 outline-white/7"
+>
+  <div
+    class="relative flex h-47 items-center bg-linux-bar-bg px-7 pt-6 pb-7 font-linux text-u-15 text-linux-bar-text inset-shadow-linux-bar-b"
+  >
+    <span class="flex">
+      <span class={button}
+        ><svg class={icon}><use href="#adw-tab-new" /></svg></span
+      >
+      <span class="flex h-34 w-24 items-center justify-center"
+        ><svg class={icon}><use href="#adw-pan-down" /></svg></span
+      >
+    </span>
+    <span class="pointer-events-none absolute inset-x-0 flex flex-col items-center leading-[1.2]">
+      <b class="font-bold">{title}</b>
+      <span class="text-u-12 opacity-55">~</span>
+    </span>
+    <span class="ml-auto flex gap-6">
+      <span class={button}
+        ><svg class={icon}><use href="#adw-grid" /></svg></span
+      >
+      <span class={button}
+        ><svg class={icon}><use href="#adw-menu" /></svg></span
+      >
+      <span class:list={[button, "ml-6"]}>
+        <span class="flex size-24 items-center justify-center rounded-circle bg-current/10"
+          ><svg class={icon}><use href="#adw-close" /></svg></span
+        >
+      </span>
+    </span>
+  </div>
+  <div
+    class="flex flex-col px-6 pt-7 pb-3 font-mono text-u-15/20 whitespace-pre-wrap text-linux-term-text ligatures-none *:min-h-20 [&_.dim]:text-linux-term-dim [&_.g]:text-linux-term-green [&_.r]:text-linux-term-red [&_.y]:text-linux-term-yellow"
+  >
+    <slot />
+  </div>
+</div>

@@ -1,19 +1,49 @@
 ---
-import Terminal from "./mac/Terminal.astro";
-import type { Session } from "../../data/sessions.ts";
+// A session in the terminal of each system it runs on, macOS's standing in for one not drawn here.
+import LinuxTerminal from "./linux/Terminal.astro";
+import MacTerminal from "./mac/Terminal.astro";
+import { printed, type Session } from "../../data/sessions.ts";
+import { shownOn } from "../../lib/platform.ts";
 
 interface Props {
   session: Session;
 }
 const { session } = Astro.props;
+const prompts = {
+  macos: ['<span class="text-mac-term-dim">%</span>', '<span class="bg-mac-term-dim"> </span>'],
+  linux: [
+    '<span class="text-linux-term-dim">$</span>',
+    '<span class="bg-linux-term-text"> </span>',
+  ],
+};
+const drawn = (["macos", "linux"] as const).filter((p) => !session.on || session.on.includes(p));
+// the command typed at the prompt, what it printed, and the prompt again with the cursor
+const lines = (p: (typeof drawn)[number]) => {
+  const [prompt, cursor] = prompts[p];
+  return [
+    `${prompt} ${session.command}`,
+    ...printed(session, p).map((line) => line || " "),
+    `${prompt} ${cursor}`,
+  ];
+};
+const desk = "desk flex min-h-0 items-center justify-center";
 ---
 
-<div class="desk flex min-h-0 items-center justify-center py-20" aria-hidden="true" data-output>
-  <Terminal title={session.title} solo>
-    <div><span class="text-mac-term-dim">%</span> {session.command}</div>
-    {session.output.map((line) => (
-      <div set:html={line || " "} />
-    ))}
-    <div><span class="text-mac-term-dim">%</span> <span class="bg-mac-term-dim"> </span></div>
-  </Terminal>
+<div class={shownOn("macos", drawn)}>
+  <div class:list={[desk, "py-20"]} aria-hidden="true" data-output>
+    <MacTerminal title={session.title} solo>
+      {lines("macos").map((line) => (
+        <div set:html={line} />
+      ))}
+    </MacTerminal>
+  </div>
 </div>
+{drawn.includes("linux") && <div class={shownOn("linux", drawn)}>
+  <div class:list={[desk, "py-24 desk-px-780"]} aria-hidden="true" data-output>
+    <LinuxTerminal title={session.title}>
+      {lines("linux").map((line) => (
+        <div set:html={line} />
+      ))}
+    </LinuxTerminal>
+  </div>
+</div>}

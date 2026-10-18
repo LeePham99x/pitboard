@@ -4,12 +4,15 @@
 import {
   accounts,
   inUse,
+  logged,
   tools,
   type Account,
   type Limit,
+  type Logged,
   type Moment,
   type Tool,
 } from "../data/world.ts";
+import type { Platform } from "./platform.ts";
 
 export type Standing = "over" | "under" | "even";
 
@@ -170,3 +173,27 @@ export function statusLine(moment: Moment): string {
     ...others.map((a) => `${span("dim", a.label)} ${shares(a, false)}`),
   ].join("  ");
 }
+
+// The activity list's changes, newest first, in the app's words (present/words.rs `change_verb`,
+// `change_outcome` and `change_caller`).
+const verbs: Record<string, string> = { use: "Switch", enroll: "Enrol", "warm-up": "Warm-up" };
+const callers = { app: "Pitboard app", cli: "Command line" };
+const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+
+// As the menu bar app dates a change: "13 Oct 2026 at 20:49".
+const macDate = (e: Logged) => {
+  const [year, month, day] = e.day.split("-").map(Number);
+  return `${day} ${months[month - 1]} ${year} at ${e.time.slice(0, 5)}`;
+};
+
+export const activity = (platform: Platform) =>
+  logged
+    .filter((e) => !e.on || e.on.includes(platform))
+    .reverse()
+    .map((e) => ({
+      date: macDate(e),
+      change: verbs[e.verb],
+      account: e.account,
+      result: "Done",
+      by: callers[e.caller],
+    }));
