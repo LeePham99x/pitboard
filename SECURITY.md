@@ -10,7 +10,7 @@ Each of the app's account windows keeps a claude.ai or chatgpt.com sign-in.
 
 | Version | Supported |
 | --- | --- |
-| The most recent release, and any beta published after it | Yes |
+| The most recent release, and the newest beta published after it | Yes |
 | Earlier releases and betas | No |
 
 Pitboard for Windows is in beta. A fix ships in the next release or beta. To update, follow
