@@ -8,17 +8,24 @@ import {
   readPublished,
   readRelease,
   readStars,
+  windowsMsi,
+  windowsRelease,
+  windowsSigned,
+  windowsZip,
   type Release,
 } from "./github.ts";
 
-const recorded = JSON.parse(
-  readFileSync(new URL("../data/fixtures/release-latest.json", import.meta.url), "utf8"),
-);
-const sums = readFileSync(new URL("../data/fixtures/SHA256SUMS", import.meta.url), "utf8");
+const fixture = (name: string) =>
+  readFileSync(new URL(`../data/fixtures/${name}`, import.meta.url), "utf8");
+const recorded = JSON.parse(fixture("release-latest.json"));
+const sums = fixture("SHA256SUMS");
+const recordedBeta = JSON.parse(fixture("release-v1.0.0-beta.1.json"));
+const betaSums = fixture("SHA256SUMS-v1.0.0-beta.1");
 
 const API = "https://api.github.com/repos/datlechin/pitboard";
 const WEB = "https://github.com/datlechin/pitboard";
 const SUMS_URL = `${WEB}/releases/download/v0.15.0/SHA256SUMS`;
+const BETA_SUMS_URL = `${WEB}/releases/download/v1.0.0-beta.1/SHA256SUMS`;
 
 type Route = (init: RequestInit) => Response | Promise<Response>;
 
@@ -41,6 +48,33 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
     status,
     headers: { "content-type": "application/json", ...headers },
   });
+
+const latest = () => readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
+const beta = async () => {
+  const published = await readPublished(
+    {
+      fetch: server({}).f,
+      fixture: new Map([["1.0.0-beta.1", { release: recordedBeta, sums: betaSums }]]),
+    },
+    ["1.0.0-beta.1"],
+  );
+  return published.get("1.0.0-beta.1")!;
+};
+
+// A release with only the files a test names.
+const made = (version: string, names: string[]): Release => ({
+  version,
+  tag: `v${version}`,
+  prerelease: version.includes("-"),
+  assets: names.map((name) => ({ name, size: 1, sha256: null, url: "" })),
+  source: "fixture",
+});
+const installers = (version: string) =>
+  made(version, [
+    `Pitboard-v${version}-windows-x64.msi`,
+    `Pitboard-v${version}-windows-arm64.msi`,
+    "SHA256SUMS",
+  ]);
 
 test("reads the latest release from the API, with digests from SHA256SUMS", async () => {
   const { f, asked } = server({
@@ -123,13 +157,19 @@ test("fails when neither the API nor the release pages answer", async () => {
   await assert.rejects(readRelease({ fetch: f }), /PITBOARD_SITE_OFFLINE=1/);
 });
 
-test("refuses a pre-release or a tag that is not a version", async () => {
-  for (const change of [{ prerelease: true }, { draft: true }, { tag_name: "nightly" }]) {
+test("refuses a draft, an rc, and a pre-release that is not a beta", async () => {
+  const cases: [Record<string, unknown>, RegExp][] = [
+    [{ draft: true }, /v0\.15\.0 is a draft/],
+    [{ prerelease: true }, /v0\.15\.0 is a pre-release, which only a beta is/],
+    [{ tag_name: "v1.0.0-rc1", prerelease: true }, /v1\.0\.0-rc1 is not the tag of a release/],
+    [{ tag_name: "nightly" }, /nightly is not the tag of a release/],
+  ];
+  for (const [change, why] of cases) {
     const { f } = server({
       [`GET ${API}/releases/latest`]: () => json({ ...recorded, ...change }),
       [`GET ${SUMS_URL}`]: () => new Response(sums),
     });
-    await assert.rejects(readRelease({ fetch: f }));
+    await assert.rejects(readRelease({ fetch: f }), why);
   }
 });
 
@@ -138,45 +178,103 @@ test("reads the recorded fixture offline without the network", async () => {
   const r = await readRelease({ fetch: f, fixture: { release: recorded, sums } });
   assert.equal(r.source, "fixture");
   assert.equal(r.version, "0.15.0");
+  assert.equal(r.prerelease, false);
   assert.equal(asked.length, 0);
 });
 
-test("reads which betas GitHub has published, and a draft as not", async () => {
-  const beta = (tag: string, draft = false) =>
-    json({ ...recorded, tag_name: tag, draft, prerelease: true });
+test("reads each beta GitHub has published, with its files, and a draft as not", async () => {
   const { f, asked } = server({
     [`GET ${API}/releases/tags/v1.0.0-beta.3`]: () => json({ message: "Not Found" }, 404),
-    [`GET ${API}/releases/tags/v1.0.0-beta.2`]: () => beta("v1.0.0-beta.2", true),
-    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => beta("v1.0.0-beta.1"),
+    [`GET ${API}/releases/tags/v1.0.0-beta.2`]: () =>
+      json({ ...recordedBeta, tag_name: "v1.0.0-beta.2", draft: true }),
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json(recordedBeta),
+    [`GET ${BETA_SUMS_URL}`]: () => new Response(betaSums),
   });
   const published = await readPublished({ fetch: f, token: "t0ken" }, [
     "1.0.0-beta.3",
     "1.0.0-beta.2",
     "1.0.0-beta.1",
   ]);
-  assert.deepEqual([...published], ["1.0.0-beta.1"]);
-  assert.ok(asked.every((a) => a.auth === "Bearer t0ken"));
-  assert.deepEqual([...(await readPublished({ fetch: server({}).f }, []))], []);
+  assert.deepEqual([...published.keys()], ["1.0.0-beta.1"]);
+  const r = published.get("1.0.0-beta.1")!;
+  assert.equal(r.tag, "v1.0.0-beta.1");
+  assert.equal(r.prerelease, true);
+  assert.equal(r.source, "api");
+  assert.equal(r.assets.length, 20);
+  assert.equal(
+    r.assets.find((a) => a.name === "Pitboard-v1.0.0-beta.1-windows-x64.msi")?.sha256,
+    "494e0ea25832687ed788cf18fdcd725d6da18e99a01dc7a89f650511b9689cf4",
+  );
+  // a draft's files are not public, so they are never asked for
+  assert.ok(!asked.some((a) => a.url.includes("/download/v1.0.0-beta.2/")));
+  for (const a of asked) assert.equal(a.auth, a.url.startsWith(API) ? "Bearer t0ken" : null);
+  assert.equal((await readPublished({ fetch: server({}).f }, [])).size, 0);
 });
 
-test("stops when GitHub cannot say whether a beta is published", async () => {
-  const limited = server({
-    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ message: "rate limit" }, 403),
+test("refuses a beta GitHub does not mark as a pre-release, or another tag's answer", async () => {
+  const unmarked = server({
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ ...recordedBeta, prerelease: false }),
+    [`GET ${BETA_SUMS_URL}`]: () => new Response(betaSums),
   });
-  await assert.rejects(readPublished({ fetch: limited.f }, ["1.0.0-beta.1"]), /answered 403/);
+  await assert.rejects(
+    readPublished({ fetch: unmarked.f }, ["1.0.0-beta.1"]),
+    /v1\.0\.0-beta\.1 is a beta GitHub does not mark as a pre-release/,
+  );
   const other = server({
     [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ ...recorded, tag_name: "v1.0.0" }),
   });
   await assert.rejects(readPublished({ fetch: other.f }, ["1.0.0-beta.1"]), /v1\.0\.0/);
 });
 
-test("takes the recorded betas offline without the network", async () => {
-  const { f, asked } = server({});
-  const published = await readPublished({ fetch: f, fixture: ["1.0.0-beta.1"] }, [
+test("reads a beta from its release pages on a rate limit, and one with no files as unpublished", async () => {
+  const routes: Record<string, Route> = {
+    [`GET ${API}/releases/tags/v1.0.0-beta.2`]: () => json({ message: "rate limit" }, 403),
+    [`GET ${WEB}/releases/download/v1.0.0-beta.2/SHA256SUMS`]: () =>
+      new Response("Not Found", { status: 404 }),
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ message: "rate limit" }, 403),
+    [`GET ${BETA_SUMS_URL}`]: () => new Response(betaSums),
+  };
+  for (const a of recordedBeta.assets as { name: string; size: number }[]) {
+    routes[`HEAD ${WEB}/releases/download/v1.0.0-beta.1/${a.name}`] = () =>
+      new Response(null, { status: 200, headers: { "content-length": String(a.size) } });
+  }
+  const published = await readPublished({ fetch: server(routes).f }, [
     "1.0.0-beta.2",
     "1.0.0-beta.1",
   ]);
-  assert.deepEqual([...published], ["1.0.0-beta.1"]);
+  assert.deepEqual([...published.keys()], ["1.0.0-beta.1"]);
+  const r = published.get("1.0.0-beta.1")!;
+  assert.equal(r.source, "fallback");
+  assert.equal(r.prerelease, true);
+  assert.deepEqual(
+    r.assets.map((a) => a.name).sort(),
+    [...parseSums(betaSums).keys(), "SHA256SUMS"].sort(),
+  );
+  assert.equal(
+    r.assets.find((a) => a.name === "Pitboard-v1.0.0-beta.1-windows-arm64.msi")?.size,
+    79483492,
+  );
+});
+
+test("stops when neither the API nor the release pages say whether a beta is published", async () => {
+  const { f } = server({
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ message: "rate limit" }, 403),
+  });
+  await assert.rejects(
+    readPublished({ fetch: f, ci: true }, ["1.0.0-beta.1"]),
+    /neither GitHub's API nor its release pages answered/,
+  );
+  await assert.rejects(readPublished({ fetch: f }, ["1.0.0-beta.1"]), /PITBOARD_SITE_OFFLINE=1/);
+});
+
+test("takes the recorded betas offline without the network", async () => {
+  const { f, asked } = server({});
+  const published = await readPublished(
+    { fetch: f, fixture: new Map([["1.0.0-beta.1", { release: recordedBeta, sums: betaSums }]]) },
+    ["1.0.0-beta.2", "1.0.0-beta.1"],
+  );
+  assert.deepEqual([...published.keys()], ["1.0.0-beta.1"]);
+  assert.equal(published.get("1.0.0-beta.1")?.source, "fixture");
   assert.equal(asked.length, 0);
 });
 
@@ -208,7 +306,7 @@ test("sizes read as /download prints them", () => {
 });
 
 test("lists the release's files in order and fails on one it does not know", async () => {
-  const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
+  const r = await latest();
   const rows = fileRows(r);
   assert.deepEqual(
     rows.map((row) => row.asset.name),
@@ -235,68 +333,106 @@ test("lists the release's files in order and fails on one it does not know", asy
   assert.throws(() => fileRows(more), /does not describe/);
 });
 
-test("lists a release's Windows zips after the Linux tarballs", async () => {
-  const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
-  const zips = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"].flatMap((triple) =>
-    [".zip", ".zip.cdx.json"].map((end) => ({
-      name: `pitboard-v0.15.0-${triple}${end}`,
-      size: 1,
-      sha256: null,
-      url: "",
-    })),
-  );
-  const rows = fileRows({ ...r, assets: [...r.assets, ...zips] });
+test("lists a beta's files in order, each with the platforms it serves", async () => {
+  const rows = fileRows(await beta());
   assert.deepEqual(
-    rows.slice(5, 7).map((row) => [row.asset.name, row.forHtml, row.bom?.name]),
+    rows.map((row) => [row.asset.name, row.platforms]),
     [
+      ["Pitboard-v1.0.0-beta.1-macos.zip", ["macos"]],
+      ["Pitboard-v1.0.0-beta.1-windows-x64.msi", ["windows"]],
+      ["Pitboard-v1.0.0-beta.1-windows-arm64.msi", ["windows"]],
+      ["pitboard-v1.0.0-beta.1-aarch64-apple-darwin.tar.gz", ["macos"]],
+      ["pitboard-v1.0.0-beta.1-x86_64-apple-darwin.tar.gz", ["macos"]],
+      ["pitboard-v1.0.0-beta.1-x86_64-unknown-linux-musl.tar.gz", ["linux"]],
+      ["pitboard-v1.0.0-beta.1-aarch64-unknown-linux-musl.tar.gz", ["linux"]],
+      ["pitboard-v1.0.0-beta.1-x86_64-pc-windows-msvc.zip", ["windows"]],
+      ["pitboard-v1.0.0-beta.1-aarch64-pc-windows-msvc.zip", ["windows"]],
+      ["install.sh", ["macos", "linux"]],
+      ["SHA256SUMS", ["macos", "windows", "linux"]],
+    ],
+  );
+  assert.deepEqual(
+    rows
+      .filter((row) => row.platforms.includes("windows") && row.bom)
+      .map((row) => [row.forHtml, row.bom?.name]),
+    [
+      ["The app, Windows on x64", "Pitboard-v1.0.0-beta.1-windows-x64.msi.cdx.json"],
+      ["The app, Windows on ARM64", "Pitboard-v1.0.0-beta.1-windows-arm64.msi.cdx.json"],
       [
-        "pitboard-v0.15.0-x86_64-pc-windows-msvc.zip",
         "Command line, Windows on x64",
-        "pitboard-v0.15.0-x86_64-pc-windows-msvc.zip.cdx.json",
+        "pitboard-v1.0.0-beta.1-x86_64-pc-windows-msvc.zip.cdx.json",
       ],
       [
-        "pitboard-v0.15.0-aarch64-pc-windows-msvc.zip",
         "Command line, Windows on ARM64",
-        "pitboard-v0.15.0-aarch64-pc-windows-msvc.zip.cdx.json",
+        "pitboard-v1.0.0-beta.1-aarch64-pc-windows-msvc.zip.cdx.json",
       ],
     ],
   );
 });
 
-test("lists a release's MSIs after the macOS app, and the Windows feed after the macOS one", async () => {
-  const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
-  const windows = [
-    "Pitboard-v0.15.0-windows-x64.msi",
-    "Pitboard-v0.15.0-windows-x64.msi.cdx.json",
-    "Pitboard-v0.15.0-windows-arm64.msi",
-    "Pitboard-v0.15.0-windows-arm64.msi.cdx.json",
-    "appcast-windows.xml",
-  ].map((name) => ({ name, size: 1, sha256: null, url: "" }));
-  const rows = fileRows({ ...r, assets: [...r.assets, ...windows] });
+test("gives each update feed to its own platform", async () => {
+  const r = await latest();
+  const feed = { name: "appcast-windows.xml", size: 1, sha256: null, url: "" };
+  const rows = fileRows({ ...r, assets: [...r.assets, feed] });
   assert.deepEqual(
-    rows.map((row) => row.asset.name),
+    rows.slice(-2).map((row) => [row.asset.name, row.forHtml, row.platforms, row.bom]),
     [
-      "Pitboard-v0.15.0-macos.zip",
-      "Pitboard-v0.15.0-windows-x64.msi",
-      "Pitboard-v0.15.0-windows-arm64.msi",
-      "pitboard-v0.15.0-aarch64-apple-darwin.tar.gz",
-      "pitboard-v0.15.0-x86_64-apple-darwin.tar.gz",
-      "pitboard-v0.15.0-x86_64-unknown-linux-musl.tar.gz",
-      "pitboard-v0.15.0-aarch64-unknown-linux-musl.tar.gz",
-      "install.sh",
-      "SHA256SUMS",
-      "appcast.xml",
-      "appcast-windows.xml",
+      ["appcast.xml", "The feed the app updates from", ["macos"], null],
+      ["appcast-windows.xml", "The feed the Windows app updates from", ["windows"], null],
     ],
   );
+});
+
+test("takes Windows files from the latest release once it has both installers, and until then from the newest published beta", async () => {
+  const r = await latest();
+  const b = await beta();
+  assert.equal(windowsRelease(r, [b]), b);
+  const later = installers("1.0.0-beta.2");
+  assert.equal(windowsRelease(r, [b, later]), later);
+  assert.equal(windowsRelease(r, [later, b]), later);
+  const half = made("1.0.0-beta.3", ["Pitboard-v1.0.0-beta.3-windows-x64.msi", "SHA256SUMS"]);
+  assert.equal(windowsRelease(r, [b, half]), b);
+  const full = installers("1.0.0");
+  assert.equal(windowsRelease(full, [installers("1.1.0-beta.1")]), full);
+  assert.throws(() => windowsRelease(r, []), /no published release has the Windows installers/);
+});
+
+test("finds the Windows installer and zip of each architecture", async () => {
+  const b = await beta();
   assert.deepEqual(
-    [rows[1], rows[2], rows[10]].map((row) => [row.forHtml, row.bom?.name ?? null]),
+    (["x64", "arm64"] as const).map((arch) => [
+      windowsMsi(b, arch).name,
+      windowsMsi(b, arch).size,
+      windowsZip(b, arch).name,
+    ]),
     [
-      ["The app, Windows on x64", "Pitboard-v0.15.0-windows-x64.msi.cdx.json"],
-      ["The app, Windows on ARM64", "Pitboard-v0.15.0-windows-arm64.msi.cdx.json"],
-      ["The feed the Windows app updates from", null],
+      [
+        "Pitboard-v1.0.0-beta.1-windows-x64.msi",
+        83587732,
+        "pitboard-v1.0.0-beta.1-x86_64-pc-windows-msvc.zip",
+      ],
+      [
+        "Pitboard-v1.0.0-beta.1-windows-arm64.msi",
+        79483492,
+        "pitboard-v1.0.0-beta.1-aarch64-pc-windows-msvc.zip",
+      ],
     ],
   );
+  const r = await latest();
+  assert.throws(() => windowsMsi(r, "x64"), /v0\.15\.0 has no Pitboard-v0\.15\.0-windows-x64\.msi/);
+  assert.throws(
+    () => windowsZip(r, "arm64"),
+    /v0\.15\.0 has no pitboard-v0\.15\.0-aarch64-pc-windows-msvc\.zip/,
+  );
+});
+
+test("reads Windows files as signed in a full release, and in a beta from the version a signer was set at", async () => {
+  const b = await beta();
+  assert.equal(windowsSigned(b, null), false);
+  assert.equal(windowsSigned(b, "1.0.0-beta.2"), false);
+  assert.equal(windowsSigned(installers("1.0.0-beta.2"), "1.0.0-beta.2"), true);
+  assert.equal(windowsSigned(installers("1.1.0-beta.1"), "1.0.0-beta.2"), true);
+  assert.equal(windowsSigned(installers("1.0.0"), null), true);
 });
 
 test("reads SHA256SUMS in text and binary mode, and refuses anything else", () => {
