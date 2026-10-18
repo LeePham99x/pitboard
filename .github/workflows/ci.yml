@@ -706,6 +706,8 @@ jobs:
             @('pitboard_share_ffi.dll', 'Assets\Square150x150Logo.png', 'Assets\Square44x44Logo.png', 'Assets\StoreLogo.png' |
               ForEach-Object { Get-Item -LiteralPath (Join-Path $unsigned $_) })
           $share | Remove-Item
+          # Only Pitboard.Share has an Assets folder. Delete throws if anything else is in it.
+          [IO.Directory]::Delete((Join-Path $unsigned 'Assets'))
           # An intermediate folder each, so neither build takes the other's output for its own.
           foreach ($kind in @{ Name = 'msi'; App = 'release'; Signed = 'true' }, @{ Name = 'msi-unsigned'; App = 'release-unsigned'; Signed = 'false' }) {
             dotnet build Pitboard.Installer -c Release -o (Join-Path $out $kind.Name) "-p:IntermediateOutputPath=obj\$($kind.Name)\" `
@@ -718,7 +720,7 @@ jobs:
             Write-Output "Extracted $msi into $folder."
             "$($kind.Name)-folder=$folder" >> $env:GITHUB_OUTPUT
           }
-      - name: "The MSI's files: the checks of the Release build"
+      - name: "The MSIs' files: the checks of the Release build"
         shell: pwsh
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
@@ -727,10 +729,14 @@ jobs:
           VERSION: ${{ steps.manifest.outputs.version }}
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
           IMAGE: ${{ steps.msi.outputs.msi-folder }}
-        run: >
-          ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
-          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION -FileVersion $env:FILE_VERSION
+          UNSIGNED_IMAGE: ${{ steps.msi.outputs.msi-unsigned-folder }}
+        run: |
+          ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE `
+            -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY `
+            -Version $env:VERSION -FileVersion $env:FILE_VERSION
+          ./.github/scripts/check-windows-app.ps1 -Folder $env:UNSIGNED_IMAGE -Triple $env:TRIPLE `
+            -GatedLibrary target/gated/release/pitboard_ffi.dll -UpdateKey $env:UPDATE_TEST_KEY `
+            -Version $env:VERSION -FileVersion $env:FILE_VERSION
       - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and the signed package"
         shell: pwsh
         env:
