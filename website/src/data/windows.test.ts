@@ -67,6 +67,19 @@ test("the menu heads each tool's accounts with its name, and names each account 
   );
 });
 
+test("an account's tooltip in the icon's menu is the line the menu bar app shows under it", () => {
+  assert.ok(shell("IconMenu.cs").includes("Lines(item.Summary, item.Help)"));
+  assert.ok(views("IconMenuFlyout.cs").includes("ToolTipService.SetToolTip(item, detail);"));
+  assert.ok(
+    present("accounts.rs").includes("summary: summary(seen, account, switching, needs_sign_in),"),
+  );
+  const [work] = iconMenu("before", false)
+    .flat()
+    .filter((e) => "account" in e && e.label === "work");
+  assert.ok(work && "tip" in work);
+  assert.equal(work.tip, "5-hour 12%, weekly 40%");
+});
+
 test("a site with several accounts' windows is a submenu of their labels", () => {
   const source = repo("crates/pitboard-ffi/src/account_windows/accounts.rs");
   assert.ok(source.includes('title: format!("Open {}", site.name()),'));
