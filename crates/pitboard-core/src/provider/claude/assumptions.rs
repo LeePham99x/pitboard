@@ -390,6 +390,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         windows: Read("2.1.301"),
     },
     PerSystem {
+        name: "credman_move_lost_a_piece",
+        macos: NotRead("Linux and macOS keep no login in Credential Manager"),
+        linux: NotRead("Linux and macOS keep no login in Credential Manager"),
+        windows: Read("2.1.302"),
+    },
+    PerSystem {
         name: "credman_unreachable_writes_file",
         macos: NotRead("macOS's counterpart is locked_sign_in_writes_fallback"),
         linux: NotRead("Linux keeps the login in a file"),
@@ -1463,6 +1469,37 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "credman_move_lost_a_piece",
+        fact: "Claude Code's move of a login into Credential Manager can leave pieces no read \
+               can join, and the login with them. Measured with 2.1.302 on 2026-10-18 on the \
+               session's PC, Windows 11 build 26300 on ARM64: `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` \
+               turned on, a session moved a 524-byte `.credentials.json` login there as `#m`, 16 \
+               bytes naming 3 pieces, beside `#0` and `#1` of 2400 bytes each, with no `#2`, no \
+               `#p` and no item of its own, and deleted the file; a new session said \
+               \"Not logged in\". With those items there, `claude auth login` said it was \
+               logged in and wrote nothing. `claude auth logout` deleted every item, and a \
+               sign-in after it wrote one item of 524 bytes and no file. Read in the code: what \
+               it moves is its whole storage object, written whole up to 2400 bytes and above \
+               that as base64 pieces; no single write names a piece it lacks, while the 2-second \
+               timeout on each call and its lock's stale and re-entered holds can let two \
+               overlap; its login skips its write after a strict read that failed, and its \
+               logout deletes the pieces a manifest names and every one found from `#0` on",
+        read_from: "the Credential Manager store's write, read and delete, the fallback wrapper's \
+                    update, `claude auth login`'s save and `claude auth logout`, in the \
+                    win32-x64 build of 2.1.302, read as bytes on 2026-10-18, and the session's \
+                    `credman-names` reports of steps 7 and 8",
+        verified_against: "2.1.302",
+        depends: "claude::pieces::read, which takes pieces no read can join for a broken login \
+                  (store::Error::Broken), and doctor's credential check and every refusal over \
+                  it, which say Claude Code cannot read it either and that `claude auth logout`, \
+                  then a sign-in, clears it",
+        probe: &[
+            "logout: secure storage could not be read",
+            "Couldn't save your login. Try logging in again.",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "credman_unreachable_writes_file",
         fact: "with Credential Manager on, a session whose start-up look at `Bun.secrets` \
                failed, as every call fails in a network logon, reads no login there and fails \
@@ -1883,6 +1920,7 @@ mod tests {
                 "credman_chunking",
                 "credman_probe",
                 "credman_migration",
+                "credman_move_lost_a_piece",
                 "credman_unreachable_writes_file",
                 "credman_attributes",
                 "windows_browser_open",

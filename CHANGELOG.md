@@ -17,6 +17,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Code does, instead of missing the `env` that turns Credential Manager on.
 - On Windows, `pitboard doctor` and **This PC** say whether Claude Code runs the status line in
   PowerShell 7 or Windows PowerShell, and which one, instead of PowerShell alone.
+- On Windows, where Claude Code left its login in Credential Manager in pieces nobody can join,
+  `pitboard doctor`, **This PC** and a refused switch say that Claude Code cannot read it either,
+  and that `claude auth logout`, then a sign-in, clears it.
 - `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
   new PC with nothing enrolled no longer reads as broken.
 - `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex

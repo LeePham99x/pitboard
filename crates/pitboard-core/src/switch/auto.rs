@@ -184,7 +184,11 @@ fn unreadable_here(error: &Error) -> bool {
         Error::RenewalLost { error, .. } => unreadable_here(error),
         error => matches!(
             error,
-            Error::Store(crate::store::Error::Locked | crate::store::Error::Unreadable(_))
+            Error::Store(
+                crate::store::Error::Locked
+                    | crate::store::Error::Unreadable(_)
+                    | crate::store::Error::Broken(_)
+            )
         ),
     }
 }

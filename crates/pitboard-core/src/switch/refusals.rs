@@ -274,7 +274,11 @@ fn the_first_account_goes_in_where_nothing_is_signed_in() {
             "{tool}"
         );
         assert!(
-            state.get(&m.key("there")).expect("enrolled").parked.is_none(),
+            state
+                .get(&m.key("there"))
+                .expect("enrolled")
+                .parked
+                .is_none(),
             "{tool}: its park is the login in use now"
         );
     }

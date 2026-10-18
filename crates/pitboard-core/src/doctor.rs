@@ -2024,6 +2024,14 @@ fn judge_credential(facts: &Facts) -> Check {
                 }
             ),
         ),
+        // `claude auth login` writes nothing over it (`credman_move_lost_a_piece`).
+        Err(store::Error::Broken(why)) => fail(
+            "credential",
+            "credential",
+            format!("{why}, which Claude Code cannot read either"),
+            "Run `claude auth logout`, which deletes it, then sign in to Claude Code again. \
+             Signing in before that leaves it as it is.",
+        ),
         Err(e) => fail(
             "credential",
             "credential",
@@ -2599,17 +2607,13 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
         None if line.runs_pitboard => warn(
             "status_line",
             "status line",
-            format!(
-                "Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"
-            ),
+            format!("Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"),
             "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
         ),
         None => ok(
             "status_line",
             "status line",
-            format!(
-                "Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"
-            ),
+            format!("Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"),
         ),
     })
 }
@@ -8621,7 +8625,11 @@ mod tests {
         for installed in [true, false] {
             facts.claude_program = installed;
             let checks = evaluate(&facts);
-            assert_eq!(check(&checks, "config_file").level, Level::Warn, "{installed}");
+            assert_eq!(
+                check(&checks, "config_file").level,
+                Level::Warn,
+                "{installed}"
+            );
             assert!(
                 checks.iter().all(|c| c.level != Level::Fail),
                 "{installed}: {:?}",

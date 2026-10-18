@@ -621,16 +621,14 @@ mod tests {
         std::fs::write(&settings, marked(&forced)).expect("written");
         assert_eq!(
             on(&scratch),
-            Some(format!("`{FORCE}` is 1 in the env of {}", settings.display()))
+            Some(format!(
+                "`{FORCE}` is 1 in the env of {}",
+                settings.display()
+            ))
         );
         // `Out-File` and `>` in Windows PowerShell 5.1 write UTF-16LE after FF FE.
         let mut wide = vec![0xFF, 0xFE];
-        wide.extend(
-            forced
-                .to_string()
-                .encode_utf16()
-                .flat_map(u16::to_le_bytes),
-        );
+        wide.extend(forced.to_string().encode_utf16().flat_map(u16::to_le_bytes));
         std::fs::write(&settings, wide).expect("written");
         assert!(on(&scratch).is_some(), "UTF-16LE");
         std::fs::remove_file(&settings).expect("removed");
@@ -850,7 +848,7 @@ mod tests {
             .expect("a bad one");
         assert!(matches!(
             store.read(&scratch.service),
-            Err(Error::Unreadable(_))
+            Err(Error::Broken(_))
         ));
     }
 
