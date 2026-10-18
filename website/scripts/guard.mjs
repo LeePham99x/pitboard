@@ -6,7 +6,8 @@ import { closest, elements, parse, textOf, walk } from "./html.mjs";
 
 const DIST = new URL("../dist/", import.meta.url).pathname;
 const FONTS = new URL("../src/assets/fonts/", import.meta.url).pathname;
-const DOCS_RULES = new URL("../../docs/AGENTS.md", import.meta.url).pathname;
+const DOCS = new URL("../../docs/", import.meta.url).pathname;
+const DOCS_RULES = join(DOCS, "AGENTS.md");
 
 const BUDGETS = {
   html: {
@@ -177,11 +178,11 @@ export function checkPage(name, html, rules) {
   return { problems, root, all };
 }
 
+const idsOf = (page) => new Set(page.all.map((e) => e.attrs.id).filter(Boolean));
+
 function checkLinks(pages) {
   const problems = [];
-  const ids = new Map(
-    [...pages].map(([name, p]) => [name, new Set(p.all.map((e) => e.attrs.id).filter(Boolean))]),
-  );
+  const ids = new Map([...pages].map(([name, p]) => [name, idsOf(p)]));
   const resolve = (path) => {
     if (path === "/") return "index.html";
     const clean = path.replace(/^\//, "");
@@ -202,6 +203,25 @@ function checkLinks(pages) {
       if (frag && target.endsWith(".html") && !ids.get(target)?.has(decodeURIComponent(frag))) {
         problems.push(`${name}: ${href} names an anchor ${target} does not have`);
       }
+    }
+  }
+  return problems;
+}
+
+// The docs link the site by its full address, which checkLinks passes over.
+export function checkDocsToSite(pages, docs) {
+  const problems = [];
+  for (const [file, text] of docs) {
+    for (const [url, path = "", id] of text.matchAll(
+      /https:\/\/usepitboard\.com(\/[\w./-]*)?#([\w.-]*\w)/g,
+    )) {
+      const clean = path.replace(/^\/|\/$/g, "");
+      const name = clean
+        ? [`${clean}.html`, `${clean}/index.html`].find((n) => pages.has(n))
+        : "index.html";
+      if (!pages.has(name)) problems.push(`${file}: ${url} goes to no page`);
+      else if (!idsOf(pages.get(name)).has(id))
+        problems.push(`${file}: ${url} names an id ${name} does not have`);
     }
   }
   return problems;
@@ -357,7 +377,16 @@ function main() {
     pages.set(f, page);
     report.push(`${f} ${size}`);
   }
-  problems.push(...checkLinks(pages), ...checkVersions(pages), ...checkSigningPolicy(pages));
+  const docs = readdirSync(DOCS, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith(".mdx") || f === "docs.json")
+    .map((f) => [`docs/${f}`, readFileSync(join(DOCS, f), "utf8")]);
+  problems.push(
+    ...checkLinks(pages),
+    ...checkVersions(pages),
+    ...checkSigningPolicy(pages),
+    ...checkDocsToSite(pages, docs),
+  );
 
   console.log(
     `guard: html gzipped ${report.join(", ")}; css ${css}; js ${js}; fonts ${fontBytes} in ${fonts.length}`,
