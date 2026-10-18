@@ -1,90 +1,87 @@
 ---
 import { commands } from "../data/commands.ts";
 import { DOCS } from "../data/site.ts";
+import { siteData } from "../lib/data.ts";
+import { appZip, windowsMsi } from "../lib/github.ts";
+import type { Platform } from "../lib/platform.ts";
 import CommandBox from "./CommandBox.astro";
 import DownloadButton from "./DownloadButton.astro";
+import PlatformTabs from "./PlatformTabs.astro";
 
 interface Props {
   n: number;
-  zipUrl: string;
   class?: string;
 }
-const { n, zipUrl, class: extra } = Astro.props;
-const tab =
-  "relative -mx-2 h-11 cursor-pointer px-2 font-mono text-control/5 font-semibold text-muted hover:text-ink focus-visible:-outline-offset-2 aria-selected:text-ink aria-selected:after:absolute aria-selected:after:inset-x-2 aria-selected:after:-bottom-px aria-selected:after:h-0.5 aria-selected:after:bg-ink";
+const { n, class: extra } = Astro.props;
+const { downloads } = await siteData();
+const zip = appZip(downloads.macos.release);
+const windows = downloads.windows.release;
+const tabId = (p: Platform) => `tab-${p}-${n}`;
+const panelId = (p: Platform) => `tp-${p}-${n}`;
+// the panels share one cell, so the block keeps its height as the platform changes
 const panel = "js:col-start-1 js:row-start-1 js:min-w-0";
-const head = "hidden font-mono text-note/6 font-bold text-strong no-js:block";
 const note = "mt-4 max-w-measure text-note text-pretty text-muted";
 const lead = "mt-6 text-note text-fg";
+const after = "js:not-data-shown:hidden";
 ---
 
 <div class={extra}>
-  <div
-    class="flex gap-7 border-b border-grid no-js:hidden"
-    role="tablist"
-    aria-label="Install Pitboard"
-  >
-    <button
-      class={tab}
-      role="tab"
-      type="button"
-      id={`tab-app-${n}`}
-      aria-controls={`tp-app-${n}`}
-      aria-selected="true"
-      data-surface="app"
-    >
-      App
-    </button>
-    <button
-      class={tab}
-      role="tab"
-      type="button"
-      id={`tab-cli-${n}`}
-      aria-controls={`tp-cli-${n}`}
-      aria-selected="false"
-      tabindex="-1"
-      data-surface="cli"
-    >
-      Command line
-    </button>
-  </div>
-  <div class="grid pt-7">
+  <PlatformTabs label="Install Pitboard" tabId={tabId} panelId={panelId} />
+  <div class="grid pt-7 no-js:pt-0">
     <div
-      class:list={[panel, "surface-cli:invisible"]}
+      class:list={[panel, "platform-windows:invisible platform-linux:invisible"]}
       role="tabpanel"
-      id={`tp-app-${n}`}
-      aria-labelledby={`tab-app-${n}`}
+      id={panelId("macos")}
+      aria-labelledby={tabId("macos")}
     >
-      <p class={head}>App</p>
-      <p class={note}>The menu bar app needs macOS 14 or later and includes the command line.</p>
-      <DownloadButton class="mt-4" platform="macos" href={zipUrl} after />
-      <p class={lead}>Or install it with Homebrew:</p>
-      <CommandBox class="mt-2" command={commands.brewApp} />
+      <p class={note}>The app needs macOS 14 or later and includes the command line.</p>
+      <DownloadButton class="mt-4" platform="macos" href={zip.url} after />
+      <p class={lead}>For the command line alone, run the install script:</p>
+      <CommandBox class="mt-2" command={commands.installScript} />
       <p class={note}>
-        <span class="js:not-data-shown:hidden" data-after="macos">Move Pitboard to your Applications
-          folder before you open it.
+        <span class={after} data-after="macos">Move Pitboard to your Applications folder before you
+          open it.
+        </span
+        >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
+      </p>
+      <p class:list={[note, "hidden no-js:block"]}>
+        Pitboard also runs on <a href="/download#windows">Windows</a> and
+        <a href="/download#linux">Linux</a>.
+      </p>
+    </div>
+    <div
+      class:list={[panel, "invisible platform-windows:visible no-js:hidden"]}
+      role="tabpanel"
+      id={panelId("windows")}
+      aria-labelledby={tabId("windows")}
+    >
+      <p class={note}>
+        The app needs Windows 11 24H2 or later and includes the command line; Arm PCs take the
+        <a href={windowsMsi(windows, "arm64").url}>ARM64 installer</a>.
+      </p>
+      <DownloadButton
+        class="mt-4"
+        platform="windows"
+        href={windowsMsi(windows, "x64").url}
+        beta={windows.prerelease}
+        after
+      />
+      <p class={note}>
+        <span class={after} data-after="windows">If Windows says it protected your PC, select
+          <b>More info</b>, then <b>Run anyway</b>.
         </span
         >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
       </p>
     </div>
     <div
-      class:list={[panel, "surface-app:invisible no-js:mt-10"]}
+      class:list={[panel, "invisible platform-linux:visible no-js:hidden"]}
       role="tabpanel"
-      id={`tp-cli-${n}`}
-      aria-labelledby={`tab-cli-${n}`}
+      id={panelId("linux")}
+      aria-labelledby={tabId("linux")}
     >
-      <p class={head}>Command line</p>
+      <p class={note}>The app runs on macOS and Windows, so on Linux, install the command line:</p>
       <CommandBox class="mt-4" command={commands.installScript} />
-      <p class={note}>
-        The script puts <code>pitboard</code> in <code>~/.local/bin</code> and changes no shell
-        profile.
-      </p>
-      <p class={note}>
-        <a href={`${DOCS}/install/verify#check-the-install-script`}
-          >Check the script before you run it</a
-        >.
-      </p>
-      <p class={note}>See <a href="/download#other-ways">other ways to install</a>.</p>
+      <p class={note}>On Linux, Pitboard has not been run with real logins.</p>
       <p class={note}>Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
     </div>
   </div>

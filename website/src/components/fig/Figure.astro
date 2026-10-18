@@ -13,10 +13,8 @@ interface Props {
   app: Sides;
   cli?: Sides;
   class?: string;
-  // false where tabs beside the figure already pick, as the hero's install tabs do
-  pick?: boolean;
 }
-const { app, cli, class: extra, pick = true } = Astro.props;
+const { app, cli, class: extra } = Astro.props;
 const both = cli !== undefined && Astro.slots.has("cli");
 const win = Astro.slots.has("win");
 if (win !== (app.windows !== undefined)) throw new Error("a Windows drawing needs its own words");
@@ -34,7 +32,7 @@ const said = (sides: Sides) => {
 ---
 
 <figure class:list={["min-w-0", extra]}>
-  {both && pick && (
+  {both && (
     <Choice
       class="mb-3"
       name="surface"
