@@ -25,8 +25,8 @@ import spark from "../assets/logos/claude-spark.svg?url";
 import blossomBlack from "../assets/logos/openai-blossom-black.svg?url";
 import blossomWhite from "../assets/logos/openai-blossom-white.svg?url";
 
-const { versions, release } = await siteData();
-const zip = appZip(release);
+const { versions, downloads } = await siteData();
+const zip = appZip(downloads.macos.release);
 const recent = recentReleases(versions).map((v) => ({ ...v, highlight: highlight(v.version) }));
 // a row is one string: on a phone its cells run inline, where whitespace between them would show
 const cell = "border-b border-grid py-3.5 text-left align-baseline max-sm:border-0 max-sm:p-0";
@@ -95,7 +95,7 @@ const jsonLd = [
     name: "Pitboard",
     applicationCategory: "DeveloperApplication",
     operatingSystem: "macOS 14 or later, Linux",
-    softwareVersion: release.version,
+    softwareVersion: downloads.macos.release.version,
     downloadUrl: zip.url,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
     url: new URL("/", Astro.site).href,

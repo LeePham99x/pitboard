@@ -172,7 +172,9 @@ Two repository variables, not secrets, name the signer:
 From major version 1, the guard refuses an rc or a full release while `WINDOWS_SIGNER` is
 unset, and any release that sets it without `WINDOWS_SIGNER_SUBJECT`. A beta with no signer
 ships its Windows files unsigned. Once a signer is set, every Windows release is signed,
-betas included: never unset it to ship one unsigned.
+betas included: never unset it to ship one unsigned. When you set `WINDOWS_SIGNER`, set
+`WINDOWS_SIGNED_FROM` in `website/src/data/site.ts` to the first version it signs:
+usepitboard.com calls a beta's Windows files unsigned below that version.
 
 The `windows-sign` job takes the zips `build-windows` made and the app's own programs and
 sparse package from `app-windows-build`, in one request, and hands the zips to `publish` and the
