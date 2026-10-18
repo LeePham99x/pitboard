@@ -30,6 +30,7 @@
 /* the menu demo site.ts plays: start, move, hl and pick before the switch, shut and reach after it */
 @custom-variant demo (&:where([data-demo] *));
 @custom-variant demo-start (&:where([data-demo="start"] *));
+@custom-variant demo-hl (&:where([data-demo="hl"] *));
 @custom-variant demo-pick (&:where([data-demo="pick"] *));
 @custom-variant demo-moving (&:where(:is([data-demo="start"], [data-demo="move"]) *));
 @custom-variant demo-before (&:where(:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"]) *));

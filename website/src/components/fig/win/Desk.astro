@@ -1,15 +1,16 @@
 ---
-// Pitboard's icon menu over Claude Code in Windows Terminal; with `demo`, site.ts plays a switch,
-// after which the icon's tooltip names the account in use. `submenu` opens a site's accounts, and
-// `updates` draws a full release's menu, which offers Check for updates. The menu opens up from
-// the icon, its bottom on the taskbar and its right edge near the screen's, which is approx
-// (vm-readings.md).
+// Pitboard's icon menu over Claude Code in Windows Terminal; with `demo`, site.ts plays a switch:
+// work's row shows its tooltip before the click, and afterwards the icon's tooltip names the
+// account in use. `submenu` opens a site's accounts, and `updates` draws a full release's menu,
+// which offers Check for updates. The menu opens up from the icon, its bottom on the taskbar and
+// its right edge near the screen's, which is approx (vm-readings.md).
 import IconMenu from "./IconMenu.astro";
 import Taskbar from "./Taskbar.astro";
 import Terminal from "./Terminal.astro";
 import Tooltip from "./Tooltip.astro";
 import TrayItem from "./TrayItem.astro";
 import { session } from "../../../data/desk.ts";
+import { accountTip } from "../../../data/windows.ts";
 import { windowsClock } from "../../../data/world.ts";
 import { statusLine, trayTip } from "../../../lib/words.ts";
 
@@ -26,13 +27,17 @@ const status =
     : statusLine("after");
 const rule =
   "bg-linear-to-b from-win-term-dim to-win-term-dim bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
-// Where the pointer is: on the icon at rest, and on work's row, or the open site's, in a menu one
-// row taller with Check for updates.
+// Where the pointer is: on the icon at rest, then on the middle of work's row; or, still, on the
+// middle of the open site's row. Check for updates makes the menu a row taller, so each sits 32
+// higher in it. WinUI draws a tooltip centred above the pointer.
 const pointer = submenu
-  ? "translate-x-190 -translate-y-204"
+  ? updates
+    ? "translate-x-160 -translate-y-225"
+    : "translate-x-160 -translate-y-193"
   : updates
-    ? "demo-start:-translate-x-180 demo-start:-translate-y-240 demo-row:translate-x-60 demo-row:-translate-y-437"
-    : "demo-start:-translate-x-180 demo-start:-translate-y-240 demo-row:translate-x-60 demo-row:-translate-y-405";
+    ? "demo-start:-translate-x-180 demo-start:-translate-y-240 demo-row:translate-x-60 demo-row:-translate-y-413"
+    : "demo-start:-translate-x-180 demo-start:-translate-y-240 demo-row:translate-x-60 demo-row:-translate-y-381";
+const rowTip = updates ? "bottom-450" : "bottom-418";
 ---
 
 <div
@@ -69,6 +74,10 @@ const pointer = submenu
     updates={updates}
     submenu={submenu}
   />
+  {demo && <Tooltip
+    class:list={["absolute left-560 z-3 hidden -translate-x-1/2 demo-hl:block", rowTip]}
+    >{accountTip("work", "before")}</Tooltip
+  >}
   {demo && <Tooltip class="absolute bottom-56 left-500 z-3 hidden -translate-x-1/2 demo-reach:block"
     >{trayTip("after")}</Tooltip
   >}

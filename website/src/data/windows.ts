@@ -6,6 +6,7 @@ import {
   isInUse,
   level,
   listed,
+  menuLine,
   menuTitle,
   paceText,
   runsOutNote,
@@ -26,7 +27,7 @@ export type Pane = (typeof panes)[number][0] | "settings";
 
 export type MenuEntry =
   | { heading: string }
-  | { account: string; label: string; checked: boolean }
+  | { account: string; label: string; checked: boolean; tip: string }
   | { command: string; bold?: boolean; site?: string; submenu?: string[] };
 
 // the site each tool's accounts have windows on, in pitboard_sites::ALL's order
@@ -36,6 +37,7 @@ const sites: [site: string, tool: Tool][] = [
 ];
 
 // IconMenu.cs `Entries`, a group between each two separators. A beta's menu has no Check for updates.
+// An account's tooltip is the line the menu bar app shows under it.
 export function iconMenu(moment: Moment, updates: boolean): MenuEntry[][] {
   return [
     ...toolsOn("windows").map(([tool, name]) => [
@@ -44,6 +46,7 @@ export function iconMenu(moment: Moment, updates: boolean): MenuEntry[][] {
         account: menuTitle(a),
         label: a.label,
         checked: isInUse(a, moment),
+        tip: menuLine(a, moment),
       })),
     ]),
     [{ command: "Add account…" }, { command: "Refresh" }],
@@ -59,6 +62,14 @@ export function iconMenu(moment: Moment, updates: boolean): MenuEntry[][] {
     ],
     [{ command: "Pitboard help" }, { command: "Exit" }],
   ];
+}
+
+// The tooltip of an account's row in the icon's menu.
+export function accountTip(label: string, moment: Moment): string {
+  for (const e of iconMenu(moment, false).flat()) {
+    if ("account" in e && e.label === label) return e.tip;
+  }
+  throw new Error(`the icon's menu lists no ${label}`);
 }
 
 const capitalised = (s: string) => s[0].toUpperCase() + s.slice(1);
