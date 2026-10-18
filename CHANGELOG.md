@@ -9,6 +9,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Windows app finds the command line its installer puts beside it, so **Renew parked logins
+  daily** turns on, and **In your terminal** says that `pitboard` updates with the app.
 - `pitboard doctor`, **This Mac** and **This PC** leave out the `Claude Code daemon` and
   `what a session authenticates with` checks where Claude Code is absent, as they leave out its
   other checks.
