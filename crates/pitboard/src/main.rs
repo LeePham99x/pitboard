@@ -2080,6 +2080,40 @@ mod tests {
         }
     }
 
+    // On Windows, `warm now` refuses with `warm_up_unbuilt`, and `warm on` and `warm range` only
+    // keep the setting.
+    #[test]
+    #[cfg(windows)]
+    fn the_windows_help_of_each_warm_command_promises_no_warm_up() {
+        let cli = Cli::command();
+        let warm = cli.find_subcommand("warm").expect("warm");
+        let said: Vec<(String, String)> = warm
+            .get_subcommands()
+            .map(|sub| {
+                let about = sub.get_about().map(ToString::to_string);
+                (sub.get_name().to_string(), about.unwrap_or_default())
+            })
+            .collect();
+        let expected = [
+            (
+                "now",
+                "Start an account's five-hour period now, which is not available on Windows",
+            ),
+            (
+                "on",
+                "Turn warm-ups on for an account; they are not available on Windows",
+            ),
+            ("off", "Turn warm-ups off for an account"),
+            (
+                "range",
+                "Set the times of each day warm-ups may run between, in this computer's time \
+                 zone; they are not available on Windows",
+            ),
+        ]
+        .map(|(name, about)| (name.to_string(), about.to_string()));
+        assert_eq!(said, expected);
+    }
+
     // Pitboard switches Claude Desktop on macOS alone; Linux's help keeps the words it had.
     #[test]
     fn the_help_names_claude_desktop_only_off_windows() {
