@@ -57,7 +57,7 @@ public partial class App : Application, IIconTargets
 
         _model = model;
         Shell.RestartAfterUpdate(_start.Identity.Build);
-        _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
+        _startAtSignIn = StartAtSignIn.For(_start, Program.Exe);
         model.PropertyChanged += OnModelChanged;
         _hidden = new HiddenWindow(
             sessionEnding: () => _lifetime?.EndSession(),
@@ -135,10 +135,7 @@ public partial class App : Application, IIconTargets
             }
         }
 #endif
-        var directory = PitboardFfiMethods.PitboardDirectory(_start.Environment);
-        var windows = new WindowsLaunch(
-            _start.DataFolder, PitboardFfiMethods.WindowsRecordsKey(directory), _start.Identity.LinkScheme);
-        var launch = new AppLaunch(_start.Environment, AppLocation: null, Windows: windows);
+        var launch = _start.Launch(Program.Exe);
         // Reopen is called on a thread of the model's, and the window is the UI thread's.
         var apps = new WindowsApps(() => queue.TryEnqueue(Ui.Guarded(() => _window?.Bring())));
         return AppModel.Listening(

@@ -75,6 +75,29 @@ const LABEL_TO_USE: &str = if cfg!(windows) {
     "The label the account was enrolled under, such as `work`, `codex/work` or `desktop/work`"
 };
 
+const STOW: &str = if cfg!(windows) {
+    "Put away the login Claude Code left in a file behind Credential Manager, then delete the file"
+} else {
+    "Put away the login Claude Code left in a file behind the keychain, then delete the file"
+};
+
+// Pitboard warms up no account on Windows (`duty::warm::unbuilt`).
+const WARM: &str = if cfg!(windows) {
+    "Warm-ups, which are not available on Windows, where Claude Code does not read the access \
+     token a warm-up hands it"
+} else {
+    "Start the five-hour period of the accounts you choose as soon as the last one resets, \
+     while the app or `pitboard watch` runs"
+};
+
+const WATCH: &str = if cfg!(windows) {
+    "Switch Claude Code to another of your accounts before the one in use runs out, for as long \
+     as this runs"
+} else {
+    "Switch Claude Code to another of your accounts before the one in use runs out, and warm up \
+     the accounts `pitboard warm on` turned on, for as long as this runs"
+};
+
 // The default folder, by the name a person knows it by on each system.
 const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
     "Renew as the daily renewal schedule does: %LOCALAPPDATA%\\Pitboard, whatever \
@@ -118,7 +141,7 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    /// Put away the login Claude Code left in a file behind the keychain, then delete the file
+    #[command(about = STOW)]
     Stow {
         /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
@@ -170,14 +193,12 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
-    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
-    /// while the app or `pitboard watch` runs
+    #[command(about = WARM)]
     Warm {
         #[command(subcommand)]
         what: Option<warm::WarmCommand>,
     },
-    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
-    /// up the accounts `pitboard warm on` turned on, for as long as this runs
+    #[command(about = WATCH)]
     Watch {
         /// Switch once a limit of the account in use reaches this share, from 50 to 99
         #[arg(
@@ -992,48 +1013,7 @@ fn adopt(pitboard: &Pitboard) -> Report {
 
 fn repair(pitboard: &Pitboard) -> Report {
     changed("repair", pitboard.repair(), |r| {
-        let human = if r.is_empty() {
-            "Every parked login here is accounted for.\n".to_string()
-        } else {
-            let mut said = String::new();
-            for (label, _) in &r.given_back {
-                said.push_str(&format!(
-                    "Gave {} back a parked login that nothing named.\n",
-                    paint(BOLD, label)
-                ));
-            }
-            if !r.deleted.is_empty() {
-                said.push_str(&format!(
-                    "Deleted {} parked login(s) Pitboard wrote down here and nothing \
-                     recorded.\n",
-                    r.deleted.len()
-                ));
-            }
-            if !r.strangers.is_empty() {
-                said.push_str(&format!(
-                    "{} parked login(s) here belong to no account Pitboard knows and were \
-                     not written down by this one. Left alone: the keychain is shared by \
-                     the whole machine, and they may be another Pitboard's.\n",
-                    r.strangers.len()
-                ));
-            }
-            if !r.unreadable.is_empty() {
-                said.push_str(&format!(
-                    "{} could not be read this time and were left alone. Unlock the \
-                     keychain and run this again.\n",
-                    r.unreadable.len()
-                ));
-            }
-            if !r.set_aside.is_empty() {
-                said.push_str(&format!(
-                    "Set aside {} folder(s) in {} that hold what no account here can take. \
-                     Nothing was deleted; `pitboard doctor` lists them.\n",
-                    r.set_aside.len(),
-                    pitboard.parks_folder().display()
-                ));
-            }
-            said
-        };
+        let human = repaired(pitboard_core::host::OS, &r, &pitboard.parks_folder());
         (
             json!({
                 "given_back": r.given_back.iter().map(|(label, service)| json!({
@@ -1048,6 +1028,67 @@ fn repair(pitboard: &Pitboard) -> Report {
             human,
         )
     })
+}
+
+// Parked logins are keychain items the whole Mac shares, and on Linux and Windows files in the
+// vault of this Pitboard directory.
+fn repaired(
+    os: pitboard_core::host::Os,
+    r: &pitboard_core::switch::Reclaimed,
+    parks: &std::path::Path,
+) -> String {
+    use pitboard_core::host::Os;
+    if r.is_empty() {
+        return "Every parked login here is accounted for.\n".to_string();
+    }
+    let mut said = String::new();
+    for (label, _) in &r.given_back {
+        said.push_str(&format!(
+            "Gave {} back a parked login that nothing named.\n",
+            paint(BOLD, label)
+        ));
+    }
+    if !r.deleted.is_empty() {
+        said.push_str(&format!(
+            "Deleted {} parked login(s) Pitboard wrote down here and nothing \
+             recorded.\n",
+            r.deleted.len()
+        ));
+    }
+    if !r.strangers.is_empty() {
+        let why = match os {
+            Os::MacOs => {
+                "the keychain is shared by the whole machine, and they may be another Pitboard's"
+            }
+            Os::Linux | Os::Windows => "Pitboard deletes only a parked login it wrote down",
+        };
+        said.push_str(&format!(
+            "{} parked login(s) here belong to no account Pitboard knows and were \
+             not written down by this one. Left alone: {why}.\n",
+            r.strangers.len()
+        ));
+    }
+    if !r.unreadable.is_empty() {
+        let next = match os {
+            Os::MacOs => " Unlock the keychain and run this again.",
+            // A sealed park does not open in a logon without this account's key, as over SSH.
+            Os::Windows => " Run this again from a desktop session.",
+            Os::Linux => "",
+        };
+        said.push_str(&format!(
+            "{} could not be read this time and were left alone.{next}\n",
+            r.unreadable.len()
+        ));
+    }
+    if !r.set_aside.is_empty() {
+        said.push_str(&format!(
+            "Set aside {} folder(s) in {} that hold what no account here can take. \
+             Nothing was deleted; `pitboard doctor` lists them.\n",
+            r.set_aside.len(),
+            parks.display()
+        ));
+    }
+    said
 }
 
 fn log(pitboard: &Pitboard, lines: usize) -> Report {
@@ -1606,6 +1647,45 @@ mod tests {
         ));
     }
 
+    // Parked logins are keychain items the whole Mac shares, and on Linux and Windows files in
+    // the vault of this Pitboard directory, which no keychain locks.
+    #[test]
+    fn repair_says_why_it_left_parked_logins_alone_in_the_words_of_its_system() {
+        use pitboard_core::host::Os;
+        let left = pitboard_core::switch::Reclaimed {
+            strangers: vec!["pitboard-park-a-1".into()],
+            unreadable: vec!["pitboard-park-b-1".into()],
+            ..Default::default()
+        };
+        let said = |os| repaired(os, &left, std::path::Path::new("/x/parks"));
+        let stranger = "1 parked login(s) here belong to no account Pitboard knows and were not \
+                        written down by this one. Left alone:";
+        assert_eq!(
+            said(Os::MacOs),
+            format!(
+                "{stranger} the keychain is shared by the whole machine, and they may be another \
+                 Pitboard's.\n\
+                 1 could not be read this time and were left alone. Unlock the keychain and run \
+                 this again.\n"
+            )
+        );
+        assert_eq!(
+            said(Os::Windows),
+            format!(
+                "{stranger} Pitboard deletes only a parked login it wrote down.\n\
+                 1 could not be read this time and were left alone. Run this again from a \
+                 desktop session.\n"
+            )
+        );
+        assert_eq!(
+            said(Os::Linux),
+            format!(
+                "{stranger} Pitboard deletes only a parked login it wrote down.\n\
+                 1 could not be read this time and were left alone.\n"
+            )
+        );
+    }
+
     /// A command that deletes something asks at a terminal, for a person. With nobody to ask,
     /// `--json` included, it needs `--yes`. As root or under sudo it goes on to that refusal.
     #[test]
@@ -1978,6 +2058,60 @@ mod tests {
     #[cfg(not(windows))]
     fn the_help_reads_as_it_did_off_windows() {
         insta::assert_snapshot!("help", every_help());
+    }
+
+    // Pitboard warms up no account on Windows, and Claude Code's login file there sits behind
+    // Credential Manager.
+    #[test]
+    #[cfg(windows)]
+    fn the_windows_help_promises_no_warm_up_and_names_no_keychain() {
+        let every = every_help();
+        assert!(!every.contains("keychain"), "{every}");
+        let read = every.split_whitespace().collect::<Vec<_>>().join(" ");
+        for said in [
+            "warm Warm-ups, which are not available on Windows, where Claude Code does not read \
+             the access token a warm-up hands it",
+            "watch Switch Claude Code to another of your accounts before the one in use runs out, \
+             for as long as this runs",
+            "stow Put away the login Claude Code left in a file behind Credential Manager, then \
+             delete the file",
+        ] {
+            assert!(read.contains(said), "{said}: {every}");
+        }
+    }
+
+    // On Windows, `warm now` refuses with `warm_up_unbuilt`, and `warm on` and `warm range` only
+    // keep the setting.
+    #[test]
+    #[cfg(windows)]
+    fn the_windows_help_of_each_warm_command_promises_no_warm_up() {
+        let cli = Cli::command();
+        let warm = cli.find_subcommand("warm").expect("warm");
+        let said: Vec<(String, String)> = warm
+            .get_subcommands()
+            .map(|sub| {
+                let about = sub.get_about().map(ToString::to_string);
+                (sub.get_name().to_string(), about.unwrap_or_default())
+            })
+            .collect();
+        let expected = [
+            (
+                "now",
+                "Start an account's five-hour period now, which is not available on Windows",
+            ),
+            (
+                "on",
+                "Turn warm-ups on for an account; they are not available on Windows",
+            ),
+            ("off", "Turn warm-ups off for an account"),
+            (
+                "range",
+                "Set the times of each day warm-ups may run between, in this computer's time \
+                 zone; they are not available on Windows",
+            ),
+        ]
+        .map(|(name, about)| (name.to_string(), about.to_string()));
+        assert_eq!(said, expected);
     }
 
     // Pitboard switches Claude Desktop on macOS alone; Linux's help keeps the words it had.

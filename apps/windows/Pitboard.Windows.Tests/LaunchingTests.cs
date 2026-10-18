@@ -100,6 +100,26 @@ public sealed class LaunchingTests
         Assert.IsNull(new AppStart(Release, new(), null, @"C:\Local\Pitboard App").Link, "a launch with no arguments");
     }
 
+    // The installer puts the command line in bin beside Pitboard.exe: daily renewal runs it, and In your terminal calls it the app's own.
+    [TestMethod]
+    public void TheAppsLaunchNamesItsPitboardExeAndSoTheCommandLineInstalledBesideIt()
+    {
+        const string Exe = @"C:\Users\x\AppData\Local\Programs\Pitboard\Pitboard.exe";
+        var environment = new Dictionary<string, string>
+        {
+            ["USERPROFILE"] = @"C:\Users\x",
+            ["LOCALAPPDATA"] = @"C:\Users\x\AppData\Local",
+        };
+
+        var launch = new AppStart(Release, environment, null, @"C:\Users\x\AppData\Local\Pitboard App").Launch(Exe);
+
+        Assert.AreEqual(Exe, launch.AppLocation);
+        Assert.AreEqual(
+            @"C:\Users\x\AppData\Local\Programs\Pitboard\bin\pitboard.exe", PitboardFfiMethods.AppCommandLine(launch.AppLocation!));
+        Assert.AreEqual(@"C:\Users\x\AppData\Local\Pitboard App", launch.Windows?.Directory);
+        Assert.AreEqual("pitboard", launch.Windows?.LinkScheme);
+    }
+
     // Nothing registers pitboard-debug, so only a person or a test hands a Debug build one, which outside a fixture
     // would open on whatever homes that launch has.
     [TestMethod]

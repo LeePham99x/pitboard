@@ -16,6 +16,8 @@ public static class Program
     private static readonly Identity Running = new(Build.Release);
 #endif
 
+    internal static readonly string Exe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe");
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -63,7 +65,7 @@ public static class Program
             case Start.Unregister:
                 Unregistering.Run(
                     Running.Build,
-                    Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"),
+                    Exe,
                     new RegistryRunKey(),
                     new SystemAppNotifications(),
                     new RegistryNotificationRegistration(Running.Aumid));

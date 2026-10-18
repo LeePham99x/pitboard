@@ -11,25 +11,51 @@ use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::words;
 use serde_json::{Value, json};
 
+// Pitboard warms up no account on Windows (`duty::warm::unbuilt`).
+const NOW: &str = if cfg!(windows) {
+    "Start an account's five-hour period now, which is not available on Windows"
+} else {
+    "Start an account's five-hour period now, whatever the span, through one short request \
+     Claude Code makes with that account's login"
+};
+
+const ON: &str = if cfg!(windows) {
+    "Turn warm-ups on for an account; they are not available on Windows"
+} else {
+    "Warm up an account from now on, within the span `range` sets"
+};
+
+const OFF: &str = if cfg!(windows) {
+    "Turn warm-ups off for an account"
+} else {
+    "Stop warming up an account"
+};
+
+const RANGE: &str = if cfg!(windows) {
+    "Set the times of each day warm-ups may run between, in this computer's time zone; they are \
+     not available on Windows"
+} else {
+    "Warm up accounts only between these times of each day, in this computer's time zone"
+};
+
 #[derive(Subcommand)]
 pub(crate) enum WarmCommand {
-    /// Start an account's five-hour period now, whatever the span, through one short request
-    /// Claude Code makes with that account's login
+    #[command(about = NOW)]
     Now {
         /// The label the account was enrolled under, such as `work`
         label: String,
     },
-    /// Warm up an account from now on, within the span `range` sets
+    #[command(about = ON)]
     On {
         /// The label the account was enrolled under, such as `work`
         label: String,
     },
-    /// Stop warming up an account
+    #[command(about = OFF)]
     Off {
         /// The label the account was enrolled under
         label: String,
     },
-    /// Warm up accounts only between these times of each day, in this computer's time zone
+    #[command(about = RANGE)]
     Range {
         /// When to start, such as 06:00
         #[arg(value_name = "FROM")]

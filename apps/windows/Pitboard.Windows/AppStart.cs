@@ -1,3 +1,5 @@
+using Pitboard.Core;
+
 namespace Pitboard.Windows;
 
 public sealed record AppStart(
@@ -6,4 +8,11 @@ public sealed record AppStart(
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
     public string? Link => Launching.Link(Arguments, Identity.LinkScheme);
+
+    // The core finds the command line in the bin beside exe, where the installer puts it.
+    public AppLaunch Launch(string exe) => new(
+        Environment,
+        AppLocation: exe,
+        Windows: new WindowsLaunch(
+            DataFolder, PitboardFfiMethods.WindowsRecordsKey(PitboardFfiMethods.PitboardDirectory(Environment)), Identity.LinkScheme));
 }

@@ -2880,11 +2880,12 @@ The MSI, `Pitboard.exe` and the notification area:
 - With start at sign-in on, a sign-in started Pitboard with no window, its icon there 7 s
   after. Settings > Apps > Startup listed it; turning it off there wrote 01 as the first byte
   of `StartupApproved\Run`'s `Pitboard` and kept the `Run` value.
-- `pitboard uninstall` with the app open deleted `%LOCALAPPDATA%\Pitboard`, and the app made
-  it again; `uninstall` now refuses while the app is open. Removing it in Settings took the install folder, the
-  shortcut, the link scheme, the `PATH` entry, the `Run` value, `%LOCALAPPDATA%\Pitboard App`
-  and the task, and left the `AppUserModelId` key and `StartupApproved\Run`'s value, Windows'
-  own.
+- `pitboard uninstall` with the app open deleted `%LOCALAPPDATA%\Pitboard` and the renewal
+  task, and the app made the folder again as it quit; `uninstall` now refuses while the app is
+  open. Removing Pitboard in Settings then took the install folder, the shortcut, the link
+  scheme, the `PATH` entry, the `Run` value and `%LOCALAPPDATA%\Pitboard App`. It left the
+  `AppUserModelId` key, which `--unregister` now deletes, and `StartupApproved\Run`'s value,
+  Windows' own. Nothing in the MSI removes the renewal task.
 - The x64 MSI installed under emulation: `Pitboard.exe` and `bin\pitboard.exe` are machine
   0x8664, and both ran.
 
