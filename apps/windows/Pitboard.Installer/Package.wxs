@@ -31,11 +31,13 @@
       <Files Directory="INSTALLFOLDER" Include="$(App)\**">
         <Exclude Files="$(App)\Pitboard.exe" />
         <Exclude Files="$(App)\**\*.pdb" />
+        <?if $(ShareSigned) = "true" ?>
         <Exclude Files="$(App)\PitboardShare.*" />
         <Exclude Files="$(App)\pitboard_share_ffi.dll" />
         <Exclude Files="$(App)\Assets\Square150x150Logo.png" />
         <Exclude Files="$(App)\Assets\Square44x44Logo.png" />
         <Exclude Files="$(App)\Assets\StoreLogo.png" />
+        <?endif?>
       </Files>
       <?if $(ShareSigned) = "true" ?>
       <ComponentGroupRef Id="Share" />
