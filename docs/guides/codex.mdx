@@ -8,29 +8,13 @@ Until you enrol a Codex account, Pitboard lists nothing about OpenAI's Codex CLI
 
 ## Before you enrol a Codex account
 
-Pitboard switches Codex only while Codex is signed in with ChatGPT and keeps that login in its file store, `auth.json` in Codex's home. The home is `~/.codex`, or the folder `CODEX_HOME` names. On Windows, it is `.codex` in your user folder, such as `C:\Users\me\.codex`, and a `CODEX_HOME` that names no folder stops Codex. To check, run:
+Pitboard switches Codex only while Codex is signed in with ChatGPT and keeps that login in its file store, `auth.json` in Codex's home. The home is `~/.codex`, or the folder `CODEX_HOME` names. [Codex files](/reference/files#codex-files) gives it on Windows. To check, run:
 
 ```sh
 pitboard doctor
 ```
 
-In the Codex section, `Codex login store` reads `file`, and `Codex login` reads your email address. If it says `cannot tell`, fix the place it names.
-
-Codex's setting `cli_auth_credentials_store` chooses the store, and Pitboard refuses every store but `file`. [Codex files](/reference/files#codex-files) says where each other store keeps the login.
-
-If Codex is signed out, switch to an enrolled Codex account with `pitboard use codex/work`, or run `codex login` and sign in with ChatGPT. If it uses an API key, run `codex login` and sign in with ChatGPT.
-
-### Use the file store
-
-If the `Codex login store` line names a `config.toml`, yours or the system's, set the file store in your own, in Codex's home:
-
-```toml title="~/.codex/config.toml"
-cli_auth_credentials_store = "file"
-```
-
-Then run `codex login` and sign in with ChatGPT.
-
-A store set in `requirements.toml`, `managed_config.toml` or a managed preference overrides yours, and only an administrator can change it. [Codex files](/reference/files#codex-files) lists every place Codex reads the setting from.
+In the Codex section, `Codex login store` reads `file`, and `Codex login` reads your email address. If either reads otherwise, follow [Fix Codex accounts](/troubleshooting/codex).
 
 ## Add Codex accounts
 
@@ -38,7 +22,7 @@ Add each one as [Add another account](/guides/accounts#add-another-account) show
 
 In the app, add your first Codex account that way. Then name the one Codex is signed in to as in [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to). On the command line, `pitboard enroll codex/personal` enrols that one at once.
 
-Adding an account runs `codex login` from OpenAI's Codex CLI. Pitboard does not use the copy inside the ChatGPT app. If the dialog says Pitboard cannot find the Codex CLI, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
+Adding an account runs `codex login` from OpenAI's Codex CLI, not the copy inside the ChatGPT app. If the dialog says Pitboard cannot find the Codex CLI, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
 
 ## Restart what runs Codex
 
@@ -56,17 +40,13 @@ Read in the ChatGPT app 26.928.31416 for macOS and Codex 0.159.3. Quitting the C
 
 After a Codex switch, Pitboard lists which of these still run. If it cannot read the process list, it warns with `sessions_unknown`.
 
+In the app, a Codex switch while the ChatGPT app is open asks first, then quits it, switches and opens it again. [Quitting Claude or the ChatGPT app](/reference/mac-app#quitting-claude-or-the-chatgpt-app) gives its words. On Windows, [Dialogs and alerts](/reference/windows-app#dialogs-and-alerts) does. The command line never quits an app.
+
 <Warning>
   Do not sign out in anything that ran Codex before the switch, such as `/logout` in a `codex` session or **Log Out** in the ChatGPT app. Each holds the parked login, and signing out revokes it at OpenAI: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
 
   If you did, [sign in to the old account again](/guides/sign-in-again), or run `pitboard enroll codex/personal --sign-in`.
 </Warning>
-
-## Switch while the ChatGPT app is open
-
-While the ChatGPT app is open, a Codex switch in the app asks first. **Quit ChatGPT and Switch** quits it, switches, then opens it again, and **Cancel** switches nothing. On Windows, the button is **Quit ChatGPT and switch**.
-
-If the ChatGPT app has not quit within 30 seconds, nothing changes. The command line never quits an app.
 
 ## How Codex accounts differ
 
