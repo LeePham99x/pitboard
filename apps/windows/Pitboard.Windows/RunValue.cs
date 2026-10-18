@@ -7,6 +7,8 @@ public interface IRunKey
 {
     string? Value(string name);
 
+    byte[]? Approval(string name);
+
     void Write(string name, string command);
 
     void Remove(string name);
@@ -21,6 +23,8 @@ public sealed class RegistryRunKey : IRunKey
         using var key = Registry.CurrentUser.OpenSubKey(Path);
         return key?.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
     }
+
+    public byte[]? Approval(string name) => null;
 
     public void Write(string name, string command)
     {
@@ -56,6 +60,8 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
     // Paths are compared as Windows compares them, without case.
     public bool Read() =>
         Refusal is null && string.Equals(key.Value(Name), Command(exe), StringComparison.OrdinalIgnoreCase);
+
+    public bool TurnedOff() => false;
 
     public void Write(bool starts)
     {

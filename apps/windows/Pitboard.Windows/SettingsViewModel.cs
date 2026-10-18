@@ -12,6 +12,8 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 {
     public const string SignInNote = "Settings > Apps > Startup can turn it off too.";
 
+    public const string TurnedOffNote = "";
+
     public const string BetaNote = "A beta updates itself to 1.0.0 once that is out. Install a later beta by hand.";
 
     public const string NewTerminals = "Pitboard’s installer puts pitboard on your PATH, which terminals opened after it ran see.";

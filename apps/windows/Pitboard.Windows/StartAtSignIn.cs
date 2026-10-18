@@ -10,6 +10,8 @@ public interface IStartupItem
 
     bool Read();
 
+    bool TurnedOff();
+
     void Write(bool starts);
 }
 
@@ -77,6 +79,8 @@ public sealed class FixtureStartupItem : IStartupItem
     public string? Refusal => null;
 
     public bool Read() => _on;
+
+    public bool TurnedOff() => false;
 
     public void Write(bool starts) => _on = starts;
 }

@@ -535,6 +535,8 @@ public sealed class SettingsPageTests
 
         public bool Read() => false;
 
+        public bool TurnedOff() => false;
+
         public void Write(bool starts) => throw new UnauthorizedAccessException("Access is denied.");
     }
 }

@@ -5,6 +5,9 @@ internal sealed class StandInRunKey : IRunKey
 {
     public Dictionary<string, string> Values { get; } = [];
 
+    // StartupApproved\Run, which Settings > Apps > Startup writes.
+    public Dictionary<string, byte[]> Approvals { get; } = [];
+
     public List<string> Asked { get; } = [];
 
     public Exception? Refuses { get; set; }
@@ -20,6 +23,12 @@ internal sealed class StandInRunKey : IRunKey
         }
 
         return Values.GetValueOrDefault(name);
+    }
+
+    public byte[]? Approval(string name)
+    {
+        Asked.Add($"approval {name}");
+        return Approvals.GetValueOrDefault(name);
     }
 
     public void Write(string name, string command)
