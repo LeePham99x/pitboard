@@ -19,7 +19,9 @@ version 1, and the guard refuses an rc or a full release while no signer is set
 ## Prepare a release
 
 The first release with Claude Desktop waits until the hand measurements M1 to M10 in
-[ARCHITECTURE.md](ARCHITECTURE.md#claude-desktop) are recorded.
+[ARCHITECTURE.md](ARCHITECTURE.md#claude-desktop) are recorded. The first release that signs
+Pitboard for Windows, and 1.0.0, also rewrite what
+[Site and docs tied to Windows' status](#site-and-docs-tied-to-windows-status) lists.
 
 1. Pick the version: minor for anything people would notice, patch for fixes alone.
 2. In `CHANGELOG.md`, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`.
@@ -305,6 +307,42 @@ published:
 4. Submit with `komac submit <manifests>`. Sign the Microsoft CLA in the first pull request, and
    answer a `Needs-Author-Feedback` label within 5 days: 3 days of silence after that closes
    the pull request.
+
+## Site and docs tied to Windows' status
+
+usepitboard.com reads Windows' status from the releases it builds from and from
+`WINDOWS_SIGNED_FROM`: the `(beta)` on its download button, the beta and signing sentences on
+`/download`, the version in Cargo's commands, the Scoop lines and **Check for updates** in the
+menu figure follow by themselves. What follows is written by hand, so rewrite it at its step.
+
+At the first signed Windows release, measure on
+[the session machine](AGENTS.md#the-session-machine) what Microsoft Edge and Windows show as its
+MSI downloads and opens, and whether a browser's share sheet lists Pitboard once it is
+installed. Then rewrite, from what you measured:
+
+- "and its files are not signed" in `README.md` and in `docs/install.mdx` under What you need,
+  and the step of `docs/install.mdx` that opens the installer.
+- The Windows tab of Check the signature in `docs/install/verify.mdx`, and "SignPath has signed
+  no Pitboard file." in `docs/install/code-signing-policy.mdx`.
+- What `docs/guides/account-windows.mdx`, `docs/concepts/account-windows.mdx`,
+  `docs/troubleshooting/account-windows.mdx` and `docs/reference/account-windows.mdx` say of the
+  share sheet on Windows, and the Share extension's line in `SECURITY.md`.
+- The Share sentence of `#account-windows` in `website/src/pages/index.astro`, and the
+  SmartScreen sentence in `website/src/components/InstallTabs.astro` and
+  `website/src/pages/download.astro`.
+
+At 1.0.0, rewrite:
+
+- "Pitboard for Windows is in beta" in `README.md`, `SECURITY.md`, `docs/install.mdx` and the
+  Systems section of `docs/AGENTS.md`.
+- The paragraph of `docs/install/other-ways.mdx` that names the version for Cargo on Windows,
+  and the Windows Cargo row of Update Pitboard in `docs/install.mdx`: from 1.0.0,
+  `cargo binstall pitboard` installs a build that runs there.
+- Add Scoop to `docs/install/other-ways.mdx`, with the lines of the bucket's page.
+
+Once `microsoft/winget-pkgs` holds both packages, add their `winget install` lines to
+`docs/install/other-ways.mdx`, and to `windowsWays` in `website/src/data/commands.ts`, which
+`/download` shows under Other ways.
 
 ## The install script
 
