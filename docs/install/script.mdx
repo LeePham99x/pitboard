@@ -1,0 +1,47 @@
+---
+title: "The install script"
+sidebarTitle: "Install script"
+description: "Where the install script puts each file, what it needs and how to choose another folder or release."
+---
+
+The install script installs the command line of the most recent release on macOS and Linux, not a pre-release and not the app. [Install with the script](/install#install-with-the-script) gives the command.
+
+## What it installs
+
+It puts `pitboard` in `~/.local/bin`, and the man page and the bash, zsh and fish completions under `~/.local/share`. zsh loads the completion only after a change to `~/.zshrc`, as [`completions`](/reference/integration-commands#completions) says.
+
+It checks its download against the release's checksums. [Check the install script](/install/verify#check-the-install-script) checks the script itself.
+
+It needs `curl` or `wget`, and `sha256sum` or `shasum`. Without `curl`, run:
+
+```sh
+wget -qO- https://usepitboard.com/install.sh | sh
+```
+
+| Where it runs | What it does |
+| --- | --- |
+| As root or under `sudo` | Installs nothing, as Pitboard [changes nothing as root](/troubleshooting/refused-changes#pitboard-changes-nothing-as-root). |
+| On Windows | Installs nothing. Install the app, or the command line from a release's zip, as [A release file](/install/other-ways#a-release-file) says. |
+
+## Put the folder on your PATH
+
+The script changes no shell profile. Where `~/.local/bin` is not on your `PATH`, it prints the command that puts it there for your shell:
+
+```text
+/Users/me/.local/bin is not on your PATH. To put it there, run this, then open another terminal:
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+If another `pitboard` comes first on your `PATH`, the script names it. Remove that copy, or put `~/.local/bin` before it. Daily renewal may run the copy you remove: see [Daily renewal stopped working](/troubleshooting/renewal#daily-renewal-stopped-working).
+
+## Install into another folder
+
+Set `PITBOARD_INSTALL_DIR` to the folder's full path. The man page and completions go in the `share` folder beside it, here `~/tools/share`:
+
+```sh
+curl -fsSL https://usepitboard.com/install.sh | PITBOARD_INSTALL_DIR="$HOME/tools/bin" sh
+```
+
+## Install one release
+
+Each release has its own copy of the script, which installs that release: `https://github.com/datlechin/pitboard/releases/download/v<version>/install.sh`.

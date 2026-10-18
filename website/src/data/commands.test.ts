@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { attestCommand, commands, windowsWays } from "./commands.ts";
 
 const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
-const pages = ["install", "install/other-ways", "install/verify"]
+const pages = ["install", "install/script", "install/other-ways", "install/verify"]
   .map((page) => repo(`docs/${page}.mdx`))
   .join("\n");
 

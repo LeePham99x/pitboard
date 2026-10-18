@@ -335,9 +335,8 @@ At 1.0.0, rewrite:
 
 - "Pitboard for Windows is in beta" in `README.md`, `SECURITY.md`, `docs/install.mdx` and the
   Systems section of `docs/AGENTS.md`.
-- The paragraph of `docs/install/other-ways.mdx` that names the version for Cargo on Windows,
-  and the Windows Cargo row of Update Pitboard in `docs/install.mdx`: from 1.0.0,
-  `cargo binstall pitboard` installs a build that runs there.
+- The paragraph of `docs/install/other-ways.mdx` that names the version for Cargo on Windows:
+  from 1.0.0, `cargo binstall pitboard` installs a build that runs there.
 - Add Scoop to `docs/install/other-ways.mdx`, with the lines of the bucket's page.
 
 Once `microsoft/winget-pkgs` holds both packages, add their `winget install` lines to

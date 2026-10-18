@@ -35,6 +35,7 @@
         "group": "Install and remove",
         "pages": [
           "install",
+          "install/script",
           "install/other-ways",
           "install/verify",
           "install/code-signing-policy",

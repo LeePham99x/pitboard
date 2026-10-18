@@ -102,10 +102,7 @@ function links(): Link[] {
 }
 
 test("the slug is Mintlify's for the headings the docs write", () => {
-  assert.equal(
-    slug("Put the bundled command line on your PATH"),
-    "put-the-bundled-command-line-on-your-path",
-  );
+  assert.equal(slug("Put the folder on your PATH"), "put-the-folder-on-your-path");
   assert.equal(slug("Upgrade from 0.3.0 or earlier"), "upgrade-from-0-3-0-or-earlier");
   assert.equal(slug("pitboard uninstall"), "pitboard-uninstall");
   assert.equal(slug("PITBOARD_HOME"), "pitboard_home");
