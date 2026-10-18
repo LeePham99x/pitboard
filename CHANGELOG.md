@@ -19,8 +19,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `pitboard doctor`, **This Mac** and **This PC** leave out the `Claude Code daemon` and
   `what a session authenticates with` checks where Claude Code is absent, as they leave out its
   other checks.
-- On Windows, the help of `pitboard warm` and `pitboard watch` says warm-ups are not available
-  there, instead of promising them.
+- On Windows, the help of `pitboard warm`, its commands and `pitboard watch` no longer promises
+  warm-ups, which are not available there.
 - On Windows, the help of `pitboard stow` names Credential Manager instead of the keychain.
 - On Linux and Windows, `pitboard repair` says why it left a parked login alone without naming a
   keychain, which holds no parked login there.
