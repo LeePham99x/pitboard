@@ -35,6 +35,7 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 | `audit.log`, `audit.log.1` | The activity log that [`pitboard log`](/reference/maintenance-commands#log) prints, and the one before it | Every change, renewal and automatic switch, and a read that finds a sign-in outside Pitboard |
 | `app.json` | The app's preferences, listed in [The app](/reference/files#the-app) | The app |
 | `told.json` | Each run-out the app has notified you of, by account and limit, with its reset | The app |
+| `app.lock` | The lock the app holds while it is open, which `pitboard uninstall` refuses over | The app |
 
 Only `vault/`, `signin/` and `parks/` can hold a login. `backups/` holds your email address, account ids and the path of each project Claude Code has opened.
 

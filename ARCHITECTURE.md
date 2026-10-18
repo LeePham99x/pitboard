@@ -363,7 +363,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     where the system's package managers put programs, which Windows names by variables:
     npm's `%APPDATA%\npm`, winget's `Links` and Scoop's `shims`. And the files an app keeps of
     its own in Pitboard's directory, `told.json` and `app.json`, written as the core writes
-    its own and read by nothing of the core.
+    its own and read by nothing of the core, and `Open`, the `app.lock` an app holds for as
+    long as it runs, which `uninstall` refuses over since the app would make the directory
+    again.
   - `api.rs`: what every request shares, the agent each context's requests go out on,
     `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
     OpenAI in `provider/codex/api.rs`.
