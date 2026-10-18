@@ -16,13 +16,6 @@ function head() {
   set();
 }
 
-// a link to a <details>, or into one, opens it
-function openTarget() {
-  const id = decodeURIComponent(location.hash.slice(1));
-  const box = id ? document.getElementById(id)?.closest("details") : null;
-  if (box) box.open = true;
-}
-
 function theming() {
   const names: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const btn = document.getElementById("theme-btn");
@@ -127,10 +120,9 @@ interface Chosen {
 }
 
 // The tabs and pressed buttons carrying a choice's attribute set it, and all of them follow it.
-function choice(name: Choice) {
+function choice(name: Choice): (value: string) => void {
   const tabs = all<HTMLButtonElement>(`[role=tab][data-${name}]`);
   const picks = all<HTMLButtonElement>(`button[data-${name}]:not([role=tab])`);
-  if (!tabs.length && !picks.length) return;
   const mark = (value: string) => {
     for (const t of tabs) {
       const on = t.dataset[name] === value;
@@ -139,12 +131,15 @@ function choice(name: Choice) {
     }
     for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset[name] === value));
   };
-  const select = (value: string, focus: HTMLElement | null) => {
+  const show = (value: string) => {
     mark(value);
     d.dataset[name] = value;
+    document.dispatchEvent(new CustomEvent<Chosen>("choice", { detail: { name, value } }));
+  };
+  const select = (value: string, focus: HTMLElement | null) => {
+    show(value);
     focus?.focus();
     put(keys[name], value);
-    document.dispatchEvent(new CustomEvent<Chosen>("choice", { detail: { name, value } }));
   };
   for (const b of picks) b.addEventListener("click", () => select(b.dataset[name]!, null));
   for (const tl of all("[role=tablist]")) {
@@ -166,6 +161,17 @@ function choice(name: Choice) {
   }
   const now = d.dataset[name];
   if (now) mark(now);
+  return show;
+}
+
+// A link into a <details> opens it, and one into another platform's part shows that platform.
+function openTarget(showPlatform: (value: string) => void) {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const target = id ? document.getElementById(id) : null;
+  const box = target?.closest("details");
+  if (box) box.open = true;
+  const on = target?.closest<HTMLElement>("[data-for]")?.dataset.for?.split(" ");
+  if (on && !on.includes(d.dataset.platform ?? "")) showPlatform(on[0]);
 }
 
 function copying() {
@@ -236,7 +242,7 @@ function copying() {
 function afterDownload() {
   for (const a of all("[data-download]")) {
     a.addEventListener("click", () => {
-      for (const p of all("[data-after]")) p.setAttribute("data-shown", "");
+      for (const p of all(`[data-after="${a.dataset.download}"]`)) p.setAttribute("data-shown", "");
     });
   }
 }
@@ -306,12 +312,12 @@ function demo() {
 }
 
 head();
-openTarget();
-addEventListener("hashchange", openTarget);
 theming();
 phoneMenu();
 choice("surface");
-choice("platform");
+const showPlatform = choice("platform");
+openTarget(showPlatform);
+addEventListener("hashchange", () => openTarget(showPlatform));
 copying();
 afterDownload();
 demo();

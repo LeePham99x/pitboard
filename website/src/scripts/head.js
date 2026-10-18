@@ -23,7 +23,9 @@
     /Android/i.test(hint) ||
     (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   if (mobile) d.setAttribute("data-os", "mobile");
-  var platform = get("platform");
+  // a link to a platform's part of a page shows that platform for this visit alone
+  var linked = /^#(macos|windows|linux)$/.exec(location.hash);
+  var platform = linked ? linked[1] : get("platform");
   if (!/^(macos|windows|linux)$/.test(platform)) {
     // a phone runs no Pitboard, so it sees the default, macOS
     var system = mobile ? "" : hint || ua;
