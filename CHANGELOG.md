@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
+  new PC with nothing enrolled no longer reads as broken.
+- `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex
+  has run for the first time.
+
 ## [0.15.0] - 2026-10-17
 
 ### Added
