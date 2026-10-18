@@ -1030,11 +1030,14 @@ fn repair(pitboard: &Pitboard) -> Report {
     })
 }
 
+// Parked logins are keychain items the whole Mac shares, and on Linux and Windows files in the
+// vault of this Pitboard directory.
 fn repaired(
-    _os: pitboard_core::host::Os,
+    os: pitboard_core::host::Os,
     r: &pitboard_core::switch::Reclaimed,
     parks: &std::path::Path,
 ) -> String {
+    use pitboard_core::host::Os;
     if r.is_empty() {
         return "Every parked login here is accounted for.\n".to_string();
     }
@@ -1053,17 +1056,27 @@ fn repaired(
         ));
     }
     if !r.strangers.is_empty() {
+        let why = match os {
+            Os::MacOs => {
+                "the keychain is shared by the whole machine, and they may be another Pitboard's"
+            }
+            Os::Linux | Os::Windows => "Pitboard deletes only a parked login it wrote down",
+        };
         said.push_str(&format!(
             "{} parked login(s) here belong to no account Pitboard knows and were \
-             not written down by this one. Left alone: the keychain is shared by \
-             the whole machine, and they may be another Pitboard's.\n",
+             not written down by this one. Left alone: {why}.\n",
             r.strangers.len()
         ));
     }
     if !r.unreadable.is_empty() {
+        let next = match os {
+            Os::MacOs => " Unlock the keychain and run this again.",
+            // A sealed park does not open in a logon without this account's key, as over SSH.
+            Os::Windows => " Run this again from a desktop session.",
+            Os::Linux => "",
+        };
         said.push_str(&format!(
-            "{} could not be read this time and were left alone. Unlock the \
-             keychain and run this again.\n",
+            "{} could not be read this time and were left alone.{next}\n",
             r.unreadable.len()
         ));
     }
