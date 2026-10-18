@@ -72,7 +72,7 @@ The script changes no shell profile. Where `~/.local/bin` is not on your `PATH`,
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
-If another `pitboard` comes first on your `PATH`, the script names it. Remove that copy, or put `~/.local/bin` before it. Daily renewal may run the copy you remove: see [Daily renewal stopped working](/troubleshooting/accounts#daily-renewal-stopped-working).
+If another `pitboard` comes first on your `PATH`, the script names it. Remove that copy, or put `~/.local/bin` before it. Daily renewal may run the copy you remove: see [Daily renewal stopped working](/troubleshooting/renewal#daily-renewal-stopped-working).
 
 zsh loads the completion only after a change to `~/.zshrc`, as [`completions`](/reference/integration-commands#completions) says.
 

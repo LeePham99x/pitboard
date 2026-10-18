@@ -1,0 +1,51 @@
+---
+title: "Fix daily renewal and starting at sign-in"
+sidebarTitle: "Renewal and sign-in"
+description: "Fix an expired parked login, a renewal schedule that stopped or uses another proxy, and an app that does not start when you sign in."
+---
+
+[Keep parked logins alive](/guides/renewal) says what daily renewal does and how to turn it on.
+
+## A parked login has expired
+
+`pitboard status` shows `login expired` beside the account, and Pitboard's menu shows **Needs signing in again**. [Sign in to the account again](/guides/sign-in-again), then [turn on daily renewal](/guides/renewal#turn-on-daily-renewal) to keep it from happening.
+
+## Daily renewal stopped working
+
+`pitboard doctor` flags its `renewal schedule` line:
+
+| The line says | System | Cause |
+| --- | --- | --- |
+| `which is not there any more` | All | The `pitboard` the schedule runs was moved or removed. |
+| `does not say which Pitboard it runs` | All | The schedule names no program. |
+| `which is the app itself and not a command line` | macOS | The schedule runs the app, which renews nothing. |
+| `but in Task Scheduler it`, then what changed, such as `is disabled` | Windows | Someone changed the task in Task Scheduler. |
+| `and its last run`, then how it ended | Windows | The last run failed. |
+
+Turn daily renewal off and on again: with **Renew parked logins daily** in the app's **Renewal** settings, or on the command line:
+
+```sh
+pitboard schedule uninstall
+pitboard schedule install
+```
+
+Where the last run failed, run `pitboard renew` to see what it says. [Renewal schedule](/reference/files#renewal-schedule) lists where each system keeps the schedule.
+
+### The schedule uses another proxy
+
+`pitboard doctor` warns on its `renewal schedule's proxy` line when the schedule's proxy differs from your shell's. Run `pitboard schedule install` from a shell where the proxy variables are right.
+
+The app starts with the system's environment, not a terminal's. Turning **Renew parked logins daily** off and on gives the schedule the app's proxy variables: on macOS, only those `launchctl setenv` set.
+
+## Pitboard does not start when you sign in
+
+<Tabs>
+  <Tab title="macOS">
+    Turn on **Open Pitboard at login** in **Settings** > **General**. If macOS is waiting for you to allow it, click **Open Login Items Settings** and allow Pitboard there.
+  </Tab>
+  <Tab title="Windows">
+    Turn on **Start when you sign in to Windows** in Pitboard's **Settings**, under **General**. Started this way, Pitboard opens no window, and its icon appears in the notification area.
+
+    If the setting is dimmed and reads **Turned off in Settings > Apps > Startup, where you can turn it on again.**, Windows' own settings turned it off. Turn Pitboard on in **Settings** > **Apps** > **Startup**.
+  </Tab>
+</Tabs>

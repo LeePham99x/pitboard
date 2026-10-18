@@ -26,7 +26,7 @@ error: the parked login for `work` has expired. Run `pitboard enroll work --sign
 
 A line that starts `ready · expires in` needs no browser: `pitboard renew` renews that login.
 
-On Windows, parked logins stop opening after an administrator resets your Windows password, or after your profile is restored on another PC. A switch to such an account refuses with `credential_sealed`, and `pitboard doctor` names the command for each. Over SSH they do not open either, so run `pitboard doctor` from a desktop session before you sign in again.
+On Windows, a switch that refuses with `credential_sealed` needs a sign-in again too: see [Parked logins do not open on this PC](/troubleshooting/recovery#parked-logins-do-not-open-on-this-pc).
 
 ## Sign in again
 
