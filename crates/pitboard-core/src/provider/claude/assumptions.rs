@@ -353,11 +353,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
             "on macOS the file sits behind the keychain, fallback_file_pins_session_login's",
         ),
         linux: NotRead("how soon a session takes a new login off Windows is credential_cache's"),
-        windows: Pending {
-            by: &["W27"],
-            reads: "how soon a running session takes a `.credentials.json` a switch wrote, \
-                    session step 6",
-        },
+        windows: Read("2.1.302"),
     },
     PerSystem {
         name: "credman_account_name",
@@ -414,7 +410,10 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         windows: Pending {
             by: &["W27"],
             reads: "how soon a running session takes a login a switch wrote to Credential \
-                    Manager, session step 7",
+                    Manager, session step 7, which the session of 2026-10-18 did not reach: its \
+                    switches wrote `.credentials.json` past a settings file Pitboard read no \
+                    `env` from (settings_byte_order_mark), then refused over the pieces Claude \
+                    Code had lost a login in (credman_move_lost_a_piece)",
         },
     },
     PerSystem {
@@ -1165,7 +1164,12 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     src/errno/windows_errno.rs, and libuv's `uv_fs_open`, which shares all three but under \
                     `UV_FS_O_EXLOCK`, in src/win/fs.c at oven-sh/libuv 8023581, as embedded in \
                     Claude Code 2.1.300; the file write's staging, its retries and its \
-                    in-place arm, in the win32-x64 and win32-arm64 builds; read on 2026-10-15",
+                    in-place arm, in the win32-x64 and win32-arm64 builds; read on 2026-10-15. \
+                    Measured with Process Monitor and 2.1.302 on the session's PC, Windows 11 \
+                    build 26300 on ARM64, on 2026-10-18: `claude.exe` opened `.credentials.json` \
+                    and `.claude.json` sharing all three, renamed `.claude.json.tmp.<pid>.<hex>` \
+                    over `.claude.json`, and no open of a file in `.claude` met a sharing \
+                    violation or access denied while the app and the command line switched",
         verified_against: "2.1.300",
         depends: "host::windows::fs::rename, which renames over Claude Code's files the POSIX \
                   way where the volume has it and waits out a file held without sharing its \
@@ -1347,13 +1351,17 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         fact: "on Windows, where `.credentials.json` is Claude Code's store, a running session \
                looks at its modification time before each request and reads it again where it \
                has changed, so a switch, which changes it, is taken at the session's next \
-               request. Read, not measured against a running session",
+               request",
         read_from: "the check before each API client, which compares the file's modification \
                     time with the one it last saw, in the win32-x64 and win32-arm64 builds of \
-                    2.1.301, read as bytes on 2026-10-16",
-        verified_against: "2.1.301",
-        depends: "Claude's adoption on Windows, which says 33 seconds as on Linux until \
-                  session step 6 measures it",
+                    2.1.301, read as bytes on 2026-10-16. Measured with 2.1.302 on the session's \
+                    PC, Windows 11 build 26300 on ARM64, on 2026-10-18: a running `claude` \
+                    answered its next prompt as the account switched to, 11 s after a switch from \
+                    the app's menu, and 21 s after one from a terminal, its answer at 11 s still \
+                    under way",
+        verified_against: "2.1.302",
+        depends: "Claude's adoption on Windows, which says sessions follow within 33 seconds, \
+                  as on Linux",
         probe: &["lastCredentialsMtimeMs"],
         absent: &[],
     },
@@ -1915,6 +1923,7 @@ mod tests {
                 "windows_backend_choice",
                 "windows_plaintext_strict_read",
                 "windows_plaintext_write",
+                "windows_file_adoption",
                 "credman_account_name",
                 "credman_target",
                 "credman_chunking",
