@@ -75,6 +75,29 @@ const LABEL_TO_USE: &str = if cfg!(windows) {
     "The label the account was enrolled under, such as `work`, `codex/work` or `desktop/work`"
 };
 
+const STOW: &str = if cfg!(windows) {
+    "Put away the login Claude Code left in a file behind Credential Manager, then delete the file"
+} else {
+    "Put away the login Claude Code left in a file behind the keychain, then delete the file"
+};
+
+// Pitboard warms up no account on Windows (`duty::warm::unbuilt`).
+const WARM: &str = if cfg!(windows) {
+    "Warm-ups, which are not available on Windows, where Claude Code does not read the access \
+     token a warm-up hands it"
+} else {
+    "Start the five-hour period of the accounts you choose as soon as the last one resets, \
+     while the app or `pitboard watch` runs"
+};
+
+const WATCH: &str = if cfg!(windows) {
+    "Switch Claude Code to another of your accounts before the one in use runs out, for as long \
+     as this runs"
+} else {
+    "Switch Claude Code to another of your accounts before the one in use runs out, and warm up \
+     the accounts `pitboard warm on` turned on, for as long as this runs"
+};
+
 // The default folder, by the name a person knows it by on each system.
 const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
     "Renew as the daily renewal schedule does: %LOCALAPPDATA%\\Pitboard, whatever \
@@ -118,7 +141,7 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    /// Put away the login Claude Code left in a file behind the keychain, then delete the file
+    #[command(about = STOW)]
     Stow {
         /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
@@ -170,14 +193,12 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
-    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
-    /// while the app or `pitboard watch` runs
+    #[command(about = WARM)]
     Warm {
         #[command(subcommand)]
         what: Option<warm::WarmCommand>,
     },
-    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
-    /// up the accounts `pitboard warm on` turned on, for as long as this runs
+    #[command(about = WATCH)]
     Watch {
         /// Switch once a limit of the account in use reaches this share, from 50 to 99
         #[arg(
