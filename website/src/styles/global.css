@@ -13,6 +13,16 @@
 @custom-variant os-mobile (&:where([data-os="mobile"] *));
 @custom-variant surface-app (&:where([data-surface="app"] *));
 @custom-variant surface-cli (&:where([data-surface="cli"] *));
+/* a tab or button whose value is the root's choice, so it looks chosen from the first paint */
+@custom-variant chosen {
+  &:where(:root:not([data-platform="windows"], [data-platform="linux"]) [data-platform="macos"]),
+  &:where(:root[data-platform="windows"] [data-platform="windows"]),
+  &:where(:root[data-platform="linux"] [data-platform="linux"]),
+  &:where(:root:not([data-surface="cli"]) [data-surface="app"]),
+  &:where(:root[data-surface="cli"] [data-surface="cli"]) {
+    @slot;
+  }
+}
 @custom-variant theme-system (&:where(:root:not([data-theme]) *));
 @custom-variant theme-light (&:where([data-theme="light"] *));
 @custom-variant theme-dark (&:where([data-theme="dark"] *));
