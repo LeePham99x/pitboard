@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Inside WSL, `pitboard doctor` says Pitboard for Windows switches the Claude Code and Codex
+  installed on Windows.
+
 ### Fixed
 
 - The Windows app finds the command line its installer puts beside it, so **Renew parked logins
