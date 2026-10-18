@@ -63,7 +63,7 @@ The script installs the command line of the most recent release, not a pre-relea
 
 - It needs `curl` or `wget`, and `sha256sum` or `shasum`. Without `curl`, run `wget -qO- https://usepitboard.com/install.sh | sh`.
 - It checks its download against the release's checksums. [Check the install script](/install/verify#check-the-install-script) checks the script itself.
-- As root or under `sudo`, it installs nothing: Pitboard [changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root).
+- As root or under `sudo`, it installs nothing: Pitboard [changes nothing as root](/troubleshooting/refused-changes#pitboard-changes-nothing-as-root).
 
 The script changes no shell profile. Where `~/.local/bin` is not on your `PATH`, it prints the command that puts it there for your shell:
 

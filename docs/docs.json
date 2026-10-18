@@ -67,7 +67,8 @@
           "troubleshooting/renewal",
           "troubleshooting/claude-desktop",
           "troubleshooting/recovery",
-          "troubleshooting/account-windows"
+          "troubleshooting/account-windows",
+          "troubleshooting/refused-changes"
         ]
       },
       {

@@ -1,0 +1,36 @@
+---
+title: "Fix Pitboard refusing every change"
+sidebarTitle: "Refused changes"
+description: "Fix Pitboard refusing every change as root, under `sudo`, as administrator or on a Windows older than 24H2."
+---
+
+In each case here, reads such as `pitboard status` and the status line still answer from the last numbers measured, and write nothing.
+
+## Pitboard changes nothing as root
+
+On macOS and Linux, as root or with `sudo`, Pitboard refuses every change with `elevated`: a file or keychain item made as root would be out of reach of your own runs. A container whose only user is root counts too.
+
+Run Pitboard as yourself. [Remove files Pitboard made as root](/install/remove#remove-files-pitboard-made-as-root) cleans up after an earlier Pitboard run as root.
+
+### `SUDO_UID` is set in your own shell
+
+Pitboard takes any run with a non-empty `SUDO_UID` as one under `sudo`. A shell started with `sudo -iu` and your own name passes it on, such as to a tmux server. If `id -un` prints your own name there, run the command without it:
+
+```sh
+env -u SUDO_UID pitboard use work
+```
+
+To stop it for good, start that shell or tmux again without `sudo`. For the install script, pipe it to `env -u SUDO_UID sh` in place of `sh`.
+
+## Pitboard changes nothing as administrator
+
+On Windows, Pitboard refuses every change with `elevated` when it runs elevated: a file it made would belong to the administrators.
+
+| Where it runs | What to do |
+| --- | --- |
+| A terminal started with **Run as administrator** | Run Pitboard from a terminal that is not elevated. |
+| An account with User Account Control turned off, or the built-in Administrator | Run Pitboard from a standard account, or turn User Account Control on. |
+
+## Pitboard changes nothing on this version of Windows
+
+On a Windows older than Windows 11 24H2, build 26100, Pitboard refuses every change with `system_too_old`. Windows Server 2025 meets the floor. Update Windows to use Pitboard there.

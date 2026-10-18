@@ -33,7 +33,7 @@ A variable that names a folder must hold a full path: [`home_not_absolute`](/ref
 | `ProgramFiles`, `SystemRoot` | Windows | Both | Where `pitboard doctor` looks for PowerShell 7 and Windows PowerShell, which Claude Code runs its status line in. |
 | `PATHEXT` | Windows | Both | The extensions a program found on the `PATH` may have, such as `claude.cmd`. |
 | `OneDrive`, `OneDriveCommercial`, `OneDriveConsumer` | Windows | Both | Folders OneDrive syncs, which Pitboard's directory may not be in: see [The Pitboard directory](/reference/files#the-pitboard-directory). |
-| `SUDO_UID` | macOS, Linux | Both | Not empty, as `sudo` sets it: Pitboard refuses every change with `elevated`. See [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
+| `SUDO_UID` | macOS, Linux | Both | Not empty, as `sudo` sets it: Pitboard refuses every change with `elevated`. See [Pitboard changes nothing as root](/troubleshooting/refused-changes#pitboard-changes-nothing-as-root). |
 | `PATH` | All | Both | Where `claude` and `codex` are looked for, in directories named from the root. On macOS, the app asks your login shell for its `PATH` instead, and on Windows it reads the `PATH` your account and the machine set: see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). |
 | `SHELL` | macOS | App | The login shell the app asks for its `PATH`. Unset or empty, your account's shell. |
 | `NO_COLOR` | All | Command line | Not empty: no colour in the output. For the status line, see [`statusline`](/reference/integration-commands#statusline). |

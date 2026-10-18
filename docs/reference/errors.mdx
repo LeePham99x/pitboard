@@ -230,14 +230,14 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 
 | Code | Exit | Meaning | What to do |
 | --- | --- | --- | --- |
-| `elevated` | 1 | Pitboard runs as root or with `sudo`, so it refuses every change. `pitboard status` and the app's reads warn `read_only` instead. | Run the command as yourself. See [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
-| `elevated` | 1 | On Windows, Pitboard runs elevated: from a terminal started with **Run as administrator**, with User Account Control off, or as the built-in Administrator. Reads warn `read_only`. | See [Pitboard changes nothing as administrator](/troubleshooting#pitboard-changes-nothing-as-administrator). |
+| `elevated` | 1 | Pitboard runs as root or with `sudo`, so it refuses every change. `pitboard status` and the app's reads warn `read_only` instead. | Run the command as yourself. See [Pitboard changes nothing as root](/troubleshooting/refused-changes#pitboard-changes-nothing-as-root). |
+| `elevated` | 1 | On Windows, Pitboard runs elevated: from a terminal started with **Run as administrator**, with User Account Control off, or as the built-in Administrator. Reads warn `read_only`. | See [Pitboard changes nothing as administrator](/troubleshooting/refused-changes#pitboard-changes-nothing-as-administrator). |
 
 ## Windows
 
 | Code | Exit | Meaning | What to do |
 | --- | --- | --- | --- |
-| `system_too_old` | 1 | Windows is older than Windows 11 24H2, build 26100, or Pitboard cannot tell its build, so Pitboard refuses every change. Reads warn `read_only`. | Update Windows. See [Pitboard changes nothing on this version of Windows](/troubleshooting#pitboard-changes-nothing-on-this-version-of-windows). |
+| `system_too_old` | 1 | Windows is older than Windows 11 24H2, build 26100, or Pitboard cannot tell its build, so Pitboard refuses every change. Reads warn `read_only`. | Update Windows. See [Pitboard changes nothing on this version of Windows](/troubleshooting/refused-changes#pitboard-changes-nothing-on-this-version-of-windows). |
 | `windows_not_released` | 1 | A Windows build of a 0.x release, made before Pitboard for Windows was released. It changes nothing and answers only `--version`, `--help`, `completions` and `manpage`. | [Install Pitboard](/install) for Windows. |
 
 ## Command output
