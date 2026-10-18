@@ -759,6 +759,8 @@ impl Kept {
 /// as `Kept` keeps it.
 pub(crate) struct AppCore {
     made: Kept,
+    // Held from the first core made for as long as the app runs, so `uninstall` refuses then.
+    open: std::sync::OnceLock<Option<pitboard_core::app::Open>>,
 }
 
 impl AppCore {
@@ -799,11 +801,17 @@ impl AppCore {
                 again_after,
                 held: Mutex::new(None),
             },
+            open: std::sync::OnceLock::new(),
         }
     }
 
     fn core(&self) -> Arc<Made> {
-        self.made.value()
+        self.held(self.made.value())
+    }
+
+    fn held(&self, made: Arc<Made>) -> Arc<Made> {
+        self.open.get_or_init(|| made.core.hold_open());
+        made
     }
 
     /// The core, once the app may read anything with it, as the command line asks before
@@ -823,7 +831,7 @@ impl AppCore {
     /// The same, where the core may be made once more first, as `Kept::value_asking_again`
     /// says.
     fn readable_asking_again(&self) -> Result<Arc<Made>, PitboardError> {
-        Self::may_read(|| self.made.value_asking_again())
+        Self::may_read(|| self.held(self.made.value_asking_again()))
     }
 
     /// The core `made` makes, once the release gate lets this build do anything, and then

@@ -57,6 +57,11 @@ pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
         ctx,
         permit,
     } = settled;
+    if crate::app::Open::is_held(&ctx) {
+        return Err(Error::PitboardOpen {
+            home: home::dir(&ctx),
+        });
+    }
     // An app's folder is read only where a login of it is parked or set aside or a move of one
     // waits, and held until every park is deleted. Refused before anything is taken away.
     let mut warnings = Vec::new();

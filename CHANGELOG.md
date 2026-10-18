@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `pitboard uninstall` refuses with `pitboard_open` while the Pitboard app is open,
+  instead of deleting a directory the app makes again. Quit the app, then run it again.
+
 ### Fixed
 
 - `pitboard use` and **Use** put an account's login in place where nothing is signed in to

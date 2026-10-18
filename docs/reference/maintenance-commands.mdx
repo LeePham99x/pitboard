@@ -165,7 +165,7 @@ Usage: pitboard uninstall [OPTIONS]
 | --- | --- |
 | `-y, --yes` | Do not ask first; needed without a terminal or with `--json`. |
 
-`pitboard uninstall` works in this order:
+While the Pitboard app is open, `pitboard uninstall` refuses with `pitboard_open` and deletes nothing: the app would make `~/.pitboard` again. Otherwise it works in this order:
 
 1. Where Pitboard holds a Claude Desktop login or a move of one waits, reads Claude's data folder as a change does, and settles the move. If it refuses, nothing is deleted.
 2. Removes the daily renewal schedule. If that fails, it stops with nothing deleted.
