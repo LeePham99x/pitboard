@@ -1071,7 +1071,34 @@ pub(crate) fn listed(items: &[impl AsRef<str>]) -> String {
     }
 }
 
+// A login replaced outside Pitboard, sent to the row's own button rather than a command.
+fn replaced(os: Os, tool: ProviderId, label: &str, now: &Stored) -> String {
+    let label = bare(label);
+    let name = tool.name();
+    let has = match now {
+        Stored::Account(now) => format!(": {name} now has {}’s login stored", bare(now)),
+        Stored::Unenrolled(email) if email.is_empty() => {
+            format!(": {name} now has the login of an account you haven’t added")
+        }
+        Stored::Unenrolled(email) => format!(": {name} now has {email}’s login stored"),
+        Stored::Nothing => format!(": {name} now has no login stored"),
+        Stored::Unknown => String::new(),
+    };
+    format!(
+        "{label}’s login was replaced by a sign-in outside Pitboard{has}, and Pitboard holds no \
+         login for {label}. Choose {} on its row.",
+        titled(os, "Sign In Again…", "Sign in again…")
+    )
+}
+
 pub(crate) fn in_app_warning(os: Os, warning: &CoreWarning) -> Option<String> {
+    if let CoreWarning::LoginReplaced {
+        tool, label, now, ..
+    } = warning
+        && !in_its_app(tool.code())
+    {
+        return Some(replaced(os, *tool, label, now));
+    }
     let tool = warning.tool().filter(|tool| in_its_app(tool.code()))?;
     let app = tool.program();
     let add_what_it_shows = format!(
@@ -1096,34 +1123,16 @@ pub(crate) fn in_app_warning(os: Os, warning: &CoreWarning) -> Option<String> {
             named: by, last, ..
         } => named(by, last),
         CoreWarning::ConfigNamesAnother { config, in_use, .. } => named(config, in_use),
-        CoreWarning::LoginReplaced { label, now, .. } => {
-            let label = bare(label);
-            match now {
-                Stored::Nothing => format!(
-                    "{label} was signed out in {app}, which ends its login at claude.ai, and \
-                     Pitboard holds no login for it. Choose Sign In Again… on its row."
-                ),
-                now => {
-                    let has = match now {
-                        Stored::Account(now) => {
-                            format!(": {} now has {}’s login stored", tool.name(), bare(now))
-                        }
-                        Stored::Unenrolled(email) if email.is_empty() => format!(
-                            ": {} now has the login of an account you haven’t added",
-                            tool.name()
-                        ),
-                        Stored::Unenrolled(email) => {
-                            format!(": {} now has {email}’s login stored", tool.name())
-                        }
-                        Stored::Nothing | Stored::Unknown => String::new(),
-                    };
-                    format!(
-                        "{label}’s login was replaced by a sign-in outside Pitboard{has}, and \
-                         Pitboard holds no login for {label}. Choose Sign In Again… on its row."
-                    )
-                }
-            }
-        }
+        CoreWarning::LoginReplaced {
+            label,
+            now: Stored::Nothing,
+            ..
+        } => format!(
+            "{} was signed out in {app}, which ends its login at claude.ai, and Pitboard holds \
+             no login for it. Choose Sign In Again… on its row.",
+            bare(label)
+        ),
+        CoreWarning::LoginReplaced { label, now, .. } => replaced(os, tool, label, now),
         CoreWarning::TakenAsNamed {
             label,
             recorded: None,
