@@ -75,8 +75,8 @@ const bomCell = (b: Asset | null) =>
   b
     ? `<a href="${escapeHtml(b.url)}"><code class="text-[0.875rem]">.cdx.json</code></a>, ${formatSize(b.size)}`
     : none;
-const fileLine = (a: Asset) =>
-  `<a href="${escapeHtml(a.url)}"><code class="whitespace-normal">${a.name}</code></a>, <span class="whitespace-nowrap">${formatSize(a.size)}</span>`;
+const fileLine = (a: Asset, after?: Platform) =>
+  `<a href="${escapeHtml(a.url)}"${after ? ` data-download="${after}"` : ""}><code class="whitespace-normal">${a.name}</code></a>, <span class="whitespace-nowrap">${formatSize(a.size)}</span>`;
 const cell =
   "border-b border-grid text-left align-baseline max-files:m-0 max-files:border-0 max-files:p-0";
 const label =
@@ -192,7 +192,10 @@ const jsonLd = [application(Astro.site!, downloads)];
                 <code class="whitespace-normal">{msi.name}</code>,
                 <span class="whitespace-nowrap">{formatSize(msi.size)}</span>
               </p>
-              <p class:list={[note, "mt-1"]} set:html={`For an Arm PC: ${fileLine(armMsi)}`} />
+              <p
+                class:list={[note, "mt-1"]}
+                set:html={`For an Arm PC: ${fileLine(armMsi, "windows")}`}
+              />
               <p class:list={[body, "mt-4", after]} data-after="windows">
                 If Windows says it protected your PC, select <b>More info</b>, then <b>Run anyway</b
                 >.

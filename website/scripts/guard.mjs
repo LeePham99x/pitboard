@@ -141,6 +141,17 @@ export function checkPage(name, html, rules) {
     else if (!/(?:^|[\s:])chosen:/.test(look)) fail(`${what} has no chosen: look`);
   }
 
+  // site.ts shows a [data-after] step once a link with its platform's data-download is clicked
+  const panelOf = (e) => closest(e.parent, (p) => p.attrs.role === "tabpanel");
+  for (const note of all.filter((e) => e.attrs["data-after"])) {
+    const platform = note.attrs["data-after"];
+    for (const a of all.filter((e) => e.tag === "a" && panelOf(e) === panelOf(note))) {
+      const file = RELEASE_FILE.exec(a.attrs.href ?? "")?.[2];
+      if (file && INSTALLER[platform]?.test(file) && a.attrs["data-download"] !== platform)
+        fail(`${file} does not show the step its panel gives after a download`);
+    }
+  }
+
   const ids = new Set(all.map((e) => e.attrs.id).filter(Boolean));
   for (const e of all) {
     for (const key of ["aria-labelledby", "aria-controls", "aria-describedby"]) {
@@ -258,6 +269,7 @@ export function checkSigningPolicy(pages) {
 }
 
 const RELEASE_FILE = /\/releases\/download\/v(\d+\.\d+\.\d+(?:-beta\.\d+)?)\/([^/?#]+)$/;
+const INSTALLER = { macos: /-macos\.zip$/, windows: /-windows-(?:x64|arm64)\.msi$/ };
 const WINDOWS_FILE =
   /-windows-(?:x64|arm64)\.msi(?:\.cdx\.json)?$|-pc-windows-msvc\.zip(?:\.cdx\.json)?$|^appcast-windows\.xml$/;
 
