@@ -45,6 +45,13 @@ impl RawStore for PlainFile {
             crate::host::Os::MacOs | crate::host::Os::Linux => atomic::Perms::Secret,
             crate::host::Os::Windows => atomic::Perms::MatchExisting,
         };
+        // A tool that never ran has no folder yet, which its own sign-in would make.
+        if let Some(folder) = path.parent()
+            && !folder.exists()
+        {
+            crate::host::fs::create_private_dir(permit, folder)
+                .map_err(|e| Error::Write(format!("cannot make {}: {e}", folder.display())))?;
+        }
         atomic::write(permit, path, contents.as_bytes(), perms)
             .map_err(|e| Error::Write(format!("cannot write {}: {e}", path.display())))?;
         match self.read(service)? {
