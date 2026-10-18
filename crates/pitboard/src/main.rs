@@ -1980,6 +1980,26 @@ mod tests {
         insta::assert_snapshot!("help", every_help());
     }
 
+    // Pitboard warms up no account on Windows, and Claude Code's login file there sits behind
+    // Credential Manager.
+    #[test]
+    #[cfg(windows)]
+    fn the_windows_help_promises_no_warm_up_and_names_no_keychain() {
+        let every = every_help();
+        assert!(!every.contains("keychain"), "{every}");
+        let read = every.split_whitespace().collect::<Vec<_>>().join(" ");
+        for said in [
+            "warm Warm-ups, which are not available on Windows, where Claude Code does not read \
+             the access token a warm-up hands it",
+            "watch Switch Claude Code to another of your accounts before the one in use runs out, \
+             for as long as this runs",
+            "stow Put away the login Claude Code left in a file behind Credential Manager, then \
+             delete the file",
+        ] {
+            assert!(read.contains(said), "{said}: {every}");
+        }
+    }
+
     // Pitboard switches Claude Desktop on macOS alone; Linux's help keeps the words it had.
     #[test]
     fn the_help_names_claude_desktop_only_off_windows() {
