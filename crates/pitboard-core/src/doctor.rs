@@ -1273,7 +1273,8 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
     // tool either: a new machine is told what to do first, as it always was. A machine
     // that uses only Codex is not told to run a program it does not use.
-    let codex_here = facts.codex.present || facts.codex.enrolled > 0;
+    let codex_here =
+        facts.codex.present || facts.codex.program.is_some() || facts.codex.enrolled > 0;
     let claude_here = facts.claude_present || !(codex_here || facts.desktop.is_some());
 
     // First, in the order the gate asks them: they are why every change here is refused.
@@ -1714,8 +1715,8 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
             .iter()
             .filter_map(|p| judge_dormant(p, facts.now)),
     );
-    // Only where there is a Codex to say something about. A machine that has never run it
-    // reads exactly as it did before Pitboard knew Codex existed.
+    // Only where there is a Codex to say something about. A machine without it reads exactly
+    // as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
         checks.extend(judge_codex(
             facts.os,
@@ -4658,7 +4659,6 @@ mod tests {
         }
     }
 
-    /// A machine that has never run Codex.
     fn no_codex() -> CodexFacts {
         CodexFacts {
             home: PathBuf::from("/home/x/.codex"),
@@ -7026,9 +7026,8 @@ mod tests {
         assert_eq!(m.api.calls(), 0);
     }
 
-    /// A machine that has never run Codex reads exactly as it did before Pitboard knew
-    /// Codex existed; one that has gets a section of its own, and nothing of Claude Code's
-    /// moves.
+    // A machine without Codex reads exactly as it did before Pitboard knew Codex existed; one
+    // with it gets a section of its own, and nothing of Claude Code's moves.
     #[test]
     fn codex_has_a_section_only_where_there_is_a_codex() {
         let without = evaluate(&facts());
