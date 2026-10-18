@@ -7081,6 +7081,22 @@ mod tests {
         );
     }
 
+    // The session's This PC listed no Codex section for a Codex installed with npm and never
+    // run, though it lists Claude Code's for a Claude Code in the same state.
+    #[test]
+    fn codex_installed_and_never_run_has_its_section() {
+        let mut f = facts();
+        f.codex = CodexFacts {
+            program: Some(PathBuf::from(r"C:\Users\x\AppData\Roaming\npm\codex.cmd")),
+            ..no_codex()
+        };
+        let checks = evaluate(&f);
+        for code in ["codex_backend", "codex_auth_file", "codex_version"] {
+            assert_eq!(check(&checks, code).level, Level::Ok, "{code}");
+        }
+        assert!(healthy(&checks));
+    }
+
     /// A keychain store is Codex's to use and Pitboard's to leave alone, so it is said
     /// rather than read, and a store in memory holds nothing to switch. Each is a choice,
     /// not a fault: it fails for somebody with Codex accounts enrolled, because every one of
