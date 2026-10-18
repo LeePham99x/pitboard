@@ -8554,6 +8554,33 @@ mod tests {
         );
     }
 
+    // The session's fresh PC read "1 broken: do not switch accounts until fixed." for this
+    // alone, with nothing enrolled and Claude Code installed but never run.
+    #[test]
+    fn claude_code_that_never_ran_breaks_nothing() {
+        let mut facts = facts();
+        facts.config = Err(Error::ClaudeConfigMissing {
+            path: PathBuf::from("/home/x/.claude.json"),
+        });
+        facts.config_account = None;
+        facts.in_use = None;
+        facts.credential = Ok(None);
+        for installed in [true, false] {
+            facts.claude_program = installed;
+            let checks = evaluate(&facts);
+            assert_eq!(check(&checks, "config_file").level, Level::Warn, "{installed}");
+            assert!(
+                checks.iter().all(|c| c.level != Level::Fail),
+                "{installed}: {:?}",
+                checks
+                    .iter()
+                    .filter(|c| c.level == Level::Fail)
+                    .map(|c| c.code)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     /// A machine that uses only Codex is not told Claude Code is broken, nor to run a
     /// program it does not use. Everything about Pitboard itself is still checked.
     #[test]
