@@ -66,7 +66,14 @@ public sealed class RegistryNotificationRegistration(string aumid) : INotificati
         return key?.GetValue("CustomActivator") as string;
     }
 
+    // The class's key only by a GUID, so no other name reaches CLSID itself.
     public void Delete(string activator)
     {
+        if (Guid.TryParse(activator, out var named))
+        {
+            Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\CLSID\{named:B}", throwOnMissingSubKey: false);
+        }
+
+        Registry.CurrentUser.DeleteSubKeyTree(Key, throwOnMissingSubKey: false);
     }
 }

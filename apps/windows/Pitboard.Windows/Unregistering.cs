@@ -28,10 +28,21 @@ public static class Unregistering
         try
         {
             // UnregisterAll makes the AppUserModelId key as it looks for the class the key names.
-            if (registration.Activator() is not null)
+            if (registration.Activator() is not { } activator)
+            {
+                return;
+            }
+
+            try
             {
                 notifications.UnregisterAll();
             }
+            catch (Exception failed) when (failed is COMException or InvalidOperationException or UnauthorizedAccessException)
+            {
+            }
+
+            // The session's PC kept the AppUserModelId key past it (2026-10-18), so what Register wrote goes by name.
+            registration.Delete(activator);
         }
         catch (Exception error) when (error is COMException or IOException or UnauthorizedAccessException or SecurityException)
         {

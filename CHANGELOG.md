@@ -29,6 +29,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   account's **Sign In Again…** button instead of naming a command.
 - On Windows, **Start when you sign in to Windows** shows off, and says so, where Settings > Apps >
   Startup turned Pitboard off, instead of showing on while Windows does not start it.
+- On Windows, removing Pitboard deletes its notification registration under
+  `HKCU\Software\Classes`, which outlived the removal.
 - `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
   new PC with nothing enrolled no longer reads as broken.
 - `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex
