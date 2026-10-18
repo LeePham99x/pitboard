@@ -23,23 +23,16 @@ The login in use belongs to its tool, which renews it. [When Pitboard renews a l
 
 ## Turn on daily renewal
 
-Daily renewal runs `pitboard renew` once a day, from the system's own scheduler. It renews your parked logins and does nothing else.
+Daily renewal runs `pitboard renew` once a day, from the system's own scheduler. It renews your parked logins and does nothing else. [`schedule`](/reference/maintenance-commands#schedule) says when each system runs it.
 
 <Tabs>
   <Tab title="macOS">
     Click Pitboard's item in the menu bar, choose **Settings**, then click **Renewal**. Turn on **Renew parked logins daily**.
 
     The app must be in your Applications folder: until you move it there, macOS runs a temporary copy, and the setting cannot be turned on.
-
-    A LaunchAgent runs it. The first run comes 24 hours after you turn it on, and a run due while the Mac sleeps is skipped.
   </Tab>
   <Tab title="Windows">
     Right-click Pitboard's icon in the notification area and select **Settings**. Under **Renewal**, turn on **Renew parked logins daily**.
-
-    A task in Task Scheduler runs it, and only while you are signed in to Windows. The first run comes 24 hours after you turn it on, and Task Scheduler starts a missed run as soon as it can.
-  </Tab>
-  <Tab title="Linux">
-    A systemd user timer runs it. The first run comes 15 minutes after your user's systemd starts, and each next one a day after the last.
   </Tab>
 </Tabs>
 

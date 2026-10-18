@@ -90,34 +90,47 @@ After `Verification succeeded!`, run the file you checked:
 sh install.sh
 ```
 
-## Check the signature on macOS
+## Check the signature
 
-The macOS command line and app are signed with a Developer ID and notarised by Apple. Files for Windows and Linux are not signed, and the [code signing policy](/install/code-signing-policy) says which Windows files will be.
+The macOS command line and app are signed with a Developer ID and notarised by Apple. Linux files are not signed. The [code signing policy](/install/code-signing-policy) says which Windows files are signed, and from which release.
 
-The app carries its notarisation ticket. Gatekeeper fetches the command line's ticket from Apple when you first open a copy downloaded in a browser.
+<Tabs>
+  <Tab title="macOS">
+    The app carries its notarisation ticket. Gatekeeper fetches the command line's ticket from Apple when you first open a copy downloaded in a browser.
 
-`spctl` asks Gatekeeper whether macOS would open a file. For the app:
+    `spctl` asks Gatekeeper whether macOS would open a file. For the app:
 
-```sh
-spctl --assess --type execute -v /Applications/Pitboard.app
-```
+    ```sh
+    spctl --assess --type execute -v /Applications/Pitboard.app
+    ```
 
-```text
-/Applications/Pitboard.app: accepted
-source=Notarized Developer ID
-```
+    ```text
+    /Applications/Pitboard.app: accepted
+    source=Notarized Developer ID
+    ```
 
-For the command line, use `--type install`, since `--type execute` accepts only apps. In the folder the tarball unpacked into:
+    For the command line, use `--type install`, since `--type execute` accepts only apps. In the folder the tarball unpacked into:
 
-```sh
-spctl --assess --type install -v pitboard
-```
+    ```sh
+    spctl --assess --type install -v pitboard
+    ```
 
-```text
-pitboard: accepted
-source=Notarized Developer ID
-```
+    ```text
+    pitboard: accepted
+    source=Notarized Developer ID
+    ```
 
-Any developer's notarised file is `accepted`. With `-vvv` in place of `-v`, an `origin` line names the signer. For Pitboard's files, it ends with the team identifier `(D7HJ5TFYCU)`.
+    Any developer's notarised file is `accepted`. With `-vvv` in place of `-v`, an `origin` line names the signer. For Pitboard's files, it ends with the team identifier `(D7HJ5TFYCU)`.
+  </Tab>
+  <Tab title="Windows">
+    In PowerShell, in the download's folder, run this with the installer's name, or with `pitboard.exe` from the zip:
+
+    ```powershell
+    Get-AuthenticodeSignature Pitboard-v<version>-windows-x64.msi
+    ```
+
+    For a file that is not signed, its `Status` reads `NotSigned`. The release workflow checks each program of a release with no signer this way.
+  </Tab>
+</Tabs>
 
 For what else Pitboard protects against, see [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md#in-scope).

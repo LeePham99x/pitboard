@@ -32,8 +32,6 @@ Enrolled personal (me@example.com), the account signed in now.
 Add another without signing out of it: pitboard enroll <label> --sign-in
 ```
 
-Enrolling it parks nothing: Pitboard parks its login the first time you switch away, as [Parked logins](/concepts/switching#parked-logins) explains.
-
 ## Add another account
 
 Pitboard runs the tool's own sign-in in a private directory, so the account in use stays signed in.
@@ -67,7 +65,7 @@ Pitboard runs the tool's own sign-in in a private directory, so the account in u
   </Tab>
 </Tabs>
 
-Where Pitboard cannot find the tool, the dialog says so and links how to install it: see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). On the command line, sign in as the account you are adding when your browser opens. If Claude Code asks for a code, paste in the one the browser shows.
+If the dialog says Pitboard cannot find the tool, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). On the command line, sign in as the account you are adding when your browser opens. If Claude Code asks for a code, paste in the one the browser shows.
 
 ```sh
 pitboard enroll work --sign-in          # Claude Code
@@ -88,7 +86,7 @@ Each organisation your Anthropic account belongs to is a separate account, as ar
 
 ## Choose a label
 
-A label is one word, such as `work`. When you enrol an account, write the label for its tool:
+When you enrol an account, write its label for its tool:
 
 | Tool | Label |
 | --- | --- |
@@ -96,7 +94,7 @@ A label is one word, such as `work`. When you enrol an account, write the label 
 | Codex | `codex/work` |
 | Claude Desktop, on macOS | `desktop/work` |
 
-In the app, choose the tool and enter the name without its prefix. [Labels](/reference/commands#labels) says when other commands need the prefix.
+In the app, choose the tool and enter the name alone. [Labels](/reference/commands#labels) gives the rules for a label.
 
 ## Rename an account
 
@@ -111,13 +109,15 @@ Renaming changes only the label. The account keeps its parked login, and its [ac
   </Tab>
 </Tabs>
 
-On the command line, a rename stays inside its tool: `pitboard rename codex/work job` gives `codex/job`.
+On the command line:
 
 ```sh
 pitboard rename wrong right
 ```
 
 ## Forget an account
+
+To forget the account in use, switch to another account first.
 
 Forgetting an account deletes its parked login and what Pitboard keeps beside it on this computer:
 
@@ -126,7 +126,7 @@ Forgetting an account deletes its parked login and what Pitboard keeps beside it
 | Claude Code, Codex | Everything the account's [window](/guides/account-windows) keeps, its sign-in included |
 | Claude Desktop | The folders Pitboard set aside for the account |
 
-On Windows, a window's data goes once every account window has closed. To forget the account in use, switch to another account first.
+On Windows, a window's data goes once every account window has closed.
 
 <Tabs>
   <Tab title="macOS">

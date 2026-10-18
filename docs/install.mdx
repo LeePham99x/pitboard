@@ -40,7 +40,7 @@ On Linux, Pitboard builds and passes its tests, but has not been run with real l
       <Step title="Open the installer">
         If Windows shows **Windows protected your PC**, select **More info**, then **Run anyway**. What Microsoft Edge shows as it downloads the installer has not been measured.
 
-        It installs Pitboard for your Windows account alone, with no administrator prompt, in `%LOCALAPPDATA%\Programs\Pitboard`, with the command line on your `PATH`.
+        It installs Pitboard for your Windows account alone, with no administrator prompt, in `%LOCALAPPDATA%\Programs\Pitboard`. It puts the command line on your `PATH`, where a terminal opened after the install finds it.
       </Step>
       <Step title="Open Pitboard">
         Open **Pitboard** from Start. Its icon starts among the hidden icons of the notification area: drag it onto the taskbar to keep it in sight.
@@ -103,8 +103,6 @@ It and the `pitboard-app` cask both put `pitboard` on your `PATH`, so Homebrew i
 On macOS, without the `pitboard-app` cask, click **Install Command Line Tool** in **Settings** > **Command Line**, then enter an administrator's password when macOS asks. `/usr/local/bin/pitboard` then points into the app, so the command line updates with it.
 
 The button shows only when Pitboard finds no other `pitboard`: [Command Line](/reference/settings#command-line) lists every case. You can also run `/Applications/Pitboard.app/Contents/Helpers/pitboard`.
-
-On Windows, the installer puts the command line on your `PATH`, where a terminal opened after the install finds it.
 
 ## Update Pitboard
 

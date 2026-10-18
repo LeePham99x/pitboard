@@ -44,15 +44,7 @@ cli_auth_credentials_store = "file"
 
 Then run `codex login` and sign in with ChatGPT.
 
-Only an administrator can change a store set in these places:
-
-| System | Places |
-| --- | --- |
-| macOS | `/etc/codex/managed_config.toml`, `/etc/codex/requirements.toml`, and a managed preference of `com.openai.codex` |
-| Windows | `requirements.toml` in `%ProgramData%\OpenAI\Codex` |
-| Linux | `/etc/codex/managed_config.toml` and `/etc/codex/requirements.toml` |
-
-[Codex files](/reference/files#codex-files) lists every place Codex reads the setting from.
+A store set in `requirements.toml`, `managed_config.toml` or a managed preference overrides yours, and only an administrator can change it. [Codex files](/reference/files#codex-files) lists every place Codex reads the setting from.
 
 ## Add Codex accounts
 
