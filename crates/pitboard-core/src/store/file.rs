@@ -64,3 +64,24 @@ impl RawStore for PlainFile {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A tool that never ran has no folder yet, which the first account put in use needs.
+    #[test]
+    fn a_login_written_where_the_tools_folder_is_missing_makes_it_private() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let folder = scratch.path().join(".claude");
+        let file = PlainFile::at(folder.join(".credentials.json"));
+        file.write(Permit::for_a_test(), "", r#"{"claudeAiOauth":{}}"#)
+            .expect("written");
+        assert_eq!(
+            file.read("").expect("read").as_deref(),
+            Some(r#"{"claudeAiOauth":{}}"#)
+        );
+        let access = crate::host::fs::access(&folder).expect("its access");
+        assert!(!access.shared, "{}", access.described);
+    }
+}
