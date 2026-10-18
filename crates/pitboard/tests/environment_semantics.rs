@@ -217,7 +217,7 @@ fn doctor_in_wsl_says_what_pitboard_switches_there() {
             assert_eq!(
                 inside["advice"],
                 "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
-                 installed on Windows keep their own logins, which Pitboard here does not switch."
+                 installed on Windows keep their own logins, which Pitboard for Windows switches."
             );
         }
         Os::MacOs | Os::Windows => assert_eq!(inside, None),

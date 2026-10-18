@@ -8431,13 +8431,13 @@ mod tests {
                 Level::Ok,
                 "inside WSL, in Ubuntu".into(),
                 "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
-                 installed on Windows keep their own logins, which Pitboard here does not switch."
+                 installed on Windows keep their own logins, which Pitboard for Windows switches."
                     .into()
             )
         );
         let shared = "Pitboard here switches what is installed in this Linux. Claude Code \
-                      installed on Windows keeps its own login, which Pitboard here does not \
-                      switch.";
+                      installed on Windows keeps its own login, which Pitboard for Windows \
+                      switches.";
         facts.wsl = Some(WslFact {
             distribution: None,
             codex_home_on_windows: Some(PathBuf::from("/mnt/c/Users/x/.codex")),
