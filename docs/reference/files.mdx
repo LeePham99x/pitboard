@@ -9,7 +9,7 @@ Paths here are defaults. [Environment variables](/reference/environment-variable
 
 Pitboard's directory is `~/.pitboard`, or the path in `PITBOARD_HOME`. The command line and the app share it.
 
-On Windows, it is `AppData\Local\Pitboard` in your home, which is `%LOCALAPPDATA%\Pitboard` unless `LOCALAPPDATA` names another folder.
+On Windows, it is `AppData\Local\Pitboard` in your home, whatever `LOCALAPPDATA` names.
 
 Pitboard creates each directory at mode 0700 and each file at 0600. On Windows, it gives each an access list that admits only you, SYSTEM and Administrators. A directory that already exists keeps its own. A copy in `backups/` keeps the access of Claude Code's config.
 
@@ -106,7 +106,9 @@ Each place was read in Claude Code builds 2.1.278 to 2.1.300, and in 2.1.301 on 
 | `~/.claude.json` | Read for the account it names: see [How Pitboard knows whose login it is](/concepts/identity). A Claude Code switch copies it to `backups/`, then writes the incoming account into it. A `.config.json` in Claude Code's config directory wins over it when that file is not empty. Where `~/.claude.json` is missing, an empty `.config.json` that is not read-only wins too. |
 | Keychain item `Claude Code-credentials` | macOS: the login in use. A switch reads and replaces it. Pitboard writes a renewal of it where it must [identify it](/concepts/identity). |
 | Credential Manager item `Claude Code-credentials/claude-code-user` | Windows, where Credential Manager is Claude Code's store: the login in use. A login too large for one item is kept in pieces beside it, `#m`, `#p`, then `#0` onward. A switch reads and replaces them. |
-| `~/.claude/.credentials.json` | Linux: the login in use. Windows: the login in use, unless Credential Manager is Claude Code's store. Otherwise, a [login file behind the keychain or Credential Manager](/concepts/open-sessions#a-login-file-behind-the-keychain-or-credential-manager), read after it. Pitboard writes the file only where it is the store or the store holds no login. Otherwise only [`pitboard stow`](/reference/recovery-commands#stow) changes or deletes it, and the next change writes a renewal that a stopped `stow` left unsaved. |
+| `~/.claude/.credentials.json` | Linux: the login in use. A switch reads and replaces it. |
+| `~/.claude/.credentials.json` | Windows, where it is Claude Code's store: the login in use. A switch reads and replaces it. |
+| `~/.claude/.credentials.json` | macOS, and Windows where Credential Manager is Claude Code's store: a [login file behind the keychain or Credential Manager](/concepts/open-sessions#a-login-file-behind-the-keychain-or-credential-manager), read after it. Pitboard writes it only while the store holds no login. Otherwise only [`pitboard stow`](/reference/recovery-commands#stow) changes or deletes it, and the next change writes a renewal that a stopped `stow` left unsaved. |
 | `~/.claude/.storage-write.lock` | The lock Claude Code takes around each write of its login. Pitboard takes it whenever it writes the login in use: a switch, a sign-in to the account in use, a renewal of it, and `pitboard stow`. |
 | `~/.claude/.oauth_refresh.lock` and `~/.claude.lock` | The locks Claude Code takes, in that order, before it renews its login. Pitboard holds both through every Claude Code switch, `pitboard stow`, and each renewal of Claude Code's login. |
 | `~/.claude/daemon.lock` | Read by `pitboard doctor` for the daemon Claude Code last started and its version. |
