@@ -36,14 +36,12 @@ const after = "js:not-data-shown:hidden";
     >
       <p class={note}>The app needs macOS 14 or later and includes the command line.</p>
       <DownloadButton class="mt-4" platform="macos" href={zip.url} after />
+      <p class:list={[note, after]} data-after="macos">
+        Move Pitboard to your Applications folder before you open it.
+      </p>
       <p class={lead}>For the command line alone, run the install script:</p>
       <CommandBox class="mt-2" command={commands.installScript} />
-      <p class={note}>
-        <span class={after} data-after="macos">Move Pitboard to your Applications folder before you
-          open it.
-        </span
-        >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
-      </p>
+      <p class={note}>Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
       <p class:list={[note, "hidden no-js:block"]}>
         Pitboard also runs on <a href="/download#windows">Windows</a> and
         <a href="/download#linux">Linux</a>.
