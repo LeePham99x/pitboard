@@ -211,16 +211,17 @@ fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
     assert_eq!(state_file(&m), recorded);
     assert!(crate::audit::read(&m.ctx, 100).is_empty());
 
-    // With nothing in the config either, nobody is signed in and that is all it says.
+    // With nothing in the config either, nobody is signed in, and the switch puts `there`'s
+    // login where Claude Code reads it.
     std::fs::write(m.ctx_home().join(".claude.json"), "{}").expect("a config");
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
         .expect("nothing to recover")
         .0;
-    let failed =
-        switch(settled, &Key::new(ProviderId::Claude, "there")).expect_err("still nothing to move");
+    let (outcome, _) = switch(settled, &Key::new(ProviderId::Claude, "there"))
+        .expect("nobody is signed in to switch from");
     assert!(
-        matches!(failed, Error::LiveCredentialAbsent { .. }),
-        "got {failed:?}"
+        matches!(&outcome, Outcome::Installed { to, .. } if to == "there"),
+        "got {outcome:?}"
     );
     // A sign-out outside Pitboard, which took the only login `here` had.
     assert_eq!(
@@ -230,6 +231,53 @@ fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
             ("here".to_string(), "login_replaced".to_string()),
         ]
     );
+}
+
+// The session's fresh PC (2026-10-18) refused `pitboard use a` right after
+// `pitboard enroll a --sign-in` said to run it, with nothing signed in to Claude Code yet.
+#[test]
+fn the_first_account_goes_in_where_nothing_is_signed_in() {
+    for (tool, make) in [
+        ("claude", harness::machine as fn(&str) -> harness::Machine),
+        ("codex", harness::codex_machine),
+    ] {
+        let m = make(&format!("first-{tool}"));
+        let (live, _) = m.live_store();
+        live.delete_everything();
+        // Claude Code that never ran has no config at all.
+        let _ = std::fs::remove_file(m.ctx_home().join(".claude.json"));
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover")
+            .0;
+        let (outcome, warnings) = switch(settled, &m.key("there")).expect(tool);
+        assert!(
+            matches!(&outcome, Outcome::Installed { to, .. } if to == "there"),
+            "{tool}: {outcome:?}"
+        );
+        assert!(
+            warnings.iter().all(|w| w.code() != "config_not_updated"),
+            "{tool}: {warnings:?}"
+        );
+        let installed = m.live().expect("a login where the tool reads it");
+        let refresh = match harness::Tool::of(m.which) {
+            harness::Tool::Claude => &installed["claudeAiOauth"]["refreshToken"],
+            harness::Tool::Codex => &installed["tokens"]["refresh_token"],
+        };
+        assert_eq!(refresh, "there-refresh", "{tool}");
+        let state = state::load(&m.ctx).expect("state");
+        assert_eq!(
+            state
+                .in_use(m.which)
+                .and_then(|known| known.owner.as_ref())
+                .map(|owner| owner.email.as_str()),
+            Some("there@example.com"),
+            "{tool}"
+        );
+        assert!(
+            state.get(&m.key("there")).expect("enrolled").parked.is_none(),
+            "{tool}: its park is the login in use now"
+        );
+    }
 }
 
 /// While `.credentials.json` sits behind the keychain, a session already running keeps the
