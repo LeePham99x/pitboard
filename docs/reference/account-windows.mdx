@@ -59,7 +59,7 @@ Until the app has read the accounts, the window shows **Reading accounts**. A fa
     The page's shortcut menu has no **Download Linked File**, **Download Image** or **Download Video**: WebKit would cancel those downloads.
   </Tab>
   <Tab title="Windows">
-    The toolbar holds **Back**, **Forward** and **Reload**, which **Stop** replaces while a page loads. **Downloads** joins them once the window has a download, and the menu at the toolbar's end holds **Remove website data**.
+    The toolbar holds **Back**, **Forward** and **Reload**, which **Stop** replaces while a page loads. **Downloads** joins them once the window has a download, and the menu behind the three dots at the toolbar's end holds **Remove website data**.
 
     WebView2 serves the page's own keys, find bar and zoom, as Microsoft Edge does.
   </Tab>
@@ -129,12 +129,14 @@ Downloads go to your Downloads folder. A download never replaces a file.
 | Started by anything else, such as an artifact | After you choose **Download** in **Download "report.csv" from example.com?**, or **Download "report.csv"?** when the host is not known |
 | Started in a sign-in window, or from an address that is not `https:`, `blob:` or `data:` | Never |
 
-A failed download's partial file is deleted. Downloads go on after the window closes.
+A failed download's partial file is deleted.
 
-Quitting Pitboard while a download runs asks **A download is in progress. Quit anyway?**, with the count when there are several. **Quit** stops every download and deletes what each wrote.
+**Quit Pitboard** on macOS, or **Exit** on Windows, asks **A download is in progress. Quit anyway?** while a download runs, with the count when there are several. **Quit** stops every download and deletes what each wrote.
 
 <Tabs>
   <Tab title="macOS">
+    A download goes on after its window closes.
+
     A second `report.pdf` is saved as `report 2.pdf`, then `report 3.pdf`. If you denied Pitboard the Downloads folder, see [Downloads are not saved](/troubleshooting/account-windows#downloads-are-not-saved).
 
     **Downloads** in the toolbar appears once the window has a download, and lists them newest first. An ended one shows **Downloaded**, **Cancelled** or why it failed.
@@ -142,6 +144,8 @@ Quitting Pitboard while a download runs asks **A download is in progress. Quit a
     **Cancel** (an x) stops a running download and deletes what it wrote. **Show in Finder** (a magnifying glass) shows a finished file. **Clear** takes the ended downloads off the list.
   </Tab>
   <Tab title="Windows">
+    A download goes on while any account window is open. Closing the last one stops every download, and nothing asks first.
+
     A second `report.pdf` is saved as `report (1).pdf`, then `report (2).pdf`.
 
     **Downloads** in the toolbar appears once the window has a download, and opens WebView2's own list of them.
