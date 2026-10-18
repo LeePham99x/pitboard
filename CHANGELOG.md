@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `pitboard use` and **Use** put an account's login in place where nothing is signed in to
+  Claude Code or Codex yet, as on a new PC after adding the first account, instead of refusing
+  with `live_credential_absent`.
 - `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
   new PC with nothing enrolled no longer reads as broken.
 - `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex

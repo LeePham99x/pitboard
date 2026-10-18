@@ -251,7 +251,7 @@ fn the_first_account_goes_in_where_nothing_is_signed_in() {
             .0;
         let (outcome, warnings) = switch(settled, &m.key("there")).expect(tool);
         assert!(
-            matches!(&outcome, Outcome::Installed { to, .. } if to == "there"),
+            matches!(&outcome, Outcome::Installed { to, .. } if *to == m.key("there").typed()),
             "{tool}: {outcome:?}"
         );
         assert!(

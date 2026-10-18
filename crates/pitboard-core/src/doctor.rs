@@ -2975,9 +2975,8 @@ fn judge_codex(
                     "{} is absent: nothing is signed in to Codex",
                     facts.auth_file.display()
                 ),
-                "Sign in to one of your enrolled accounts with `codex login`. A switch \
-                 needs an account signed in to park, so `pitboard use` cannot put one \
-                 back while nothing is.",
+                "Put one of your enrolled accounts in use with `pitboard use \
+                 codex/<label>`, or sign in with `codex login`.",
             ),
             None => ok(
                 "codex_auth_file",
@@ -7062,9 +7061,8 @@ mod tests {
             login.detail
         );
 
-        // Accounts enrolled on a machine whose Codex home has gone still get the section.
-        // The way back is signing in: a switch refuses while nothing is signed in, so
-        // advice to switch would send somebody to a command that fails.
+        // Accounts enrolled on a machine whose Codex home has gone still get the section, and
+        // a switch puts a parked one in use while nothing is signed in.
         f.codex = CodexFacts {
             enrolled: 1,
             ..no_codex()
@@ -7074,7 +7072,7 @@ mod tests {
         assert_eq!(file.level, Level::Warn);
         assert!(file.advice.contains("`codex login`"), "{}", file.advice);
         assert!(
-            !file.advice.contains("pitboard use codex/"),
+            file.advice.contains("`pitboard use codex/<label>`"),
             "{}",
             file.advice
         );
