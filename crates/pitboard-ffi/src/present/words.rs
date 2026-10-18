@@ -2300,6 +2300,51 @@ mod tests {
         }
     }
 
+    // On the session's PC (2026-10-18) the banner told the app to run `pitboard enroll a
+    // --sign-in` beside the row's own Sign in again… button.
+    #[test]
+    fn a_login_replaced_outside_points_the_app_at_its_rows_button() {
+        use pitboard_core::state::Key;
+        let replaced = |tool: ProviderId, now: Stored| CoreWarning::LoginReplaced {
+            tool,
+            id: "claude_5b1e".into(),
+            label: Key::new(tool, "a").typed(),
+            now,
+        };
+        assert_eq!(
+            in_app_warning(
+                Os::Windows,
+                &replaced(
+                    ProviderId::Claude,
+                    Stored::Account(Key::new(ProviderId::Claude, "b").typed())
+                )
+            )
+            .as_deref(),
+            Some(
+                "a’s login was replaced by a sign-in outside Pitboard: Claude Code now has b’s \
+                 login stored, and Pitboard holds no login for a. Choose Sign in again… on its \
+                 row."
+            )
+        );
+        assert_eq!(
+            in_app_warning(Os::MacOs, &replaced(ProviderId::Codex, Stored::Nothing)).as_deref(),
+            Some(
+                "a’s login was replaced by a sign-in outside Pitboard: Codex now has no login \
+                 stored, and Pitboard holds no login for a. Choose Sign In Again… on its row."
+            )
+        );
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            for now in [
+                Stored::Unenrolled(String::new()),
+                Stored::Unenrolled("x@example.com".into()),
+                Stored::Unknown,
+            ] {
+                let said = in_app_warning(Os::Windows, &replaced(tool, now)).expect("the app's");
+                assert!(!said.contains("pitboard "), "{said}");
+            }
+        }
+    }
+
     #[test]
     fn no_claude_desktop_sentence_in_the_app_names_a_command() {
         use pitboard_core::error::Enrolled;
