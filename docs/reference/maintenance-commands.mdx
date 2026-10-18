@@ -45,7 +45,7 @@ A parked login whose refresh token has expired is never due. Its account needs a
 | `Renewed all 2.` | Every due parked login was renewed. |
 | `Renewed 1 of 2; the rest are tried again next time.` | Some due parked logins were renewed. |
 
-`renew` exits with status 0, even when nothing was renewed. Where Pitboard may change nothing, it fails with `elevated` or `system_too_old`: see [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root) and [Pitboard changes nothing as administrator](/troubleshooting#pitboard-changes-nothing-as-administrator).
+`renew` exits with status 0, even when nothing was renewed. Where Pitboard may change nothing, it fails with [`elevated`](/reference/errors#root-sudo-and-administrator) or [`system_too_old`](/reference/errors#windows).
 
 ```sh
 pitboard renew
