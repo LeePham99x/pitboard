@@ -131,7 +131,21 @@ Each place was read in Codex 0.160.0, and in 0.163.0 on Windows.
 
 On Windows, Codex's home is `.codex` in the profile folder Windows names for your account, whatever `USERPROFILE` says, as read in Codex 0.162.1.
 
-Pitboard switches Codex only while `auth.json` is its store: see [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account). Codex reads `cli_auth_credentials_store`, and `secret_auth_storage` under `[features]`, from these places, each over the one before:
+Pitboard switches Codex only while `auth.json` is its store, which `cli_auth_credentials_store` chooses. [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) shows how to check. Each other store keeps the login elsewhere, as read in Codex 0.154.0 on macOS and in 0.163.0 on Windows:
+
+| `Codex login store` | System | Where Codex keeps the login |
+| --- | --- | --- |
+| `keyring` | macOS, Linux | A keychain item Codex made for itself. |
+| `keyring` | Windows | A Credential Manager item, while `secret_auth_storage` is off. |
+| `auto` | macOS, Linux | The same keychain item, falling back to the file. |
+| `auto` | Windows | The same Credential Manager item, falling back to the file, while `secret_auth_storage` is off. |
+| `secrets` | macOS, Linux | An encrypted file whose key is in the keychain: `keyring` or `auto` with `secret_auth_storage` turned on in `[features]`. |
+| `secrets` | Windows | `secrets\codex_auth.age` in Codex's home, whose key is in Credential Manager: `keyring` or `auto` while `secret_auth_storage` is on, as it is by default. |
+| `ephemeral` | All | In memory, for one run of Codex. |
+
+On macOS and Linux, Pitboard does not read Codex's keychain stores, because every read would ask you for permission. A login kept in memory leaves nothing to park.
+
+Codex reads `cli_auth_credentials_store`, and `secret_auth_storage` under `[features]`, from these places, each over the one before:
 
 1. Codex's own default, `file`.
 2. The system's `config.toml`: `/etc/codex/config.toml`, or on Windows `config.toml` in `%ProgramData%\OpenAI\Codex`.
