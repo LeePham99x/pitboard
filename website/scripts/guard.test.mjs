@@ -6,6 +6,7 @@ import { headers, policy } from "./csp.mjs";
 import {
   SITE_BANNED,
   bannedFromDocs,
+  checkDocsToSite,
   checkImage,
   checkPage,
   checkSigningPolicy,
@@ -239,6 +240,30 @@ test("needs the code signing policy on the home page and the download page", () 
     checkSigningPolicy(pages(policy.replace("Code signing policy", "Signing"), policy)).length,
     1,
   );
+});
+
+test("needs each site address a docs page links with an id to name one the site has", () => {
+  const pages = new Map([
+    ["index.html", checkPage("index.html", page('<section id="faq"></section>'), rules)],
+    [
+      "download.html",
+      checkPage("download.html", page('<section id="release-files"></section>'), rules),
+    ],
+  ]);
+  const docs = (text) => checkDocsToSite(pages, [["install.mdx", text]]);
+  assert.deepEqual(
+    docs(
+      "[Files](https://usepitboard.com/download#release-files), [FAQ](https://usepitboard.com/#faq) and `https://usepitboard.com/install.sh`.",
+    ),
+    [],
+  );
+  assert.deepEqual(docs("[Other ways](https://usepitboard.com/download#other-ways)."), [
+    "install.mdx: https://usepitboard.com/download#other-ways names an id download.html does not have",
+  ]);
+  assert.deepEqual(docs("[Files](https://usepitboard.com/downloads#release-files)"), [
+    "install.mdx: https://usepitboard.com/downloads#release-files goes to no page",
+  ]);
+  assert.deepEqual(docs("[Install](https://docs.usepitboard.com/install#what-you-need)"), []);
 });
 
 test("hashes inline scripts byte for byte and refuses foreign scripts", () => {
