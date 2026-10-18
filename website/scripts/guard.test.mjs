@@ -141,6 +141,20 @@ test("needs each platform tab and surface button to look chosen by the root's ch
   assert.match(problems(pick("")).join(), /the app button has no chosen: look/);
 });
 
+test("needs each installer link beside a step shown after a download to show that step", () => {
+  const installer = (arch, after = ' data-download="windows"') =>
+    `<a href="https://github.com/datlechin/pitboard/releases/download/v1.0.0-beta.2/Pitboard-v1.0.0-beta.2-windows-${arch}.msi"${after}>${arch}</a>`;
+  const panel = (links) =>
+    `<div role="tabpanel">${links}<p data-after="windows">Select <b>Run anyway</b>.</p></div>`;
+  assert.deepEqual(problems(panel(installer("x64") + installer("arm64"))), []);
+  assert.match(
+    problems(panel(installer("x64") + installer("arm64", ""))).join(),
+    /Pitboard-v1\.0\.0-beta\.2-windows-arm64\.msi does not show the step its panel gives after a download/,
+  );
+  // a list of the release's files sits outside every panel
+  assert.deepEqual(problems(panel(installer("x64")) + installer("arm64", "")), []);
+});
+
 // the signature and the header of a PNG, then the chunks given, each with a dummy CRC
 function png(width, height, colour, ...chunks) {
   const chunk = (type, data) => {
