@@ -185,6 +185,35 @@ fn git_bash_among(
     }
 }
 
+// The PowerShell Claude Code runs a hook and the status line in on Windows where it finds no
+// Git Bash, found as it finds one (`windows_statusline_powershell`).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum PowerShell {
+    Seven(PathBuf),
+    Windows(PathBuf),
+}
+
+// Where Claude Code looks past `PATH`, as its environment names them.
+pub(crate) struct PowerShellPlaces {
+    pub(crate) program_files: Option<PathBuf>,
+    pub(crate) local_app_data: Option<PathBuf>,
+    pub(crate) user_profile: Option<PathBuf>,
+    pub(crate) system_root: Option<PathBuf>,
+}
+
+pub(crate) fn powershell(_ctx: &Context) -> Option<PowerShell> {
+    None
+}
+
+fn powershell_among(
+    _search: &OsStr,
+    _lookup: &Lookup,
+    _places: &PowerShellPlaces,
+    _exists: impl Fn(&Path) -> bool,
+) -> Option<PowerShell> {
+    None
+}
+
 /// The directory whose path string selects the credential slot.
 pub(crate) fn storage_dir(ctx: &Context) -> String {
     storage_dir_from(
@@ -566,5 +595,51 @@ mod tests {
         );
         assert_eq!(find(None, &[&git_exe]).found, None, "no bash beside git");
         assert_eq!(find(None, &[]).found, None);
+    }
+
+    // As 2.1.302's `pw()` finds it. On the session's PC (2026-10-18) Claude Code ran the status
+    // line in powershell.exe, then in pwsh.exe once PowerShell 7 was installed.
+    #[test]
+    fn powershell_is_found_where_claude_code_finds_it() {
+        let windows = Lookup::new(Os::Windows, None);
+        let bin = std::env::temp_dir().join("bin");
+        let search = std::env::join_paths([bin.clone()]).expect("a search path");
+        let places = PowerShellPlaces {
+            program_files: Some(PathBuf::from(r"C:\Program Files")),
+            local_app_data: Some(PathBuf::from(r"C:\Users\x\AppData\Local")),
+            user_profile: Some(PathBuf::from(r"C:\Users\x")),
+            system_root: None,
+        };
+        let find = |there: &[&Path]| {
+            powershell_among(&search, &windows, &places, |path| there.contains(&path))
+        };
+        let on_path = bin.join("pwsh.exe");
+        let seven = Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe");
+        let alias = Path::new(r"C:\Users\x\AppData\Local\Microsoft\WindowsApps\pwsh.exe");
+        let dotnet = Path::new(r"C:\Users\x\.dotnet\tools\pwsh.exe");
+        let five_on_path = bin.join("powershell.exe");
+        let five = Path::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
+        assert_eq!(
+            find(&[&on_path, seven, five]),
+            Some(PowerShell::Seven(on_path.clone()))
+        );
+        assert_eq!(
+            find(&[seven, alias, &five_on_path]),
+            Some(PowerShell::Seven(seven.to_path_buf()))
+        );
+        assert_eq!(
+            find(&[alias, dotnet]),
+            Some(PowerShell::Seven(alias.to_path_buf()))
+        );
+        assert_eq!(
+            find(&[dotnet, five]),
+            Some(PowerShell::Seven(dotnet.to_path_buf()))
+        );
+        assert_eq!(
+            find(&[&five_on_path, five]),
+            Some(PowerShell::Windows(five_on_path.clone()))
+        );
+        assert_eq!(find(&[five]), Some(PowerShell::Windows(five.to_path_buf())));
+        assert_eq!(find(&[]), None);
     }
 }

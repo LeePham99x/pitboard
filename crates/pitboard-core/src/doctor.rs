@@ -140,6 +140,7 @@ pub(crate) struct WslFact {
 // finds. Both shells take `pitboard.exe` for a bare `pitboard`.
 pub(crate) struct StatusLineFact {
     pub(crate) git_bash: claude::GitBash,
+    pub(crate) powershell: Option<claude::PowerShell>,
     pub(crate) pitboard: Option<PathBuf>,
     // Whether the settings Pitboard reads run a `pitboard` the shell has to find.
     pub(crate) runs_pitboard: bool,
@@ -563,6 +564,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         floor: ctx.host().floor(),
         status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
             git_bash: claude::git_bash(ctx),
+            powershell: claude::powershell(ctx),
             pitboard: pitboards.first().cloned(),
             runs_pitboard: crate::settings::status_line_command(ctx)
                 .is_some_and(|command| runs_bare_pitboard(&command)),
@@ -7940,12 +7942,15 @@ mod tests {
         let pitboard = PathBuf::from(r"C:\Users\x\.cargo\bin\pitboard.exe");
         let named = PathBuf::from(r"D:\tools\git.exe");
         let runs_pitboard = Cell::new(true);
+        let five = PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
+        let powershell = std::cell::RefCell::new(Some(claude::PowerShell::Windows(five.clone())));
         let mut said = |found: Option<&PathBuf>, passed_over: Option<&PathBuf>, on_path: bool| {
             facts.status_line = Some(StatusLineFact {
                 git_bash: claude::GitBash {
                     found: found.cloned(),
                     passed_over: passed_over.cloned(),
                 },
+                powershell: powershell.borrow().clone(),
                 pitboard: on_path.then(|| pitboard.clone()),
                 runs_pitboard: runs_pitboard.get(),
             });
@@ -7970,15 +7975,37 @@ mod tests {
             (
                 Level::Ok,
                 format!(
-                    "Claude Code runs the status line in PowerShell, finding no Git Bash; \
-                     `pitboard` there is {}; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH \
-                     names",
+                    "Claude Code runs the status line in Windows PowerShell, {}, finding no Git \
+                     Bash; `pitboard` there is {}; it passes over {}, which \
+                     CLAUDE_CODE_GIT_BASH_PATH names",
+                    five.display(),
                     pitboard.display(),
                     named.display()
                 ),
                 String::new()
             )
         );
+        let seven = PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe");
+        *powershell.borrow_mut() = Some(claude::PowerShell::Seven(seven.clone()));
+        assert_eq!(
+            said(None, None, true).1,
+            format!(
+                "Claude Code runs the status line in PowerShell 7, {}, finding no Git Bash; \
+                 `pitboard` there is {}",
+                seven.display(),
+                pitboard.display()
+            )
+        );
+        *powershell.borrow_mut() = None;
+        assert_eq!(
+            said(None, None, true).1,
+            format!(
+                "Claude Code finds neither Git Bash nor PowerShell to run the status line in; \
+                 `pitboard` there is {}",
+                pitboard.display()
+            )
+        );
+        *powershell.borrow_mut() = Some(claude::PowerShell::Windows(five.clone()));
         assert_eq!(
             said(Some(&bash), None, false),
             (
