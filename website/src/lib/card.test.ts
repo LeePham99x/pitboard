@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import sharp from "sharp";
-import { HEIGHT, WIDTH, darkColors, describe, render, type Assets, type Card } from "./card.ts";
+import { TAGLINE } from "../data/site.ts";
+import {
+  HEIGHT,
+  WIDTH,
+  cards,
+  darkColors,
+  describe,
+  layout,
+  render,
+  type Assets,
+  type Card,
+} from "./card.ts";
 
 const file = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url));
 const font = (name: string) => file(`assets/fonts/${name}.ttf`);
@@ -28,11 +39,7 @@ test("takes the site's dark colours, whatever commas their light half holds", ()
 });
 
 test("draws each card as an opaque 1200 by 630 PNG under 300 KB", async () => {
-  const cards: Card[] = [
-    { kind: "home" },
-    { kind: "page", label: "Download", title: "Pitboard for macOS and Linux" },
-  ];
-  for (const card of cards) {
+  for (const card of Object.values(cards) as Card[]) {
     const png = await render(card, assets);
     const meta = await sharp(png).metadata();
     assert.deepEqual([meta.format, meta.width, meta.height], ["png", WIDTH, HEIGHT]);
@@ -48,10 +55,19 @@ test("describes the accounts the home card's menu shows", () => {
     alt,
     /Claude Code has work, in use, and personal; Codex has main, in use, and spare;/,
   );
-  assert.match(alt, /Switch AI coding accounts without signing out\./);
+  assert.ok(alt.includes(`Pitboard's logo above the line: ${TAGLINE} On the right,`), alt);
   assert.ok(alt.length <= 420, `${alt.length} characters`);
   assert.equal(
-    describe({ kind: "page", label: "Download", title: "Pitboard for macOS and Linux" }),
-    "Pitboard's logo above the label Download and the line: Pitboard for macOS and Linux.",
+    describe(cards.download),
+    "Pitboard's logo above the label Download and the line: Pitboard for macOS, Windows and Linux.",
   );
+});
+
+test("sets the tagline on the home card in three lines, the last on the menu's bottom edge", async () => {
+  assert.equal(TAGLINE, "Switch AI coding accounts and see their usage.");
+  const svg = await layout(cards.home, assets, { embedFont: false });
+  const lines = new Set(
+    [...svg.matchAll(/<text [^>]*y="([\d.]+)"[^>]*font-size="56"/g)].map((m) => m[1]),
+  );
+  assert.equal(lines.size, 3);
 });
