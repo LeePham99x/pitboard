@@ -929,7 +929,8 @@ jobs:
 
   # The usepitboard.com site in website/. A pull request that changes none of the files its
   # build and tests read, listed in `touched`, skips the steps and passes. The build reads the
-  # latest release from GitHub, writes the CSP and fails on any rule guard.mjs keeps.
+  # latest release and the betas published above it from GitHub, writes the CSP and fails on any
+  # rule guard.mjs keeps.
   website:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -947,7 +948,7 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git diff --quiet HEAD^1 HEAD -- \
             website docs README.md SECURITY.md CHANGELOG.md CONTRIBUTING.md ARCHITECTURE.md \
-            packaging apps crates .github/workflows/ci.yml; then
+            packaging apps crates .github/workflows/ci.yml .github/workflows/release.yml; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "nothing the site reads changed"
