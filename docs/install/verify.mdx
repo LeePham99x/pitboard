@@ -31,8 +31,7 @@ When a workflow in `datlechin/pitboard` attested that exact file, `gh` prints `V
 With `--repo` alone, `gh` accepts an attestation from any workflow in the repository. Add `--signer-workflow` to accept only the release workflow:
 
 ```sh
-gh attestation verify Pitboard-v<version>-windows-x64.msi --repo datlechin/pitboard \
-  --signer-workflow datlechin/pitboard/.github/workflows/release.yml
+gh attestation verify Pitboard-v<version>-windows-x64.msi --repo datlechin/pitboard --signer-workflow datlechin/pitboard/.github/workflows/release.yml
 ```
 
 ## Check the checksums

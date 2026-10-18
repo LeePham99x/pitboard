@@ -15,7 +15,7 @@ test("each install command is one the install pages give", () => {
 });
 
 test("an attestation check is the one Verify a download gives", () => {
-  const shown = [...pages.matchAll(/^(gh attestation verify (\S+).*?)(?: \\)?$/gm)];
+  const shown = [...pages.matchAll(/^(gh attestation verify (\S+) --repo \S+)/gm)];
   assert.ok(shown.length > 0, "Verify a download checks an attestation");
   for (const [, line, file] of shown) assert.equal(attestCommand(file).copy, line);
 });
