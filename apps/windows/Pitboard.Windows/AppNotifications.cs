@@ -23,16 +23,17 @@ public interface IAppNotifications
     void UnregisterAll();
 }
 
+// What Register writes under HKCU for an unpackaged app: its AppUserModelId's key, naming the class a click starts.
+public interface INotificationRegistration
+{
+    string? Activator();
+
+    void Delete(string activator);
+}
+
 public sealed class SystemAppNotifications : IAppNotifications
 {
     private static AppNotificationManager Manager => AppNotificationManager.Default;
-
-    // Register names the class a click starts under the AppUserModelId's key, which it alone writes.
-    public static bool Registered(string aumid)
-    {
-        using var key = Registry.CurrentUser.OpenSubKey($@"Software\Classes\AppUserModelId\{aumid}");
-        return key?.GetValue("CustomActivator") is string;
-    }
 
     public bool IsSupported() => AppNotificationManager.IsSupported();
 
@@ -52,4 +53,27 @@ public sealed class SystemAppNotifications : IAppNotifications
     public void Unregister() => Manager.Unregister();
 
     public void UnregisterAll() => Manager.UnregisterAll();
+}
+
+public sealed class RegistryNotificationRegistration(string aumid) : INotificationRegistration
+{
+    private string Key => $@"Software\Classes\AppUserModelId\{aumid}";
+
+    // Register names the class a click starts under the AppUserModelId's key, which it alone writes.
+    public string? Activator()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(Key);
+        return key?.GetValue("CustomActivator") as string;
+    }
+
+    // The class's key only by a GUID, so no other name reaches CLSID itself.
+    public void Delete(string activator)
+    {
+        if (Guid.TryParse(activator, out var named))
+        {
+            Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\CLSID\{named:B}", throwOnMissingSubKey: false);
+        }
+
+        Registry.CurrentUser.DeleteSubKeyTree(Key, throwOnMissingSubKey: false);
+    }
 }

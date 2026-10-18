@@ -194,6 +194,33 @@ impl AppFile {
     }
 }
 
+// Held by an app for as long as it runs, as the warm-up holds `warm.lock`: the app writes
+// Pitboard's directory again after `uninstall` took it away, so `uninstall` refuses while one
+// holds it.
+#[derive(Debug)]
+pub struct Open {
+    _lock: std::fs::File,
+}
+
+impl Open {
+    fn path(ctx: &Context) -> PathBuf {
+        home::dir(ctx).join("app.lock")
+    }
+
+    // None where it cannot be held: another app holds it, or the directory cannot be made.
+    pub(crate) fn hold(ctx: &Context, permit: Permit) -> Option<Open> {
+        home::ensure(ctx, permit).ok()?;
+        let lock = host::fs::open_private_lock(permit, &Open::path(ctx)).ok()?;
+        lock.try_lock().ok()?;
+        Some(Open { _lock: lock })
+    }
+
+    pub(crate) fn is_held(ctx: &Context) -> bool {
+        std::fs::File::open(Open::path(ctx))
+            .is_ok_and(|lock| matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock)))
+    }
+}
+
 /// What the app keeps in `file`, or `None` where it keeps nothing there. A file that is there
 /// and cannot be read, because it is not this user's to read, a disk failed, another program
 /// holds it or it is not text, is an error and not nothing: an app that took it as nothing

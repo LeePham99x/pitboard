@@ -70,6 +70,27 @@ public sealed class PackageTests
         Assert.AreEqual(versionMaxInclusive, int.Parse(upgrade[2]!, CultureInfo.InvariantCulture) & versionMaxInclusive);
     }
 
+    // Removed before the install, the old product left no bin\pitboard.exe for about 2 s of an upgrade on the session's
+    // PC (2026-10-18), and 9 of 416 status line runs found no pitboard. Removed after it, it takes only what the new one
+    // no longer has, which holds while every component keeps its GUID from one release to the next.
+    [TestMethod]
+    public void AnUpgradeReplacesFilesWhereTheyAreAndRemovesTheOldProductAfter()
+    {
+        using var database = Open();
+
+        Assert.IsGreaterThan(Sequence(database, "InstallExecute"), Sequence(database, "RemoveExistingProducts"));
+        Assert.IsLessThan(Sequence(database, "InstallFinalize"), Sequence(database, "RemoveExistingProducts"));
+        // The x64 and the ARM64 MSI of one version replace each other's files of an equal version.
+        Assert.AreEqual("emus", Property(database, "REINSTALLMODE"));
+        var unmanaged = Rows(database, "SELECT `Component` FROM `Component` WHERE `ComponentId` IS NULL", 1);
+        Assert.IsEmpty(unmanaged, string.Join(", ", unmanaged.Select(row => row[0])));
+        StringAssert.EndsWith(Condition(database, "Unregister"), "AND NOT UPGRADINGPRODUCTCODE");
+        if (Built.ShareSigned)
+        {
+            StringAssert.EndsWith(Condition(database, "UnregisterShare"), "AND NOT UPGRADINGPRODUCTCODE");
+        }
+    }
+
     [TestMethod]
     public void RestartManagerIsLeftOn()
     {
@@ -178,7 +199,7 @@ public sealed class PackageTests
         foreach (var (action, command, when, condition) in new[]
         {
             ("RegisterShare", "PitboardShareExe --register", Deferred, "NOT REMOVE"),
-            ("UnregisterShare", "PitboardExe --unregister-share", Deferred, "REMOVE = \"ALL\""),
+            ("UnregisterShare", "PitboardExe --unregister-share", Deferred, "REMOVE = \"ALL\" AND NOT UPGRADINGPRODUCTCODE"),
             ("RegisterShareRollback", "PitboardExe --unregister-share", Rollback, "NOT REMOVE"),
         })
         {

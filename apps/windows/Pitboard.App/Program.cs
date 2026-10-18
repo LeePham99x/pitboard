@@ -66,7 +66,7 @@ public static class Program
                     Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"),
                     new RegistryRunKey(),
                     new SystemAppNotifications(),
-                    () => SystemAppNotifications.Registered(Running.Aumid));
+                    new RegistryNotificationRegistration(Running.Aumid));
                 return 0;
             case Start.UnregisterShare:
                 return SharePackage.Unregister(new SystemSharePackages(), AppContext.BaseDirectory) == 0 ? 0 : 1;

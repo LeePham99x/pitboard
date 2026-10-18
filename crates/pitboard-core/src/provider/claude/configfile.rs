@@ -162,10 +162,12 @@ pub(crate) fn update(
                 }
             }
         })?;
-        let parsed = serde_json::from_str(&raw).map_err(|source| Error::ClaudeConfigNotJson {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let parsed = serde_json::from_str(super::paths::without_byte_order_mark(&raw)).map_err(
+            |source| Error::ClaudeConfigNotJson {
+                path: path.to_path_buf(),
+                source,
+            },
+        )?;
         Ok((raw, parsed))
     };
 

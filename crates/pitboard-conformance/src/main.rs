@@ -612,9 +612,9 @@ mod tests {
             "claude.exe\na windows build; Pitboard's facts about claude were read from 2.1.289\n\n"
         ));
         assert!(
-            text.contains("  pending  windows_file_adoption  (its windows reading waits on W27)\n")
+            text.contains("  pending  windows_credman_cache  (its windows reading waits on W27)\n")
         );
-        assert!(!text.contains("MOVED    windows_file_adoption"));
+        assert!(!text.contains("MOVED    windows_credman_cache"));
     }
 
     /// `--json` lists the facts it does not read in two keys, `not_read_here` and

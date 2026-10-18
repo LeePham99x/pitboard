@@ -341,10 +341,7 @@ Opening Pitboard from Finder or Spotlight with no window open opens the Pitboard
 | **Pitboard could not warm up an account** | When a warm-up the app made by itself came to nothing. Once for each error until a warm-up starts a period. | The error | None |
 | **A login was replaced outside Pitboard** | When a read finds that an account's only login ended outside Pitboard. A sign-in such as `/login` in Claude Code replaced it, or the account was signed out in Claude. Once for each account while reads find it, and once more after the app reopens. | The warning's message, which says what ended the login and how to sign in again, as the next table gives it | None |
 
-| Account | **A login was replaced outside Pitboard** ends |
-| --- | --- |
-| Claude Code or Codex | **Run `pitboard enroll work --sign-in` to sign in to it again.** |
-| Claude Desktop | An instruction to choose **Sign In Again** on the account's row, whether a sign-in replaced the login or the account was signed out. |
+It ends with **Choose Sign In Again… on its row.**, whether a sign-in replaced the login or the account was signed out in Claude.
 
 While a login file sits behind the keychain, the second sentence of **Switched Claude Code to personal** reads **Sessions already running keep the account they are on until their login is next renewed, or until they are started again:** and names the file.
 

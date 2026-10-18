@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Windows.AppNotifications;
 
 namespace Pitboard.Windows.Tests;
@@ -7,17 +8,21 @@ public sealed class UnregisteringTests
 {
     private const string Installed = @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe";
 
+    private const string Activator = "{29A5793B-2C97-4210-9BA2-C64128F59978}";
+
     [TestMethod]
     public void TheUninstallDeletesTheRunValueNamingThisPitboardExeInAnyCase()
     {
         var key = new StandInRunKey();
         key.Values["Pitboard"] = $"\"{Installed.ToUpperInvariant()}\" --sign-in";
         var notifications = new StandInNotifications();
+        var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Release, Installed, key, notifications, registered: () => true);
+        Unregistering.Run(Build.Release, Installed, key, notifications, registration);
 
         Assert.IsFalse(key.Values.ContainsKey("Pitboard"));
         Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
+        Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
 
     [TestMethod]
@@ -26,7 +31,7 @@ public sealed class UnregisteringTests
         var key = new StandInRunKey();
         key.Values["Pitboard"] = @"""C:\Users\Dana Lee\AppData\Local\Programs\Other\Pitboard.exe"" --sign-in";
 
-        Unregistering.Run(Build.Release, Installed, key, new StandInNotifications(), registered: () => false);
+        Unregistering.Run(Build.Release, Installed, key, new StandInNotifications(), new StandInRegistration(null));
 
         Assert.AreEqual(@"""C:\Users\Dana Lee\AppData\Local\Programs\Other\Pitboard.exe"" --sign-in", key.Values["Pitboard"]);
         CollectionAssert.DoesNotContain(key.Asked, "remove Pitboard");
@@ -37,10 +42,26 @@ public sealed class UnregisteringTests
     public void NotificationsThatNeverRegisteredAreNotAsked()
     {
         var notifications = new StandInNotifications();
+        var registration = new StandInRegistration(null);
 
-        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), notifications, registered: () => false);
+        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), notifications, registration);
 
         Assert.IsEmpty(notifications.Asked);
+        Assert.IsEmpty(registration.Asked);
+    }
+
+    // The session's PC kept HKCU\Software\Classes\AppUserModelId\Pitboard.Pitboard once the MSI had removed Pitboard
+    // (2026-10-18), though its removal ran Pitboard.exe --unregister.
+    [TestMethod]
+    public void WhatRegisterWroteIsDeletedByNameWhereUnregisterAllFails()
+    {
+        var notifications = new StandInNotifications { Fails = Marshal.GetExceptionForHR(unchecked((int)0x80004005)) };
+        var registration = new StandInRegistration(Activator);
+
+        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), notifications, registration);
+
+        Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
+        Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
 
     [TestMethod]
@@ -48,10 +69,12 @@ public sealed class UnregisteringTests
     {
         var key = new StandInRunKey { ReadRefuses = new UnauthorizedAccessException("Access is denied.") };
         var notifications = new StandInNotifications();
+        var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Release, Installed, key, notifications, registered: () => true);
+        Unregistering.Run(Build.Release, Installed, key, notifications, registration);
 
         Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
+        Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
 
     [TestMethod]
@@ -60,16 +83,20 @@ public sealed class UnregisteringTests
         var key = new StandInRunKey();
         key.Values["Pitboard"] = $"\"{Installed}\" --sign-in";
         var notifications = new StandInNotifications();
+        var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Debug, Installed, key, notifications, registered: () => true);
+        Unregistering.Run(Build.Debug, Installed, key, notifications, registration);
 
         Assert.IsEmpty(key.Asked);
         Assert.IsEmpty(notifications.Asked);
+        Assert.IsEmpty(registration.Asked);
     }
 
     private sealed class StandInNotifications : IAppNotifications
     {
         public List<string> Asked { get; } = [];
+
+        public Exception? Fails { get; init; }
 
         public bool IsSupported() => throw new AssertFailedException("IsSupported was asked");
 
@@ -83,6 +110,22 @@ public sealed class UnregisteringTests
 
         public void Unregister() => throw new AssertFailedException("Unregister was asked");
 
-        public void UnregisterAll() => Asked.Add("unregister all");
+        public void UnregisterAll()
+        {
+            Asked.Add("unregister all");
+            if (Fails is { } failed)
+            {
+                throw failed;
+            }
+        }
+    }
+
+    private sealed class StandInRegistration(string? activator) : INotificationRegistration
+    {
+        public List<string> Asked { get; } = [];
+
+        public string? Activator() => activator;
+
+        public void Delete(string named) => Asked.Add($"delete {named}");
     }
 }

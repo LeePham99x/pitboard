@@ -7,6 +7,37 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `pitboard uninstall` refuses with `pitboard_open` while the Pitboard app is open,
+  instead of deleting a directory the app makes again. Quit the app, then run it again.
+
+### Fixed
+
+- `pitboard use` and **Use** put an account's login in place where nothing is signed in to
+  Claude Code or Codex yet, as on a new PC after adding the first account, instead of refusing
+  with `live_credential_absent`.
+- Pitboard reads Claude Code's `settings.json` and `.claude.json` where they start with a byte
+  order mark, as Windows PowerShell 5.1 writes one, and a `settings.json` in UTF-16, as Claude
+  Code does, instead of missing the `env` that turns Credential Manager on.
+- On Windows, `pitboard doctor` and **This PC** say whether Claude Code runs the status line in
+  PowerShell 7 or Windows PowerShell, and which one, instead of PowerShell alone.
+- On Windows, where Claude Code left its login in Credential Manager in pieces nobody can join,
+  `pitboard doctor`, **This PC** and a refused switch say that Claude Code cannot read it either,
+  and that `claude auth logout`, then a sign-in, clears it.
+- The app's notice that a Claude Code or Codex login was replaced outside Pitboard points at the
+  account's **Sign In Again…** button instead of naming a command.
+- On Windows, **Start when you sign in to Windows** shows off, and says so, where Settings > Apps >
+  Startup turned Pitboard off, instead of showing on while Windows does not start it.
+- On Windows, removing Pitboard deletes its notification registration under
+  `HKCU\Software\Classes`, which outlived the removal.
+- On Windows, updating the app replaces `pitboard.exe` where it is, instead of leaving none for
+  about 2 seconds, in which Claude Code's status line found no `pitboard`.
+- `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
+  new PC with nothing enrolled no longer reads as broken.
+- `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex
+  has run for the first time.
+
 ## [0.15.0] - 2026-10-17
 
 ### Added

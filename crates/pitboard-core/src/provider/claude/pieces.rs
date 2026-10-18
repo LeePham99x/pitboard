@@ -141,7 +141,7 @@ pub(crate) fn read(items: &dyn Items, target: &str) -> Result<Option<String>, Er
     let Some(text) = found(items, MANIFEST)? else {
         return found(items, WHOLE);
     };
-    let unreadable = |why: &str| Err(Error::Unreadable(format!("`{target}` {why}")));
+    let unreadable = |why: &str| Err(Error::Broken(format!("`{target}` {why}")));
     let Some(manifest) = Manifest::read(&text) else {
         return unreadable("has a manifest `#m` Claude Code does not write");
     };
@@ -170,9 +170,7 @@ pub(crate) fn read(items: &dyn Items, target: &str) -> Result<Option<String>, Er
     crate::base64::decode(&joined)
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .map(Some)
-        .ok_or_else(|| {
-            Error::Unreadable(format!("`{target}` has pieces that are not base64 of text"))
-        })
+        .ok_or_else(|| Error::Broken(format!("`{target}` has pieces that are not base64 of text")))
 }
 
 // Each step is a durable change a test can stop a write after.
@@ -559,11 +557,11 @@ mod tests {
         items
             .set(Permit::for_a_test(), MANIFEST, r#"{"n":9,"l":1}"#)
             .unwrap();
-        assert!(matches!(read(&items, "t"), Err(Error::Unreadable(_))));
+        assert!(matches!(read(&items, "t"), Err(Error::Broken(_))));
         items
             .set(Permit::for_a_test(), MANIFEST, "not a manifest")
             .unwrap();
-        let Err(Error::Unreadable(why)) = read(&items, "t") else {
+        let Err(Error::Broken(why)) = read(&items, "t") else {
             panic!("a bad #m");
         };
         assert_eq!(why, "`t` has a manifest `#m` Claude Code does not write");

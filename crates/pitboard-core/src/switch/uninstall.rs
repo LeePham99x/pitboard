@@ -57,6 +57,11 @@ pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
         ctx,
         permit,
     } = settled;
+    if crate::app::Open::is_held(&ctx) {
+        return Err(Error::PitboardOpen {
+            home: home::dir(&ctx),
+        });
+    }
     // An app's folder is read only where a login of it is parked or set aside or a move of one
     // waits, and held until every park is deleted. Refused before anything is taken away.
     let mut warnings = Vec::new();
@@ -244,6 +249,40 @@ mod tests {
                 schedule::status(&m.ctx),
                 schedule::Installed::Yes { .. }
             ));
+        }
+    }
+
+    // On the session's PC (2026-10-18) the Windows app made %LOCALAPPDATA%\Pitboard again,
+    // with state.json, usage.json and asking.json, once `pitboard uninstall` had taken it away.
+    #[test]
+    fn uninstalling_refuses_while_the_app_is_open() {
+        for make in [machine, codex_machine] {
+            let m = make("uninstall-app-open").in_the_default_home();
+            schedule::install(&m.ctx, Permit::for_a_test()).expect("scheduled");
+            let open = crate::app::Open::hold(&m.ctx, Permit::for_a_test()).expect("held");
+            let refused = uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            );
+            let Err(error) = refused else {
+                panic!("{:?}: uninstalled with the app open", m.which);
+            };
+            assert_eq!(error.code(), "pitboard_open");
+            assert_eq!(state::load(&m.ctx).expect("kept").accounts.len(), 2);
+            assert!(matches!(
+                schedule::status(&m.ctx),
+                schedule::Installed::Yes { .. }
+            ));
+
+            drop(open);
+            let removed = uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled once the app quit");
+            assert!(removed.home_removed);
         }
     }
 

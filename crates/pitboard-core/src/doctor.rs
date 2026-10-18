@@ -140,6 +140,7 @@ pub(crate) struct WslFact {
 // finds. Both shells take `pitboard.exe` for a bare `pitboard`.
 pub(crate) struct StatusLineFact {
     pub(crate) git_bash: claude::GitBash,
+    pub(crate) powershell: Option<claude::PowerShell>,
     pub(crate) pitboard: Option<PathBuf>,
     // Whether the settings Pitboard reads run a `pitboard` the shell has to find.
     pub(crate) runs_pitboard: bool,
@@ -563,6 +564,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         floor: ctx.host().floor(),
         status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
             git_bash: claude::git_bash(ctx),
+            powershell: claude::powershell(ctx),
             pitboard: pitboards.first().cloned(),
             runs_pitboard: crate::settings::status_line_command(ctx)
                 .is_some_and(|command| runs_bare_pitboard(&command)),
@@ -1273,7 +1275,8 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
     // tool either: a new machine is told what to do first, as it always was. A machine
     // that uses only Codex is not told to run a program it does not use.
-    let codex_here = facts.codex.present || facts.codex.enrolled > 0;
+    let codex_here =
+        facts.codex.present || facts.codex.program.is_some() || facts.codex.enrolled > 0;
     let claude_here = facts.claude_present || !(codex_here || facts.desktop.is_some());
 
     // First, in the order the gate asks them: they are why every change here is refused.
@@ -1309,13 +1312,20 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
                 v.as_object().map_or(0, serde_json::Map::len)
             ),
         ),
-        Err(Error::ClaudeConfigMissing { path }) if !facts.claude_program => fail(
+        // Claude Code writes it on its first run, and a switch does without it.
+        Err(Error::ClaudeConfigMissing { path }) if !facts.claude_program => warn(
             "config_file",
             "config file",
             format!(
                 "Claude Code is not installed where Pitboard looks, and {} does not exist",
                 path.display()
             ),
+            run_claude_once(facts),
+        ),
+        Err(missing @ Error::ClaudeConfigMissing { .. }) => warn(
+            "config_file",
+            "config file",
+            missing.to_string(),
             run_claude_once(facts),
         ),
         Err(e) => fail(
@@ -1707,8 +1717,8 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
             .iter()
             .filter_map(|p| judge_dormant(p, facts.now)),
     );
-    // Only where there is a Codex to say something about. A machine that has never run it
-    // reads exactly as it did before Pitboard knew Codex existed.
+    // Only where there is a Codex to say something about. A machine without it reads exactly
+    // as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
         checks.extend(judge_codex(
             facts.os,
@@ -2013,6 +2023,14 @@ fn judge_credential(facts: &Facts) -> Check {
                     Some((_, Ok(None))) | None => ", and one started here is signed out.".into(),
                 }
             ),
+        ),
+        // `claude auth login` writes nothing over it (`credman_move_lost_a_piece`).
+        Err(store::Error::Broken(why)) => fail(
+            "credential",
+            "credential",
+            format!("{why}, which Claude Code cannot read either"),
+            "Run `claude auth logout`, which deletes it, then sign in to Claude Code again. \
+             Signing in before that leaves it as it is.",
         ),
         Err(e) => fail(
             "credential",
@@ -2555,9 +2573,17 @@ fn runs_bare_pitboard(command: &str) -> bool {
 // Claude Code's PATH is the one this runs with, as the shell it starts takes it.
 fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
     let line = line?;
-    let shell = match &line.git_bash.found {
-        Some(bash) => format!("Git Bash, {}", bash.display()),
-        None => "PowerShell, finding no Git Bash".to_string(),
+    let runs = match (&line.git_bash.found, &line.powershell) {
+        (Some(bash), _) => format!("runs the status line in Git Bash, {}", bash.display()),
+        (None, Some(claude::PowerShell::Seven(found))) => format!(
+            "runs the status line in PowerShell 7, {}, finding no Git Bash",
+            found.display()
+        ),
+        (None, Some(claude::PowerShell::Windows(found))) => format!(
+            "runs the status line in Windows PowerShell, {}, finding no Git Bash",
+            found.display()
+        ),
+        (None, None) => "finds neither Git Bash nor PowerShell to run the status line in".into(),
     };
     let passed_over = line
         .git_bash
@@ -2574,26 +2600,20 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
             "status_line",
             "status line",
             format!(
-                "Claude Code runs the status line in {shell}; `pitboard` there is {}{passed_over}",
+                "Claude Code {runs}; `pitboard` there is {}{passed_over}",
                 found.display()
             ),
         ),
         None if line.runs_pitboard => warn(
             "status_line",
             "status line",
-            format!(
-                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
-                 PATH{passed_over}"
-            ),
+            format!("Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"),
             "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
         ),
         None => ok(
             "status_line",
             "status line",
-            format!(
-                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
-                 PATH{passed_over}"
-            ),
+            format!("Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"),
         ),
     })
 }
@@ -2967,9 +2987,8 @@ fn judge_codex(
                     "{} is absent: nothing is signed in to Codex",
                     facts.auth_file.display()
                 ),
-                "Sign in to one of your enrolled accounts with `codex login`. A switch \
-                 needs an account signed in to park, so `pitboard use` cannot put one \
-                 back while nothing is.",
+                "Put one of your enrolled accounts in use with `pitboard use \
+                 codex/<label>`, or sign in with `codex login`.",
             ),
             None => ok(
                 "codex_auth_file",
@@ -4651,7 +4670,6 @@ mod tests {
         }
     }
 
-    /// A machine that has never run Codex.
     fn no_codex() -> CodexFacts {
         CodexFacts {
             home: PathBuf::from("/home/x/.codex"),
@@ -7019,9 +7037,8 @@ mod tests {
         assert_eq!(m.api.calls(), 0);
     }
 
-    /// A machine that has never run Codex reads exactly as it did before Pitboard knew
-    /// Codex existed; one that has gets a section of its own, and nothing of Claude Code's
-    /// moves.
+    // A machine without Codex reads exactly as it did before Pitboard knew Codex existed; one
+    // with it gets a section of its own, and nothing of Claude Code's moves.
     #[test]
     fn codex_has_a_section_only_where_there_is_a_codex() {
         let without = evaluate(&facts());
@@ -7056,9 +7073,8 @@ mod tests {
             login.detail
         );
 
-        // Accounts enrolled on a machine whose Codex home has gone still get the section.
-        // The way back is signing in: a switch refuses while nothing is signed in, so
-        // advice to switch would send somebody to a command that fails.
+        // Accounts enrolled on a machine whose Codex home has gone still get the section, and
+        // a switch puts a parked one in use while nothing is signed in.
         f.codex = CodexFacts {
             enrolled: 1,
             ..no_codex()
@@ -7068,10 +7084,26 @@ mod tests {
         assert_eq!(file.level, Level::Warn);
         assert!(file.advice.contains("`codex login`"), "{}", file.advice);
         assert!(
-            !file.advice.contains("pitboard use codex/"),
+            file.advice.contains("`pitboard use codex/<label>`"),
             "{}",
             file.advice
         );
+    }
+
+    // The session's This PC listed no Codex section for a Codex installed with npm and never
+    // run, though it lists Claude Code's for a Claude Code in the same state.
+    #[test]
+    fn codex_installed_and_never_run_has_its_section() {
+        let mut f = facts();
+        f.codex = CodexFacts {
+            program: Some(PathBuf::from(r"C:\Users\x\AppData\Roaming\npm\codex.cmd")),
+            ..no_codex()
+        };
+        let checks = evaluate(&f);
+        for code in ["codex_backend", "codex_auth_file", "codex_version"] {
+            assert_eq!(check(&checks, code).level, Level::Ok, "{code}");
+        }
+        assert!(healthy(&checks));
     }
 
     /// A keychain store is Codex's to use and Pitboard's to leave alone, so it is said
@@ -7920,12 +7952,15 @@ mod tests {
         let pitboard = PathBuf::from(r"C:\Users\x\.cargo\bin\pitboard.exe");
         let named = PathBuf::from(r"D:\tools\git.exe");
         let runs_pitboard = Cell::new(true);
+        let five = PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
+        let powershell = std::cell::RefCell::new(Some(claude::PowerShell::Windows(five.clone())));
         let mut said = |found: Option<&PathBuf>, passed_over: Option<&PathBuf>, on_path: bool| {
             facts.status_line = Some(StatusLineFact {
                 git_bash: claude::GitBash {
                     found: found.cloned(),
                     passed_over: passed_over.cloned(),
                 },
+                powershell: powershell.borrow().clone(),
                 pitboard: on_path.then(|| pitboard.clone()),
                 runs_pitboard: runs_pitboard.get(),
             });
@@ -7950,15 +7985,37 @@ mod tests {
             (
                 Level::Ok,
                 format!(
-                    "Claude Code runs the status line in PowerShell, finding no Git Bash; \
-                     `pitboard` there is {}; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH \
-                     names",
+                    "Claude Code runs the status line in Windows PowerShell, {}, finding no Git \
+                     Bash; `pitboard` there is {}; it passes over {}, which \
+                     CLAUDE_CODE_GIT_BASH_PATH names",
+                    five.display(),
                     pitboard.display(),
                     named.display()
                 ),
                 String::new()
             )
         );
+        let seven = PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe");
+        *powershell.borrow_mut() = Some(claude::PowerShell::Seven(seven.clone()));
+        assert_eq!(
+            said(None, None, true).1,
+            format!(
+                "Claude Code runs the status line in PowerShell 7, {}, finding no Git Bash; \
+                 `pitboard` there is {}",
+                seven.display(),
+                pitboard.display()
+            )
+        );
+        *powershell.borrow_mut() = None;
+        assert_eq!(
+            said(None, None, true).1,
+            format!(
+                "Claude Code finds neither Git Bash nor PowerShell to run the status line in; \
+                 `pitboard` there is {}",
+                pitboard.display()
+            )
+        );
+        *powershell.borrow_mut() = Some(claude::PowerShell::Windows(five.clone()));
         assert_eq!(
             said(Some(&bash), None, false),
             (
@@ -8554,6 +8611,37 @@ mod tests {
         );
     }
 
+    // The session's fresh PC read "1 broken: do not switch accounts until fixed." for this
+    // alone, with nothing enrolled and Claude Code installed but never run.
+    #[test]
+    fn claude_code_that_never_ran_breaks_nothing() {
+        let mut facts = facts();
+        facts.config = Err(Error::ClaudeConfigMissing {
+            path: PathBuf::from("/home/x/.claude.json"),
+        });
+        facts.config_account = None;
+        facts.in_use = None;
+        facts.credential = Ok(None);
+        for installed in [true, false] {
+            facts.claude_program = installed;
+            let checks = evaluate(&facts);
+            assert_eq!(
+                check(&checks, "config_file").level,
+                Level::Warn,
+                "{installed}"
+            );
+            assert!(
+                checks.iter().all(|c| c.level != Level::Fail),
+                "{installed}: {:?}",
+                checks
+                    .iter()
+                    .filter(|c| c.level == Level::Fail)
+                    .map(|c| c.code)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     /// A machine that uses only Codex is not told Claude Code is broken, nor to run a
     /// program it does not use. Everything about Pitboard itself is still checked.
     #[test]
@@ -8748,6 +8836,32 @@ mod tests {
             );
             assert_eq!(diagnosis.environment, json!({}));
         }
+    }
+
+    // What Claude Code 2.1.302 left on the session's PC (2026-10-18) as it moved its login
+    // into Credential Manager, which a fresh session read as "Not logged in".
+    #[test]
+    fn pieces_nobody_can_join_are_said_to_be_unreadable_to_claude_code_too() {
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.backend = Ok(store::Backend::CredentialManager);
+        facts.credential = Err(store::Error::Broken(
+            "`Claude Code-credentials/claude-code-user` lacks piece #2 of the 3 its manifest \
+             names"
+                .into(),
+        ));
+        let check = judge_credential(&facts);
+        assert_eq!(check.level, Level::Fail);
+        assert_eq!(
+            check.detail,
+            "`Claude Code-credentials/claude-code-user` lacks piece #2 of the 3 its manifest \
+             names, which Claude Code cannot read either"
+        );
+        assert!(
+            check.advice.starts_with("Run `claude auth logout`"),
+            "{}",
+            check.advice
+        );
     }
 
     /// What `/logout` leaves is nobody signed in, not a login whose shape moved.

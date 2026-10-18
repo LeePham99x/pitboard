@@ -165,7 +165,7 @@ Usage: pitboard uninstall [OPTIONS]
 | --- | --- |
 | `-y, --yes` | Do not ask first; needed without a terminal or with `--json`. |
 
-`pitboard uninstall` works in this order:
+While the Pitboard app is open, `pitboard uninstall` refuses with `pitboard_open` and deletes nothing: the app would make `~/.pitboard` again. Otherwise it works in this order:
 
 1. Where Pitboard holds a Claude Desktop login or a move of one waits, reads Claude's data folder as a change does, and settles the move. If it refuses, nothing is deleted.
 2. Removes the daily renewal schedule. If that fails, it stops with nothing deleted.
@@ -261,7 +261,7 @@ Digests differ from one report to the next. Both reports write a proxy's user na
 
 | Heading | Shown when |
 | --- | --- |
-| `Codex` | Codex's directory, `~/.codex` or `CODEX_HOME`, exists, or a Codex account is enrolled |
+| `Codex` | Pitboard finds `codex`, Codex's directory, `~/.codex` or `CODEX_HOME`, exists, or a Codex account is enrolled |
 | `Claude Desktop` | A Claude Desktop account is enrolled, or a folder is set aside |
 
 When another tool's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5` and `claude_version`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
@@ -286,7 +286,7 @@ Claude Desktop's checks read the folders in `~/.pitboard/parks`, open no cookie 
   | `elevated` | `runs as` | Only as root, with `sudo`, or when Pitboard cannot tell. Always fails: see [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
   | `homes` | `homes` | Only when a variable naming a home is empty or not a full path. Always fails, and nothing after it is checked. |
   | `security_tool` | `security tool` | macOS only. `/usr/bin/security`, which reads the keychain, is there. |
-  | `config_file` | `config file` | Claude Code's config file can be read. Fails where Claude Code has never run, and says to install it first where Pitboard finds no `claude`. |
+  | `config_file` | `config file` | Claude Code's config file can be read. Warns where Claude Code has never run, and says to install it first where Pitboard finds no `claude`. Fails where the file cannot be read. |
   | `identity` | `identity` | The account Claude Code's config names. Warns when it names none. |
   | `in_use` | `in use` | The account whose login Claude Code has stored, as Anthropic last named it. Warns when Anthropic has not been asked, or the config names another account. |
   | `slot` | `slot` | Which of Claude Code's login entries Pitboard reads. Always `ok`. |

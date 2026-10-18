@@ -214,6 +214,25 @@ fn a_started_model_reads_the_accounts_and_tells_its_listener_in_order() {
     model.shutdown();
 }
 
+// The Windows app made Pitboard's directory again after `pitboard uninstall` took it away
+// (session of 2026-10-18), so the command line refuses while a model runs, and goes on once
+// it has stopped.
+#[test]
+fn uninstall_refuses_while_the_app_runs() {
+    let world = World::new("uninstall-open");
+    world.enrolled("work", "here", 42.0);
+    let told = Arc::new(Told::default());
+    let model = model(&world.core(), &told);
+    model.send(Intent::Start);
+    told.until("the account read", shows("work"));
+    let terminal = world.elsewhere();
+    let refused = terminal.uninstall().expect_err("the app is open");
+    assert_eq!(refused.error.code(), "pitboard_open");
+    model.shutdown();
+    drop(model);
+    eventually("the app let go", || terminal.uninstall().is_ok());
+}
+
 /// A change another front end makes, here a rename typed in a terminal, reaches the
 /// listener within a look or two, read from what is already known: nobody is asked.
 #[test]

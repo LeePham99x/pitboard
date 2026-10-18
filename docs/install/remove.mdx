@@ -15,7 +15,7 @@ Removing the program alone leaves every parked login on the machine.
 
 <Steps>
   <Step title="Quit the app">
-    If the app is open, click Pitboard's item in the menu bar, then choose **Quit Pitboard**. While it runs, it recreates `~/.pitboard`.
+    If the app is open, click Pitboard's item in the menu bar, then choose **Quit Pitboard**. `pitboard uninstall` refuses while it runs.
   </Step>
   <Step title="Remove the status line">
     If Claude Code's status line runs `pitboard statusline`, delete the `statusLine` field from `~/.claude/settings.json`, or the call from your own script. Each run recreates `~/.pitboard`.

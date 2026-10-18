@@ -206,6 +206,22 @@ public sealed class SettingsViewModelTests
     }
 
     [TestMethod]
+    public void StartAtSignInTurnedOffInSettingsShowsOffHeldBackAndSaysWhere()
+    {
+        var key = new StandInRunKey();
+        var item = new RunValue(Build.Release, @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe", key);
+        item.Write(starts: true);
+        key.Approvals["Pitboard"] = [0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        var (shown, _, _) = Over(Snapshots.Read(1), new StartAtSignIn(item));
+
+        shown.Shown();
+
+        Assert.IsFalse(shown.StartsAtSignIn);
+        Assert.IsFalse(shown.CanStartAtSignIn);
+        Assert.AreEqual(SettingsViewModel.TurnedOffNote, shown.StartupNote);
+    }
+
+    [TestMethod]
     public void NotificationsAreSaidOnlyWhereARefusalTurnedThemOff()
     {
         Assert.IsFalse(Over(Snapshots.Read(1)).Shown.HasNotificationsOff);

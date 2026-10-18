@@ -2,8 +2,13 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="Pitboard" Manufacturer="Pitboard" Version="$(ProductVersion)" Language="1033"
            UpgradeCode="9D967FF2-F54D-4D63-9B26-51D7E75F62FC" Scope="perUserOrMachine">
-    <!-- One UpgradeCode for the x64 and the ARM64 MSI, which install into the same folder, so either replaces the other. -->
-    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer Pitboard is installed already." />
+    <!-- One UpgradeCode for the x64 and the ARM64 MSI, which install into the same folder, so either replaces the other.
+         The old product goes after the new one's files are in place, so bin\pitboard.exe is never missing; that holds
+         while each component keeps its GUID, which WiX makes from its key path. -->
+    <MajorUpgrade Schedule="afterInstallExecute" AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer Pitboard is installed already." />
+    <!-- e: a file of an equal version is replaced too, as the other architecture's MSI of one version has. -->
+    <Property Id="REINSTALLMODE" Value="emus" />
     <!-- Windows Installer empties ALLUSERS for a per-user install; an administrative image has no context. -->
     <Launch Condition="NOT ALLUSERS OR ACTION = &quot;ADMIN&quot;"
             Message="Pitboard installs for your Windows account only, never for every account on this PC." />
@@ -102,7 +107,8 @@
     <InstallExecuteSequence>
       <Custom Action="RegisterShareRollback" Before="RegisterShare" Condition="NOT REMOVE" />
       <Custom Action="RegisterShare" After="InstallFiles" Condition="NOT REMOVE" />
-      <Custom Action="UnregisterShare" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+      <!-- Not in an upgrade's removal of the old product, which comes after the new one registered the package. -->
+      <Custom Action="UnregisterShare" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
     <?endif?>
   </Package>

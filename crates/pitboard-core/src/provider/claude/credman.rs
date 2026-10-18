@@ -26,10 +26,13 @@ fn is_one(value: &Value) -> bool {
     }
 }
 
-// The config file Claude Code reads its cached features and its legacy `env` from, as JSON.
-fn config(ctx: &Context) -> Option<Value> {
+// The config file Claude Code reads its cached features and its legacy `env` from, as its
+// loader reads it, and whether the backend gate, which parses it with no byte order mark
+// dropped, reads it too (`settings_byte_order_mark`).
+fn config(ctx: &Context) -> Option<(Value, bool)> {
     let text = std::fs::read_to_string(claude::config_file(ctx)).ok()?;
-    serde_json::from_str(&text).ok()
+    let config = serde_json::from_str(claude::without_byte_order_mark(&text)).ok()?;
+    Some((config, !text.starts_with('\u{feff}')))
 }
 
 // The variable's value a session would start with: the highest settings layer that sets it,
@@ -81,10 +84,11 @@ fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
 // Why Claude Code would keep its login in Credential Manager, in words that follow "while".
 pub(crate) fn turned_on(ctx: &Context) -> Option<String> {
     let config = config(ctx);
-    forced(ctx, config.as_ref()).or_else(|| {
+    forced(ctx, config.as_ref().map(|(config, _)| config)).or_else(|| {
         let cached = config
             .as_ref()
-            .and_then(|config| config.get("cachedGrowthBookFeatures")?.get(FEATURE))
+            .filter(|(_, gate_reads)| *gate_reads)
+            .and_then(|(config, _)| config.get("cachedGrowthBookFeatures")?.get(FEATURE))
             == Some(&Value::Bool(true));
         cached.then(|| {
             format!(
@@ -602,6 +606,47 @@ mod tests {
         assert_eq!(on(&scratch), None, "a broken one reads as off");
     }
 
+    // Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes EF BB BF first, and on the
+    // session's PC (2026-10-18) Claude Code 2.1.302 took the env of a settings.json so written.
+    #[test]
+    fn a_byte_order_mark_is_read_past_as_claude_code_reads_past_it() {
+        let marked = |value: &Value| {
+            let mut bytes = vec![0xEF, 0xBB, 0xBF];
+            bytes.extend(value.to_string().into_bytes());
+            bytes
+        };
+        let scratch = windows(&[]);
+        let settings = scratch.config.join("settings.json");
+        let forced = json!({"env": {FORCE: "1"}});
+        std::fs::write(&settings, marked(&forced)).expect("written");
+        assert_eq!(
+            on(&scratch),
+            Some(format!(
+                "`{FORCE}` is 1 in the env of {}",
+                settings.display()
+            ))
+        );
+        // `Out-File` and `>` in Windows PowerShell 5.1 write UTF-16LE after FF FE.
+        let mut wide = vec![0xFF, 0xFE];
+        wide.extend(forced.to_string().encode_utf16().flat_map(u16::to_le_bytes));
+        std::fs::write(&settings, wide).expect("written");
+        assert!(on(&scratch).is_some(), "UTF-16LE");
+        std::fs::remove_file(&settings).expect("removed");
+
+        std::fs::write(scratch.claude_json(), marked(&forced)).expect("written");
+        assert_eq!(
+            on(&scratch),
+            Some(format!(
+                "`{FORCE}` is 1 in the env of {}",
+                scratch.claude_json().display()
+            ))
+        );
+        // The backend gate parses the config file as it is, so it reads the feature as off.
+        let cached = json!({"cachedGrowthBookFeatures": {FEATURE: true}});
+        std::fs::write(scratch.claude_json(), marked(&cached)).expect("written");
+        assert_eq!(on(&scratch), None);
+    }
+
     #[test]
     fn credential_manager_holding_the_live_target_is_ambiguous_with_the_store_off() {
         assert!(ambiguity(&windows(&[]).ctx).is_none());
@@ -803,7 +848,7 @@ mod tests {
             .expect("a bad one");
         assert!(matches!(
             store.read(&scratch.service),
-            Err(Error::Unreadable(_))
+            Err(Error::Broken(_))
         ));
     }
 

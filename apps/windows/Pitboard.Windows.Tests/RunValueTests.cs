@@ -49,6 +49,37 @@ public sealed class RunValueTests
         Assert.IsFalse(key.Values.ContainsKey("Pitboard"));
     }
 
+    // Settings > Apps > Startup turned Pitboard off on the session's PC (2026-10-18): StartupApproved's first byte 01,
+    // the Run value kept, and the switch still showed on.
+    [TestMethod]
+    public void SettingsTurningItOffShowsItOffAndPitboardNeverWritesWhatSettingsKeeps()
+    {
+        var key = new StandInRunKey();
+        var item = new RunValue(Build.Release, Installed, key);
+        item.Write(starts: true);
+
+        foreach (var off in new byte[] { 0x01, 0x03 })
+        {
+            key.Approvals["Pitboard"] = [off, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            Assert.IsFalse(item.Read(), $"{off}");
+            Assert.IsTrue(item.TurnedOff(), $"{off}");
+            Assert.ThrowsExactly<InvalidOperationException>(() => item.Write(starts: true));
+        }
+
+        key.Approvals["Pitboard"] = [0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        Assert.IsTrue(item.Read());
+        Assert.IsFalse(item.TurnedOff());
+
+        // Turned off in Settings with no Run value left, Settings lists nothing to turn on, so Pitboard writes one.
+        key.Approvals["Pitboard"] = [0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        key.Values.Remove("Pitboard");
+        Assert.IsFalse(item.TurnedOff());
+        item.Write(starts: true);
+        Assert.IsTrue(item.TurnedOff());
+        Assert.IsFalse(item.Read());
+        CollectionAssert.DoesNotContain(key.Asked, "write approval Pitboard");
+    }
+
     [TestMethod]
     public void ADebugBuildRefusesAndNeverTouchesTheRunKey()
     {

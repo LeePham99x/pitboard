@@ -877,6 +877,11 @@ impl Pitboard {
         gate(&self.ctx)
     }
 
+    // None where this process may change nothing here, or another app holds it.
+    pub fn hold_open(&self) -> Option<crate::app::Open> {
+        crate::app::Open::hold(&self.ctx, self.permit().ok()?)
+    }
+
     /// Whether every home the environment names is a full path, as the gate and every read
     /// of the accounts ask. A front end asks it before anything else that reads under one,
     /// such as the audit log, the schedule's file or the status line's session records, so

@@ -185,6 +185,88 @@ fn git_bash_among(
     }
 }
 
+// The PowerShell Claude Code runs a hook and the status line in on Windows where it finds no
+// Git Bash, found as it finds one (`windows_statusline_powershell`).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum PowerShell {
+    Seven(PathBuf),
+    Windows(PathBuf),
+}
+
+// Where Claude Code looks past `PATH`, as its environment names them.
+pub(crate) struct PowerShellPlaces {
+    pub(crate) program_files: Option<PathBuf>,
+    pub(crate) local_app_data: Option<PathBuf>,
+    pub(crate) user_profile: Option<PathBuf>,
+    pub(crate) system_root: Option<PathBuf>,
+}
+
+pub(crate) fn powershell(ctx: &Context) -> Option<PowerShell> {
+    let places = PowerShellPlaces {
+        program_files: ctx.program_files.clone(),
+        local_app_data: ctx.local_app_data.clone(),
+        user_profile: Some(ctx.home.clone()),
+        system_root: ctx.system_root.clone(),
+    };
+    powershell_among(
+        &ctx.search_path(),
+        &ctx.lookup(),
+        &places,
+        crate::host::proc::can_run,
+    )
+}
+
+fn powershell_among(
+    search: &OsStr,
+    lookup: &Lookup,
+    places: &PowerShellPlaces,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PowerShell> {
+    let on_path = |name: &str| {
+        find_among(
+            Path::new(name),
+            std::env::split_paths(search),
+            lookup,
+            &exists,
+        )
+    };
+    let under = |folder: &Option<PathBuf>, parts: &[&str]| {
+        let mut path = folder.clone()?;
+        path.extend(parts);
+        exists(&path).then_some(path)
+    };
+    let system_root = Some(
+        places
+            .system_root
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows")),
+    );
+    let found = on_path("pwsh")
+        .or_else(|| under(&places.program_files, &["PowerShell", "7", "pwsh.exe"]))
+        .or_else(|| {
+            under(
+                &places.local_app_data,
+                &["Microsoft", "WindowsApps", "pwsh.exe"],
+            )
+        })
+        .or_else(|| under(&places.user_profile, &[".dotnet", "tools", "pwsh.exe"]))
+        .or_else(|| on_path("powershell"))
+        .or_else(|| {
+            under(
+                &system_root,
+                &["System32", "WindowsPowerShell", "v1.0", "powershell.exe"],
+            )
+        })?;
+    let seven = found
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("pwsh"));
+    Some(if seven {
+        PowerShell::Seven(found)
+    } else {
+        PowerShell::Windows(found)
+    })
+}
+
 /// The directory whose path string selects the credential slot.
 pub(crate) fn storage_dir(ctx: &Context) -> String {
     storage_dir_from(
@@ -246,6 +328,12 @@ pub fn live_service(ctx: &Context) -> String {
     }
 }
 
+// As Claude Code parses its config and its settings: one U+FEFF at the start dropped
+// (`settings_byte_order_mark`).
+pub(crate) fn without_byte_order_mark(text: &str) -> &str {
+    text.strip_prefix('\u{feff}').unwrap_or(text)
+}
+
 pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
     let path = config_file(ctx);
     let raw = std::fs::read_to_string(&path).map_err(|source| {
@@ -258,7 +346,8 @@ pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
             }
         }
     })?;
-    serde_json::from_str(&raw).map_err(|source| Error::ClaudeConfigNotJson { path, source })
+    serde_json::from_str(without_byte_order_mark(&raw))
+        .map_err(|source| Error::ClaudeConfigNotJson { path, source })
 }
 
 /// The account Claude Code's config names, which can be another than the login stored's: a
@@ -471,6 +560,20 @@ mod tests {
     }
 
     #[test]
+    fn a_config_that_starts_with_a_byte_order_mark_is_read() {
+        let root = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(root.path().to_path_buf());
+        let mut bytes = "\u{feff}".as_bytes().to_vec();
+        bytes.extend(br#"{"oauthAccount":{"accountUuid":"a","emailAddress":"a@b.c"}}"#);
+        std::fs::write(root.path().join(".claude.json"), bytes).expect("written");
+        let config = load_config(&ctx).expect("read past the mark");
+        assert_eq!(
+            config_account(&config).map(|account| account.email),
+            Some("a@b.c".to_string())
+        );
+    }
+
+    #[test]
     fn the_config_account_needs_an_email_and_an_account() {
         let full = serde_json::json!({"oauthAccount": {
             "emailAddress": "a@b.c", "accountUuid": "u", "organizationUuid": "o",
@@ -545,5 +648,66 @@ mod tests {
         );
         assert_eq!(find(None, &[&git_exe]).found, None, "no bash beside git");
         assert_eq!(find(None, &[]).found, None);
+    }
+
+    // As 2.1.302's `pw()` finds it. On the session's PC (2026-10-18) Claude Code ran the status
+    // line in powershell.exe, then in pwsh.exe once PowerShell 7 was installed.
+    #[test]
+    fn powershell_is_found_where_claude_code_finds_it() {
+        let windows = Lookup::new(Os::Windows, None);
+        let bin = std::env::temp_dir().join("bin");
+        let search = std::env::join_paths([bin.clone()]).expect("a search path");
+        let (program_files, local, profile) = (
+            PathBuf::from(r"C:\Program Files"),
+            PathBuf::from(r"C:\Users\x\AppData\Local"),
+            PathBuf::from(r"C:\Users\x"),
+        );
+        let places = PowerShellPlaces {
+            program_files: Some(program_files.clone()),
+            local_app_data: Some(local.clone()),
+            user_profile: Some(profile.clone()),
+            system_root: None,
+        };
+        let find = |there: &[&PathBuf]| {
+            powershell_among(&search, &windows, &places, |path| {
+                there.iter().any(|one| one.as_path() == path)
+            })
+        };
+        let under = |folder: &PathBuf, parts: &[&str]| {
+            let mut path = folder.clone();
+            path.extend(parts);
+            path
+        };
+        let on_path = bin.join("pwsh.exe");
+        let seven = under(&program_files, &["PowerShell", "7", "pwsh.exe"]);
+        let alias = under(&local, &["Microsoft", "WindowsApps", "pwsh.exe"]);
+        let dotnet = under(&profile, &[".dotnet", "tools", "pwsh.exe"]);
+        let five_on_path = bin.join("powershell.exe");
+        let five = under(
+            &PathBuf::from(r"C:\Windows"),
+            &["System32", "WindowsPowerShell", "v1.0", "powershell.exe"],
+        );
+        assert_eq!(
+            find(&[&on_path, &seven, &five]),
+            Some(PowerShell::Seven(on_path.clone()))
+        );
+        assert_eq!(
+            find(&[&seven, &alias, &five_on_path]),
+            Some(PowerShell::Seven(seven.clone()))
+        );
+        assert_eq!(
+            find(&[&alias, &dotnet]),
+            Some(PowerShell::Seven(alias.clone()))
+        );
+        assert_eq!(
+            find(&[&dotnet, &five]),
+            Some(PowerShell::Seven(dotnet.clone()))
+        );
+        assert_eq!(
+            find(&[&five_on_path, &five]),
+            Some(PowerShell::Windows(five_on_path.clone()))
+        );
+        assert_eq!(find(&[&five]), Some(PowerShell::Windows(five)));
+        assert_eq!(find(&[]), None);
     }
 }

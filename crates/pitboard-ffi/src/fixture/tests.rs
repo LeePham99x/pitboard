@@ -1136,10 +1136,6 @@ fn a_launch_reads_without_being_asked() {
 // On Windows by its package, so the quit question names the AUMID the Windows app's
 // AppControl takes.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_chatgpt_fixture_is_the_app_the_core_finds_on_each_system() {
     use crate::launch::Remedy;
     let launched = made(World::TwoTools);
