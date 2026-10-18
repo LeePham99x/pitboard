@@ -791,6 +791,9 @@ pub enum Error {
     )]
     SignInInProgress,
 
+    #[error("{}", pitboard_open(home))]
+    PitboardOpen { home: PathBuf },
+
     #[error("{}", app_open(app, still))]
     AppOpen {
         app: &'static str,
@@ -1041,6 +1044,7 @@ impl Error {
             RenewalFailed { .. } => "renewal_failed",
             SignInInProgress => "sign_in_in_progress",
             AppOpen { .. } => "app_open",
+            PitboardOpen { .. } => "pitboard_open",
             AppStateUnknown { .. } => "app_state_unknown",
             LoginFolderUnknown { .. } => "login_folder_unknown",
             LoginFolderUnreadable { .. } => "login_folder_unreadable",
@@ -1453,6 +1457,18 @@ pub enum LoginDoubt {
     SignedInOutside {
         label: String,
     },
+}
+
+fn pitboard_open(home: &std::path::Path) -> String {
+    let quit = match crate::host::OS {
+        Os::MacOs | Os::Linux => "Quit it from its item in the menu bar",
+        Os::Windows => "Exit it from its icon's menu in the notification area",
+    };
+    format!(
+        "the Pitboard app is open, and it would make {} again once it was gone. {quit}, then \
+         run this again. Nothing has changed.",
+        home.display()
+    )
 }
 
 fn app_open(app: &str, still: &[String]) -> String {

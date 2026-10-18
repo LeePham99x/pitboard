@@ -247,6 +247,40 @@ mod tests {
         }
     }
 
+    // On the session's PC (2026-10-18) the Windows app made %LOCALAPPDATA%\Pitboard again,
+    // with state.json, usage.json and asking.json, once `pitboard uninstall` had taken it away.
+    #[test]
+    fn uninstalling_refuses_while_the_app_is_open() {
+        for make in [machine, codex_machine] {
+            let m = make("uninstall-app-open").in_the_default_home();
+            schedule::install(&m.ctx, Permit::for_a_test()).expect("scheduled");
+            let open = crate::app::Open::hold(&m.ctx, Permit::for_a_test()).expect("held");
+            let refused = uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            );
+            let Err(error) = refused else {
+                panic!("{:?}: uninstalled with the app open", m.which);
+            };
+            assert_eq!(error.code(), "pitboard_open");
+            assert_eq!(state::load(&m.ctx).expect("kept").accounts.len(), 2);
+            assert!(matches!(
+                schedule::status(&m.ctx),
+                schedule::Installed::Yes { .. }
+            ));
+
+            drop(open);
+            let removed = uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled once the app quit");
+            assert!(removed.home_removed);
+        }
+    }
+
     #[test]
     fn uninstalling_takes_a_killed_sign_ins_login_with_it_and_none_in_use() {
         let m = machine("uninstall-signin-left");
