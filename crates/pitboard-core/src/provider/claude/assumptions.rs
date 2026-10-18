@@ -151,6 +151,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.301"),
         windows: Read("2.1.301"),
     },
+    PerSystem {
+        name: "settings_byte_order_mark",
+        macos: Read("2.1.302"),
+        linux: Read("2.1.302"),
+        windows: Read("2.1.302"),
+    },
     everywhere("oauth_client", VERIFIED_AGAINST),
     PerSystem {
         name: "supervisor_daemon",
@@ -655,6 +661,37 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                   the two ways, home::check_absolute, which refuses an empty one, and \
                   claude::credman's read of the cached feature, from the file config_file names",
         probe: &[".config.json", "CLAUDE_CONFIG_DIR"],
+        absent: &[],
+    },
+    Assumption {
+        name: "settings_byte_order_mark",
+        fact: "Claude Code reads a settings file, the person's `settings.json` and a managed \
+               one alike, as UTF-16LE where it starts with FF FE and as UTF-8 otherwise, and \
+               drops one U+FEFF at its start before it parses it, so the byte order mark \
+               Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes leaves its `env` \
+               read. Whitespace before the mark, or a second mark, leaves the file unread. Its \
+               config file's loader reads UTF-8 and drops one mark the same way, but the \
+               Credential Manager gate (windows_backend_choice) parses that file as it is, so a \
+               config that starts with a mark reads `tengu_windows_credman` as off while its \
+               `env` still counts. A `.credentials.json` that starts with one is no login",
+        read_from: "the settings file reader and its encoding sniff, safeParseJSON, the config \
+                    loader, the backend gate's read of the config file and the plaintext \
+                    store's read, in the darwin-arm64, linux-x64 and win32-x64 builds of \
+                    2.1.302, read as bytes on 2026-10-18. Measured the same day on the session's \
+                    PC, Windows 11 build 26300 on ARM64: with `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` \
+                    1 in the `env` of a `settings.json` written that way, a new session of \
+                    2.1.302 moved its login into Credential Manager",
+        verified_against: "2.1.302",
+        depends: "settings::own and the managed settings it reads, which drop the mark as \
+                  Claude Code does and read the person's own UTF-16LE file, \
+                  claude::paths::load_config and configfile::update, and credman::turned_on, \
+                  which reads the config's `env` past a mark and its cached feature only from a \
+                  config with none",
+        probe: &[
+            "safeParseJSON: invalid JSON (",
+            r#"return"utf16le""#,
+            r#"startsWith("\uFEFF")?e.slice(1):e}"#,
+        ],
         absent: &[],
     },
     Assumption {
@@ -1807,6 +1844,7 @@ mod tests {
                 "logout_skips_the_lock",
                 "account_scoped_keys",
                 "config_file_location",
+                "settings_byte_order_mark",
                 "oauth_client",
                 "sign_in_output",
                 "sign_in_takes_another_code",

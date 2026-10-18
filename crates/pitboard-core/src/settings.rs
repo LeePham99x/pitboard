@@ -96,10 +96,7 @@ fn managed(ctx: &Context) -> Vec<Layer> {
         .filter_map(|path| match host.administered_file(&path) {
             Administered::Set(text) => {
                 there |= holds_policy(&text);
-                Some(Layer {
-                    name: path.display().to_string(),
-                    text,
-                })
+                Some(administered(path.display().to_string(), &text))
             }
             Administered::Unreadable(_) => {
                 there = true;
@@ -116,10 +113,10 @@ fn managed(ctx: &Context) -> Vec<Layer> {
             match host.policy(hive, POLICIES, POLICY) {
                 Administered::Set(text) => {
                     there |= holds_policy(&text);
-                    layers.push(Layer {
-                        name: format!(r"{}\{POLICIES}\{POLICY}", hive.name()),
-                        text,
-                    });
+                    layers.push(administered(
+                        format!(r"{}\{POLICIES}\{POLICY}", hive.name()),
+                        &text,
+                    ));
                 }
                 // Claude Code treats a failed HKLM query as absent and still reads HKCU (its
                 // `vYn` nulls hklmStdout on a non-zero `reg.exe` exit), so an unreadable
@@ -141,10 +138,9 @@ fn managed_taken(ctx: &Context) -> Result<Vec<Layer>, String> {
     let mut unread = None;
     for path in managed_files(ctx) {
         match host.administered_file(&path) {
-            Administered::Set(text) => folder.push(Layer {
-                name: path.display().to_string(),
-                text,
-            }),
+            Administered::Set(text) => {
+                folder.push(administered(path.display().to_string(), &text));
+            }
             Administered::Unreadable(why) => {
                 unread.get_or_insert(format!("{}: {why}", path.display()));
             }
@@ -158,7 +154,7 @@ fn managed_taken(ctx: &Context) -> Result<Vec<Layer>, String> {
     let policy = |hive: Hive| {
         let name = format!(r"{}\{POLICIES}\{POLICY}", hive.name());
         match host.policy(hive, POLICIES, POLICY) {
-            Administered::Set(text) if holds_policy(&text) => Ok(Some(Layer { name, text })),
+            Administered::Set(text) if holds_policy(&text) => Ok(Some(administered(name, &text))),
             Administered::Set(_) | Administered::Unset => Ok(None),
             Administered::Unreadable(why) => Err(format!("{name}: {why}")),
         }
@@ -183,6 +179,7 @@ fn managed_taken(ctx: &Context) -> Result<Vec<Layer>, String> {
 
 // What keeps `HKCU` out: one Claude Code cannot read, or one that sets more than composition.
 fn holds_policy(text: &str) -> bool {
+    let text = claude::without_byte_order_mark(text);
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(keys)) => keys.keys().any(|key| {
             !matches!(
@@ -199,11 +196,33 @@ fn is_set(value: &str) -> bool {
     !matches!(value.trim(), "" | "0" | "false")
 }
 
+// As Claude Code reads a settings file: UTF-16LE after FF FE, UTF-8 otherwise, and one byte
+// order mark dropped (`settings_byte_order_mark`).
 fn own(path: &std::path::Path) -> Option<Layer> {
+    let bytes = std::fs::read(path).ok()?;
+    let text = match bytes.strip_prefix(&[0xFF, 0xFE]) {
+        Some(wide) => String::from_utf16(
+            &wide
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u16::from_le_bytes(*pair))
+                .collect::<Vec<_>>(),
+        )
+        .ok()?,
+        None => String::from_utf8(bytes).ok()?,
+    };
     Some(Layer {
         name: path.display().to_string(),
-        text: std::fs::read_to_string(path).ok()?,
+        text: claude::without_byte_order_mark(&text).to_owned(),
     })
+}
+
+fn administered(name: String, text: &str) -> Layer {
+    Layer {
+        name,
+        text: claude::without_byte_order_mark(text).to_owned(),
+    }
 }
 
 fn overrides_in(layer: &Layer) -> Vec<Override> {

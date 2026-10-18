@@ -246,6 +246,12 @@ pub fn live_service(ctx: &Context) -> String {
     }
 }
 
+// As Claude Code parses its config and its settings: one U+FEFF at the start dropped
+// (`settings_byte_order_mark`).
+pub(crate) fn without_byte_order_mark(text: &str) -> &str {
+    text.strip_prefix('\u{feff}').unwrap_or(text)
+}
+
 pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
     let path = config_file(ctx);
     let raw = std::fs::read_to_string(&path).map_err(|source| {
@@ -258,7 +264,8 @@ pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
             }
         }
     })?;
-    serde_json::from_str(&raw).map_err(|source| Error::ClaudeConfigNotJson { path, source })
+    serde_json::from_str(without_byte_order_mark(&raw))
+        .map_err(|source| Error::ClaudeConfigNotJson { path, source })
 }
 
 /// The account Claude Code's config names, which can be another than the login stored's: a

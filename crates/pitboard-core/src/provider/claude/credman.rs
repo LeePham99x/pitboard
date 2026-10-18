@@ -26,10 +26,13 @@ fn is_one(value: &Value) -> bool {
     }
 }
 
-// The config file Claude Code reads its cached features and its legacy `env` from, as JSON.
-fn config(ctx: &Context) -> Option<Value> {
+// The config file Claude Code reads its cached features and its legacy `env` from, as its
+// loader reads it, and whether the backend gate, which parses it with no byte order mark
+// dropped, reads it too (`settings_byte_order_mark`).
+fn config(ctx: &Context) -> Option<(Value, bool)> {
     let text = std::fs::read_to_string(claude::config_file(ctx)).ok()?;
-    serde_json::from_str(&text).ok()
+    let config = serde_json::from_str(claude::without_byte_order_mark(&text)).ok()?;
+    Some((config, !text.starts_with('\u{feff}')))
 }
 
 // The variable's value a session would start with: the highest settings layer that sets it,
@@ -81,10 +84,11 @@ fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
 // Why Claude Code would keep its login in Credential Manager, in words that follow "while".
 pub(crate) fn turned_on(ctx: &Context) -> Option<String> {
     let config = config(ctx);
-    forced(ctx, config.as_ref()).or_else(|| {
+    forced(ctx, config.as_ref().map(|(config, _)| config)).or_else(|| {
         let cached = config
             .as_ref()
-            .and_then(|config| config.get("cachedGrowthBookFeatures")?.get(FEATURE))
+            .filter(|(_, gate_reads)| *gate_reads)
+            .and_then(|(config, _)| config.get("cachedGrowthBookFeatures")?.get(FEATURE))
             == Some(&Value::Bool(true));
         cached.then(|| {
             format!(
