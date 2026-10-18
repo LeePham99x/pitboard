@@ -121,6 +121,26 @@ test("needs an image description X takes, the same for X as for the others", () 
   assert.match(tags("The logo \u2014 big.").problems.join(), /en or em dash/);
 });
 
+test("needs each platform tab and surface button to look chosen by the root's choice", () => {
+  const tab = (look) =>
+    `<button class="text-muted ${look}" role="tab" aria-selected="true" data-platform="macos">macOS</button>`;
+  const pick = (look) =>
+    `<button class="text-fg ${look}" type="button" aria-pressed="true" data-surface="app">App</button>`;
+  assert.deepEqual(
+    problems(tab("chosen:text-ink chosen:after:bg-ink") + pick("chosen:bg-ink")),
+    [],
+  );
+  assert.match(
+    problems(tab("aria-selected:text-ink")).join(),
+    /the macos tab looks chosen by aria-selected, which only site\.ts sets/,
+  );
+  assert.match(
+    problems(pick("aria-pressed:bg-ink")).join(),
+    /the app button looks chosen by aria-pressed, which only site\.ts sets/,
+  );
+  assert.match(problems(pick("")).join(), /the app button has no chosen: look/);
+});
+
 // the signature and the header of a PNG, then the chunks given, each with a dummy CRC
 function png(width, height, colour, ...chunks) {
   const chunk = (type, data) => {
