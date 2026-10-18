@@ -2565,9 +2565,17 @@ fn runs_bare_pitboard(command: &str) -> bool {
 // Claude Code's PATH is the one this runs with, as the shell it starts takes it.
 fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
     let line = line?;
-    let shell = match &line.git_bash.found {
-        Some(bash) => format!("Git Bash, {}", bash.display()),
-        None => "PowerShell, finding no Git Bash".to_string(),
+    let runs = match (&line.git_bash.found, &line.powershell) {
+        (Some(bash), _) => format!("runs the status line in Git Bash, {}", bash.display()),
+        (None, Some(claude::PowerShell::Seven(found))) => format!(
+            "runs the status line in PowerShell 7, {}, finding no Git Bash",
+            found.display()
+        ),
+        (None, Some(claude::PowerShell::Windows(found))) => format!(
+            "runs the status line in Windows PowerShell, {}, finding no Git Bash",
+            found.display()
+        ),
+        (None, None) => "finds neither Git Bash nor PowerShell to run the status line in".into(),
     };
     let passed_over = line
         .git_bash
@@ -2584,7 +2592,7 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
             "status_line",
             "status line",
             format!(
-                "Claude Code runs the status line in {shell}; `pitboard` there is {}{passed_over}",
+                "Claude Code {runs}; `pitboard` there is {}{passed_over}",
                 found.display()
             ),
         ),
@@ -2592,8 +2600,7 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
             "status_line",
             "status line",
             format!(
-                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
-                 PATH{passed_over}"
+                "Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"
             ),
             "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
         ),
@@ -2601,8 +2608,7 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
             "status_line",
             "status line",
             format!(
-                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
-                 PATH{passed_over}"
+                "Claude Code {runs}; no `pitboard` is on its PATH{passed_over}"
             ),
         ),
     })

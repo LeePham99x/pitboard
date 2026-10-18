@@ -238,7 +238,7 @@ fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
 #[test]
 fn the_first_account_goes_in_where_nothing_is_signed_in() {
     for (tool, make) in [
-        ("claude", harness::machine as fn(&str) -> harness::Machine),
+        ("claude", machine as fn(&str) -> harness::Machine),
         ("codex", harness::codex_machine),
     ] {
         let m = make(&format!("first-{tool}"));

@@ -59,6 +59,7 @@ const READ: &[&str] = &[
     "APPDATA",
     "LOCALAPPDATA",
     "ProgramData",
+    "ProgramFiles",
     "SystemRoot",
     "PATHEXT",
     "TEMP",
@@ -364,6 +365,9 @@ pub struct Context {
     pub(crate) profile: Option<PathBuf>,
     // Windows' `LOCALAPPDATA`, as the environment gives it.
     pub(crate) local_app_data: Option<PathBuf>,
+    // Windows' `ProgramFiles` and `SystemRoot`, where Claude Code looks for PowerShell.
+    pub(crate) program_files: Option<PathBuf>,
+    pub(crate) system_root: Option<PathBuf>,
     // The person's Windows SID, which an `icacls` line names and a report hides.
     pub(crate) sid: Option<String>,
     // The folders OneDrive syncs on Windows, as its variables name them.
@@ -500,6 +504,8 @@ impl Context {
             codex_home: None,
             profile: None,
             local_app_data: None,
+            program_files: None,
+            system_root: None,
             sid: None,
             one_drive: Vec::new(),
             schedule_program: None,
@@ -878,6 +884,12 @@ impl Context {
                 .path("LOCALAPPDATA")
                 .filter(|_| env.os() == Os::Windows)
                 .map(PathBuf::from),
+            program_files: env
+                .named_folder("ProgramFiles")
+                .filter(|_| env.os() == Os::Windows),
+            system_root: env
+                .named_folder("SystemRoot")
+                .filter(|_| env.os() == Os::Windows),
             sid: (env.os() == Os::Windows)
                 .then(crate::host::user::sid)
                 .flatten(),

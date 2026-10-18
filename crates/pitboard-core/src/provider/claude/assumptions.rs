@@ -441,7 +441,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_statusline_powershell",
         macos: NotRead("only Windows runs a status line in PowerShell"),
         linux: NotRead("only Windows runs a status line in PowerShell"),
-        windows: Read("2.1.301"),
+        windows: Read("2.1.302"),
     },
     PerSystem {
         name: "proxy_from_variables",
@@ -1595,16 +1595,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "windows_statusline_powershell",
         fact: "where it finds no Git Bash, Claude Code runs a status line in `pwsh` on `PATH`, \
                then `pwsh.exe` in `%ProgramFiles%\\PowerShell\\7`, \
-               `%LOCALAPPDATA%\\Microsoft\\WindowsApps` or `%USERPROFILE%\\.dotnet\\tools`, then \
-               `powershell` on `PATH`, then \
-               `%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`",
-        read_from: "the PowerShell finder the hook executor asks, in the win32-x64 and \
-                    win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
-        verified_against: "2.1.301",
-        depends: "the Windows tests that run `pitboard statusline` under Windows PowerShell 5.1 \
-                  and under pwsh 7, either of which may be the one",
+               `%LOCALAPPDATA%\\Microsoft\\WindowsApps`, there only as an app execution alias \
+               that leads to a file, or `%USERPROFILE%\\.dotnet\\tools`, then `powershell` on \
+               `PATH`, then `%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`, \
+               `SystemRoot` taken as `C:\\Windows` where unset. A program it finds named `pwsh` \
+               is PowerShell 7, and any other Windows PowerShell",
+        read_from: "the PowerShell finder the hook executor asks, and how it tells PowerShell 7 \
+                    from Windows PowerShell, in the win32-x64 and win32-arm64 builds of 2.1.301, \
+                    read as bytes on 2026-10-16, and in the win32-x64 build of 2.1.302 on \
+                    2026-10-18. Measured on the session's PC, Windows 11 build 26300 on ARM64, \
+                    on 2026-10-18 with 2.1.302: with neither Git nor PowerShell 7 installed it \
+                    ran the line in powershell.exe, with PowerShell 7.6.7 in pwsh.exe, and with \
+                    Git 2.55.0 in Git's bash.exe",
+        verified_against: "2.1.302",
+        depends: "claude::paths::powershell, by which doctor's status_line check names the \
+                  PowerShell that runs the line, and the Windows tests that run `pitboard \
+                  statusline` under Windows PowerShell 5.1 and under pwsh 7, either of which may \
+                  be the one",
         probe: &[
             r#""PowerShell","7","pwsh.exe""#,
+            r#""Microsoft","WindowsApps","pwsh.exe""#,
+            r#"".dotnet","tools","pwsh.exe""#,
+            r#"==="pwsh"?"core":"desktop""#,
             "fell_back_to_powershell_5",
         ],
         absent: &[],

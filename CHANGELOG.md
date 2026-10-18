@@ -15,6 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard reads Claude Code's `settings.json` and `.claude.json` where they start with a byte
   order mark, as Windows PowerShell 5.1 writes one, and a `settings.json` in UTF-16, as Claude
   Code does, instead of missing the `env` that turns Credential Manager on.
+- On Windows, `pitboard doctor` and **This PC** say whether Claude Code runs the status line in
+  PowerShell 7 or Windows PowerShell, and which one, instead of PowerShell alone.
 - `pitboard doctor` and **This PC** warn instead of failing where Claude Code has never run, so a
   new PC with nothing enrolled no longer reads as broken.
 - `pitboard doctor` and **This PC** show Codex's checks once Pitboard finds `codex`, before Codex
