@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 
 namespace Pitboard.Share.Core;
@@ -6,7 +5,7 @@ namespace Pitboard.Share.Core;
 // As the MSI's pitboard command starts it, since LaunchUriAsync from a package identity started no handler (CF8).
 public static class Handoff
 {
-    public const string App = "Pitboard.exe";
+    private const string App = "Pitboard.exe";
 
     public static ProcessStartInfo StartInfo(string folder, string link)
     {
@@ -15,16 +14,5 @@ public static class Handoff
         return start;
     }
 
-    public static bool Start(string folder, string link)
-    {
-        try
-        {
-            using var started = Process.Start(StartInfo(folder, link));
-            return started is not null;
-        }
-        catch (Win32Exception)
-        {
-            return false;
-        }
-    }
+    public static void Start(string folder, string link) => Process.Start(StartInfo(folder, link))?.Dispose();
 }
