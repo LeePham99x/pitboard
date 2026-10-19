@@ -1352,9 +1352,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - A login replaced outside Pitboard, which every read says until it is put right
   (`login_replaced`), is posted once for each account while the reads that ask say it, and
   again only once one has stopped saying it and a later one says it, or after the app is
-  opened again. What was posted is kept by the account the warning is about (`Warning`'s
-  `account`), since its words name whose login is stored now, which every switch changes,
-  and not across launches.
+  opened again. A failed read or a refused change whose warnings name one posts it the same
+  way. Neither counts as a read that stopped saying one, since neither says whether a login
+  it leaves out was put right. What was posted is kept by the account the warning is about
+  (`Warning`'s `account`), since its words name whose login is stored now, which every
+  switch changes, and not across launches.
 - A read that asks nobody, after another front end changed the index or a session recorded
   numbers, that says Claude Code's config has named another account since Anthropic last
   named the login stored (`in_use_unconfirmed`) starts one read that asks, which settles
