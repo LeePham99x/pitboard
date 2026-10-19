@@ -2527,10 +2527,10 @@ Accounts and tokens:
   folder. `LaunchUriAsync` of the probe's link scheme from the identity process gave false and
   started no handler. With the certificate in the user's own `TrustedPeople`,
   `Add-AppxPackage` refused the package with 0x800B0109 (run 38882775456).
-- CF8, the hand-off, as the fresh standard user on both images in run 39291962999: the
-  probe's identity process started the plain probe through `CreateProcessW` with a
-  `pitboard-probe-cf8://open?url=…` link as its only argument. With either manifest, the child
-  exited 0, got the link whole and had no package identity.
+- CF8, the hand-off, as the fresh standard user on both images in runs 39291962999 and
+  39301311398: the probe's identity process started the plain probe through `CreateProcessW`
+  with a `pitboard-probe-cf8://open?url=…` link as its only argument. With either manifest,
+  the child exited 0, got the link whole and had no package identity.
 - CF8, PitboardShare's package, as the fresh standard user on both images in run
   38928930271: `PitboardShare.exe --register` from a Release publish, its package signed with
   that certificate, registered `PitboardShare` with the publish's folder as its external
@@ -2976,7 +2976,7 @@ on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
-| A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process with no desktop app policy set starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The probe's identity process, started by path, gave its `CreateProcessW` children none, and one handed a link as its only argument got it whole (runs 38928930271 and 39291962999, CF8 under [Windows](#windows)). No runner activates a share target, whose activation may set a policy that keeps children in the package: P2 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real share started, and P1, with no copy running, whether it keeps running once `PitboardShare.exe` has returned. |
+| A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process with no desktop app policy set starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The probe's identity process, started by path, gave its `CreateProcessW` children none, and one handed a link as its only argument got it whole (runs 38928930271, 39291962999 and 39301311398, CF8 under [Windows](#windows)). No runner activates a share target, whose activation may set a policy that keeps children in the package: P2 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real share started, and P1, with no copy running, whether it keeps running once `PitboardShare.exe` has returned. |
 
 ### One sign-in at a time
 
