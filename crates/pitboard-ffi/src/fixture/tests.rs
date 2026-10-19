@@ -2989,3 +2989,43 @@ fn a_login_replaced_outside_is_posted_through_the_notifications_fixture_in_is_gi
         )]
     );
 }
+
+#[test]
+fn a_notification_the_system_refused_is_said_after_doctors_checks() {
+    let own = Folder::own("refused-notifications").expect("a folder");
+    let posted = Arc::new(Posted::refusing("COMException 0x80070490"));
+    let (model, told) = started_in(
+        &own,
+        World::LoginReplaced,
+        &StandInApps::new(&[], true),
+        &posted,
+    );
+    eventually("posted the login replaced", || !posted.posted().is_empty());
+
+    model.send(Intent::PaneShown {
+        pane: Pane::Machine,
+    });
+    let checked = told.until("the checks with the refusal", |snapshot| {
+        snapshot
+            .machine
+            .checks
+            .lines
+            .last()
+            .is_some_and(|line| line.code == "notification_not_posted")
+    });
+    model.shutdown();
+
+    let line = checked.machine.checks.lines.last().expect("a line");
+    assert_eq!(line.level, crate::Level::Warn);
+    assert!(
+        line.detail
+            .starts_with("“A login was replaced outside Pitboard” not posted at "),
+        "{}",
+        line.detail
+    );
+    assert!(
+        line.detail.ends_with(" · COMException 0x80070490"),
+        "{}",
+        line.detail
+    );
+}

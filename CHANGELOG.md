@@ -23,6 +23,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and F5 or Ctrl+R for **Back**, **Forward** and **Reload**, as its page does.
 - The Windows app installs the PowerShell completions, as `completions\pitboard.ps1` in its
   folder.
+- On Windows, **This PC** names the last notification Windows refused to show, with when and
+  the error it gave, until the next one is posted.
 
 ### Changed
 

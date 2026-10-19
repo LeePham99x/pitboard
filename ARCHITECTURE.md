@@ -694,7 +694,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `IconImage` loads it at for the primary display's scale, and `IconMenu`
     lists what the icon's menu offers, in the macOS menu's order. `WindowsNotifications`
     posts the model's notifications through `IAppNotifications`, which
-    `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
+    `SystemAppNotifications` sends to `AppNotificationManager` and tests replace, and refuses
+    one Windows did not show by the exception's type and HRESULT alone; only a
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. Its `Read` is why Windows shows none of them, from the
     manager's `Setting` at each settings visit, as a `NotificationsBlocked`. `WindowsApps` is the model's `AppControl`: through
@@ -1357,6 +1358,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   it leaves out was put right. What was posted is kept by the account the warning is about
   (`Warning`'s `account`), since its words name whose login is stored now, which every
   switch changes, and not across launches.
+- A notification the app's system refused is kept with its title, the system's reason and
+  when, until the next one is posted, and not across launches. Doctor cannot know of it, so
+  This Mac and This PC list it after doctor's checks (`notification_not_posted`), and the
+  line over them counts it. `MacNotifications` refuses none.
 - A read that asks nobody, after another front end changed the index or a session recorded
   numbers, that says Claude Code's config has named another account since Anthropic last
   named the login stored (`in_use_unconfirmed`) starts one read that asks, which settles

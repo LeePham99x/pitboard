@@ -510,9 +510,11 @@ pub(crate) enum Answer {
     /// What was kept was written, or could not be, which nothing here can mend: told again,
     /// a run-out is told once more after a relaunch, and nothing worse.
     Saved,
-    /// A notification was posted, or could not be, which is the app's system's to say: the
-    /// window says the same either way.
-    Posted,
+    // the notification titled `title` was posted, or the app's system refused it, and why
+    Posted {
+        title: String,
+        refused: Option<String>,
+    },
     /// A schedule an older app wrote was repaired, or nothing needed it, or it could not be,
     /// with what the command line inside this copy is.
     Repaired {
@@ -2547,8 +2549,8 @@ impl State {
             Answer::Opened { front: false, .. }
             | Answer::Pasted
             | Answer::Stopped
-            | Answer::Saved
-            | Answer::Posted => {}
+            | Answer::Saved => {}
+            Answer::Posted { title, refused } => self.machine.posted(title, refused, now.epoch()),
             Answer::Kept {
                 told,
                 preferences,

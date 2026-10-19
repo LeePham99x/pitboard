@@ -690,6 +690,10 @@ pub(crate) fn checked_at(clock: &str) -> String {
     format!("Checked at {clock}")
 }
 
+pub(crate) fn not_posted(title: &str, clock: &str, reason: &str) -> String {
+    format!("“{title}” not posted at {clock} · {reason}")
+}
+
 pub(crate) const NO_USAGE_READ: &str = "No usage read";
 
 // Why the app it asked to quit stopped a change: "… Quit it, then switch again."
