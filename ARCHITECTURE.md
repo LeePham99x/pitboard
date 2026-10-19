@@ -440,7 +440,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in a column and in a sentence has a function for each form. The command line calls these
     functions directly, and so does `pitboard-ffi`'s `present/` as it makes the snapshot,
     which carries what an app shows of them. The bindings export none of them. Clock times
-    are not in it.
+    are not in it. A sentence that says to run a tool names its program as `spelled` gives
+    it: on Windows, the `claude.cmd` or `codex.cmd` npm installs where Pitboard found that,
+    since Windows PowerShell 5.1 under its default policy refuses the `claude.ps1` beside
+    it, and the bare name everywhere else. An error, a warning, a status row and the report
+    carry that name, since their words are made with no context.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
   `build.rs` gives a Windows build its manifest, which the linker embeds, and its version

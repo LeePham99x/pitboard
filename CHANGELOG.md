@@ -48,6 +48,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Windows is out, and dims **Check now** until then, instead of ending each check in an error.
 - Uninstalling the Windows app turns off daily renewal where its task runs the app's own
   `pitboard.exe`, and leaves a task that runs another copy, such as Scoop's.
+- On Windows, Pitboard says to run `claude.cmd` or `codex.cmd` where npm installed the tool,
+  since Windows PowerShell refuses a bare `claude` or `codex` there by default.
 
 ## [1.0.0-beta.3] - 2026-10-19
 
