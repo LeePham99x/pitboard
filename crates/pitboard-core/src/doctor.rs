@@ -755,9 +755,10 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
         backend_remedy: match backend {
             codex::Backend::File => String::new(),
             codex::Backend::Unknown => store.while_unknown().unwrap_or_default(),
-            _ => {
-                store.to_use_the_file(words::spelled(ctx, ProviderId::Codex).of(ProviderId::Codex))
-            }
+            _ => store.to_use_the_file(
+                words::spelling(ctx.os, ProviderId::Codex, program.as_deref())
+                    .of(ProviderId::Codex),
+            ),
         },
         auth_access: crate::host::fs::access(&auth_file),
         // Read only from the default store. A keychain item Codex created for itself
@@ -2030,19 +2031,14 @@ fn judge_credential(facts: &Facts) -> Check {
             ),
         ),
         // `claude auth login` writes nothing over it (`credman_move_lost_a_piece`).
-        Err(store::Error::Broken { why, .. }) => fail(
+        Err(store::Error::Broken { why, spelling }) => fail(
             "credential",
             "credential",
             format!("{why}, which Claude Code cannot read either"),
             format!(
                 "Run `{} auth logout`, which deletes it, then sign in to Claude Code again. \
                  Signing in before that leaves it as it is.",
-                words::spelling(
-                    facts.os,
-                    ProviderId::Claude,
-                    facts.claude_program.as_deref()
-                )
-                .of(ProviderId::Claude)
+                spelling.of(ProviderId::Claude)
             ),
         ),
         Err(e) => fail(

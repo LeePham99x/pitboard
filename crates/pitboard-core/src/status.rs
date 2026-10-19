@@ -488,34 +488,42 @@ pub(crate) fn gather_offline(ctx: &Context, state: &State) -> Report {
         plans: BTreeMap::new(),
     };
     let remembered = readings::load(ctx);
+    let (rows, spelling) = with_spellings(
+        ctx,
+        assemble(
+            state,
+            &facts,
+            |uuid| remembered.get(uuid).cloned(),
+            ctx.now(),
+        ),
+    );
     Report {
         now: ctx.now(),
         slot: slot_of(ctx),
         awaiting: awaiting(state),
-        rows: spelled(
-            ctx,
-            assemble(
-                state,
-                &facts,
-                |uuid| remembered.get(uuid).cloned(),
-                ctx.now(),
-            ),
-        ),
+        rows,
         signed_in: known
             .get(&crate::label::DEFAULT)
             .cloned()
             .flatten()
             .ok_or_else(|| "not asked".into()),
-        spelling: crate::words::spelled(ctx, crate::label::DEFAULT),
+        spelling,
     }
 }
 
-// Where each tool's program is here, which `assemble` does not read.
-fn spelled(ctx: &Context, mut rows: Vec<Row>) -> Vec<Row> {
+// Once a tool, and the default's for the report, since on Windows each is a search of `PATH`.
+fn with_spellings(ctx: &Context, mut rows: Vec<Row>) -> (Vec<Row>, Spelling) {
+    let mut spelled: BTreeMap<ProviderId, Spelling> = BTreeMap::new();
+    let mut spelling = |tool| {
+        *spelled
+            .entry(tool)
+            .or_insert_with(|| crate::words::spelled(ctx, tool))
+    };
     for row in &mut rows {
-        row.spelling = crate::words::spelled(ctx, row.provider);
+        row.spelling = spelling(row.provider);
     }
-    rows
+    let default = spelling(crate::label::DEFAULT);
+    (rows, default)
 }
 
 /// What one account's request came to: the reading, and what the budget should learn from
@@ -947,7 +955,7 @@ pub(crate) fn report(ctx: &Context, permit: Permit, state: &State, answers: Answ
             .collect(),
     };
     let remembered = readings::load(ctx);
-    let rows = spelled(
+    let (rows, spelling) = with_spellings(
         ctx,
         assemble(state, &facts, |uuid| remembered.get(uuid).cloned(), now),
     );
@@ -979,7 +987,7 @@ pub(crate) fn report(ctx: &Context, permit: Permit, state: &State, answers: Answ
             Some(Err(why)) => Err(why),
             None => Err("nothing is signed in".into()),
         },
-        spelling: crate::words::spelled(ctx, crate::label::DEFAULT),
+        spelling,
     }
 }
 
@@ -2835,6 +2843,61 @@ mod tests {
         row.label = Some("work".into());
         row.stale = Some(Stale::LoginUnreadable);
         assert!(!row.unplaced(), "an account");
+    }
+
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test lays out an npm prefix as `npm install -g` leaves one"
+    )]
+    fn every_row_of_a_tool_names_its_program_as_this_system_runs_it() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let npm = scratch.path().join("npm");
+        let native = scratch.path().join("bin");
+        for (folder, name) in [(&npm, "claude.cmd"), (&native, "codex.exe")] {
+            std::fs::create_dir_all(folder).expect("a folder");
+            std::fs::write(folder.join(name), "").expect("a program");
+            crate::host::fs::testing::make_runnable(&folder.join(name)).expect("runnable");
+        }
+        let home = scratch.path().join("home");
+        let search = std::env::join_paths([&npm, &native]).expect("a search path");
+        let env = crate::context::Environment::on(
+            crate::host::Os::Windows,
+            [
+                ("HOME", home.as_os_str()),
+                ("USERPROFILE", home.as_os_str()),
+                ("PATH", search.as_os_str()),
+            ],
+        );
+        let ctx = Context::for_command_line(&env);
+        let row = |provider| Row {
+            provider,
+            label: None,
+            email: String::new(),
+            id: String::new(),
+            account_uuid: String::new(),
+            organization_uuid: None,
+            signed_in: false,
+            parked: None,
+            usage: None,
+            stale: None,
+            plan: None,
+            read_at: None,
+            reason: None,
+            spelling: Spelling::Bare,
+        };
+        let (rows, default) = with_spellings(
+            &ctx,
+            vec![
+                row(ProviderId::Claude),
+                row(ProviderId::Codex),
+                row(ProviderId::Claude),
+            ],
+        );
+        let spelled: Vec<Spelling> = rows.iter().map(|row| row.spelling).collect();
+        assert_eq!(spelled, [Spelling::Cmd, Spelling::Bare, Spelling::Cmd]);
+        assert_eq!(default, Spelling::Cmd);
+        assert_eq!(with_spellings(&ctx, Vec::new()).1, Spelling::Cmd);
     }
 
     /// A machine of this test's own: stores in memory, services from a script, a clock
