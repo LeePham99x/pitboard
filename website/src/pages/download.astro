@@ -206,8 +206,10 @@ const jsonLd = [application(Astro.site!, downloads)];
             <h3 class={head} id="windows-cli-title">Command line</h3>
             <div class="mt-7">
               <p class={body}>
-                For the command line alone, download its zip and put <code>pitboard.exe</code> in a
-                folder on your <code>PATH</code>.
+                For the command line alone, download its zip and
+                <a href={`${DOCS}/install#install-the-command-line-on-windows`}
+                  >put <code>pitboard.exe</code> on your <code>PATH</code></a
+                >.
               </p>
               {winZips.map(([arch, z], i) => (
                 <p

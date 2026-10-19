@@ -10,7 +10,7 @@ Install the command line on macOS or Linux:
 curl -fsSL https://usepitboard.com/install.sh | sh
 ```
 
-On Windows, install the app, which includes the command line, from [Download Pitboard](https://usepitboard.com/download#windows).
+On Windows, install the app, which includes the command line, from [Download Pitboard](https://usepitboard.com/download#windows). For the command line alone, follow [Install the command line on Windows](https://docs.usepitboard.com/install#install-the-command-line-on-windows).
 
 - [Documentation](https://docs.usepitboard.com/llms.txt)
 - [Install](https://docs.usepitboard.com/install)

@@ -73,6 +73,30 @@ brew install datlechin/tap/pitboard
 
 It and the `pitboard-app` cask both put `pitboard` on your `PATH`, so Homebrew installs only one of the two.
 
+## Install the command line on Windows
+
+The app's installer puts the command line on your `PATH`. For the command line alone, install it from its zip:
+
+<Steps>
+  <Step title="Download the zip">
+    From [Download Pitboard](https://usepitboard.com/download#windows), download the ARM64 zip for a PC with an Arm processor, or the x64 one for any other.
+  </Step>
+  <Step title="Copy the command line out of it">
+    The zip holds one folder, named like the zip. Copy `pitboard.exe` from it to a folder of its own, such as `.local\bin` in your user folder.
+  </Step>
+  <Step title="Add the folder to your Path">
+    In Start, search for `environment variables`, then select **Edit environment variables for your account**. Under your user variables, select **Path**, then **Edit**. Select **New**, enter the folder, then select **OK** in both dialogs.
+
+    In a terminal opened after that, check that it runs:
+
+    ```sh
+    pitboard --version
+    ```
+  </Step>
+</Steps>
+
+With cargo-binstall, name the release's version, as [Cargo](/install/other-ways#cargo) says.
+
 [Other ways to install](/install/other-ways) covers Cargo, release files and building the app from source.
 
 ## Update Pitboard
