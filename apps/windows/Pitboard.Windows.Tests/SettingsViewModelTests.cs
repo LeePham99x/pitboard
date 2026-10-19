@@ -54,6 +54,23 @@ public sealed class SettingsViewModelTests
             SettingsViewModel.UpdatesNotes(new NoUpdates(), "1.0.0-beta.1"));
         Assert.IsEmpty(SettingsViewModel.UpdatesNotes(new StandInUpdates(), "1.0.0"));
         Assert.AreEqual(NoUpdates.BadKey, SettingsViewModel.UpdatesNotes(new NoUpdates(NoUpdates.BadKey), "1.0.0").Single());
+
+        var waiting = new StandInUpdates(beta: true);
+        waiting.Feed(found: false);
+        CollectionAssert.AreEqual(
+            new[] { SparkleUpdates.NoFeed, SettingsViewModel.BetaNote }, SettingsViewModel.UpdatesNotes(waiting, "1.0.0-beta.4"));
+    }
+
+    // A beta that found no feed when Pitboard started looks again, as 1.0.0 may have come out since.
+    [TestMethod]
+    public void ShowingThePageLooksForTheFeedAgain()
+    {
+        var updates = new StandInUpdates(beta: true);
+        var (shown, _, _) = Over(Snapshots.Read(1), updates: updates);
+
+        shown.Shown();
+
+        Assert.AreEqual(1, updates.Looks);
     }
 
     // The model's span runs to 24:00, which a time picker cannot hold.

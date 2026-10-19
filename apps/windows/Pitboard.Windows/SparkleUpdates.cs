@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Xml;
@@ -12,6 +13,8 @@ public sealed class SparkleUpdates : IUpdates
     // The assembly metadata the build writes the public key into, from WINDOWS_UPDATE_PUBLIC_KEY.
     public const string KeyName = "WindowsUpdatePublicKey";
 
+    public const string NoFeed = "No full release of Pitboard for Windows is out yet, so there is no update to check for.";
+
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly ISparkle _sparkle;
@@ -25,6 +28,8 @@ public sealed class SparkleUpdates : IUpdates
     private TaskCompletionSource<bool>? _asking;
     private bool _started;
     private bool _stopped;
+    private bool _looking;
+    private bool _noFeed;
 
     internal SparkleUpdates(
         ISparkle sparkle, string version, UpdateSettings settings, Func<Action, bool> post, Func<Task<bool>> mayQuit,
@@ -41,9 +46,10 @@ public sealed class SparkleUpdates : IUpdates
 
     public event EventHandler? Changed;
 
-    public bool Available => true;
+    // A beta offers checks only once WinSparkle has started over a feed.
+    public bool Available => !Beta || _started;
 
-    public string? Refusal => null;
+    public string? Refusal => _noFeed ? NoFeed : null;
 
     public bool Beta => Versions.IsBeta(_version);
 
@@ -99,6 +105,30 @@ public sealed class SparkleUpdates : IUpdates
     // Once Pitboard's icon is in the notification area, as WinSparkle asks of an app's main window.
     public void Start()
     {
+        if (Beta)
+        {
+            LookForFeed();
+        }
+        else
+        {
+            Begin();
+        }
+    }
+
+    // GitHub answers the feed with a 404 until a full release carries one, and a check would end in WinSparkle's error.
+    public void LookForFeed()
+    {
+        if (!Beta || _started || _stopped || _looking)
+        {
+            return;
+        }
+
+        _looking = true;
+        _ = Look();
+    }
+
+    private void Begin()
+    {
         _sparkle.Configure(
             Feed, _version, _settings,
             new SparkleEvents(MayShutDown, () => _post(_quit), Found, () => _post(() => Show(null)), () => _post(() => Show(null))));
@@ -127,12 +157,17 @@ public sealed class SparkleUpdates : IUpdates
     {
         lock (_lock)
         {
-            if (!_started || _stopped)
+            if (_stopped)
             {
                 return;
             }
 
             _stopped = true;
+            if (!_started)
+            {
+                return;
+            }
+
             _asking?.TrySetResult(false);
         }
 
@@ -159,6 +194,42 @@ public sealed class SparkleUpdates : IUpdates
         }
 
         return asking.Task.GetAwaiter().GetResult();
+    }
+
+    // Any answer but a 404, such as none while offline, starts WinSparkle, which says what it finds once asked.
+    private async Task Look()
+    {
+        var found = true;
+        try
+        {
+            await _feed();
+        }
+        catch (HttpRequestException missing) when (missing.StatusCode is HttpStatusCode.NotFound)
+        {
+            found = false;
+        }
+        catch (Exception unread) when (unread is HttpRequestException or TaskCanceledException)
+        {
+        }
+
+        _post(() => Looked(found));
+    }
+
+    private void Looked(bool found)
+    {
+        _looking = false;
+        if (_stopped)
+        {
+            return;
+        }
+
+        _noFeed = !found;
+        if (found)
+        {
+            Begin();
+        }
+
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     // WinSparkle names no version to its callback, so it is read from the feed it just read.

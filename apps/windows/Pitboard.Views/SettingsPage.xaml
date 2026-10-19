@@ -245,7 +245,7 @@
           <toolkit:SettingsCard.Description>
             <StackPanel>
               <TextBlock Text="{x:Bind ViewModel.UpdatesState, Mode=OneWay}" />
-              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines}" IsTabStop="False">
+              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines, Mode=OneWay}" IsTabStop="False">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">
                     <TextBlock Text="{x:Bind}" TextWrapping="Wrap" />

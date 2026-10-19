@@ -197,6 +197,7 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
         _start.Read();
         _model.Send(new Intent.ReadSchedule());
         _model.Send(new Intent.LookForCommandLine());
+        _updates.LookForFeed();
     }
 
     public void SetStartsAtSignIn(bool on)

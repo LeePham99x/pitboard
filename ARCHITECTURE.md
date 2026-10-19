@@ -4586,7 +4586,12 @@ Microsoft's documentation.
   version of an update found from the feed, asks the downloads question in the can-shutdown
   callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
   an uninstall removes with the folder. Turned on after a start with them off, automatic
-  checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
+  checks begin at Pitboard's next start. GitHub answered
+  `releases/latest/download/appcast-windows.xml` with a redirect to v0.15.0's asset, which
+  is missing, and then 404 (19 October 2026): no full release carries a Windows feed before
+  1.0.0, and a beta's check ended in WinSparkle's error. So a beta reads the feed first and
+  starts WinSparkle only on an answer other than 404, reading it again at each settings
+  visit. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
   An update's MSI is checked whole with orlp's `ed25519_verify`, its signature the base64 of
   64 bytes (`signatureverifier.cpp`). Sparkle 2.10.0's `sign_update` signs a file that is no
   feed or release notes whole with the same library, reads the key's base64 seed from

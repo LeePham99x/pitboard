@@ -22,6 +22,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking:** On Windows, `pitboard doctor` has no `warm_up` check, and nothing refuses with
   `warm_up_unbuilt`, since warm-ups run there. A script that looks for either can stop.
 
+### Fixed
+
+- On Windows, a beta of the app checks for updates only once a full release of Pitboard for
+  Windows is out, and dims **Check now** until then, instead of ending each check in an error.
+
 ## [1.0.0-beta.3] - 2026-10-19
 
 ### Changed

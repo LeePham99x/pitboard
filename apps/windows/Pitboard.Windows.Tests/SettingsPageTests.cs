@@ -396,6 +396,32 @@ public sealed class SettingsPageTests
         Assert.Contains(SettingsViewModel.BetaNote, Views.Texts(page));
     }
 
+    // Before 1.0.0 the feed of full releases is GitHub's 404, which Check now showed as WinSparkle's error.
+    [UITestMethod]
+    public async Task ABetaHoldsChecksBackUntilAFullReleaseHasAFeed()
+    {
+        var updates = new StandInUpdates(beta: true);
+        updates.Feed(found: false);
+        var page = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), updates: updates, version: "1.0.0-beta.4");
+        var checkNow = Views.Element<Button>(page, "settings.checkNow");
+
+        Assert.IsFalse(checkNow.IsEnabled);
+        Assert.Contains(SparkleUpdates.NoFeed, Views.Texts(page));
+        Assert.IsFalse(
+            Views.Visible<ToggleSwitch>(page).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.checkAutomatically"),
+            "automatic checks are offered");
+        Assert.AreEqual(1, updates.Looks, "the visit did not look for the feed again");
+
+        updates.Feed(found: true);
+
+        Assert.IsTrue(checkNow.IsEnabled);
+        await Views.Until(
+            () => !Views.Texts(page).Contains(SparkleUpdates.NoFeed)
+                && Views.Visible<ToggleSwitch>(page).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.checkAutomatically"),
+            "the page still holds checks back once a full release has a feed");
+        Assert.Contains(SettingsViewModel.BetaNote, Views.Texts(page));
+    }
+
     [UITestMethod]
     public async Task AboutOpensOnItsVersionAndItsLinks()
     {
