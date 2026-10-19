@@ -683,6 +683,17 @@ mod tests {
             Pitboard::new(m.ctx.clone()).warm_up()
         }
 
+        fn handed(m: &Machine, run: &Started) -> Option<String> {
+            if m.ctx.os == crate::host::Os::Windows {
+                run.env
+                    .iter()
+                    .find(|(name, _)| name == "CLAUDE_CODE_OAUTH_TOKEN")
+                    .map(|(_, value)| value.clone())
+            } else {
+                run.token.clone()
+            }
+        }
+
         #[test]
         fn a_parked_account_due_is_warmed_up_with_its_access_token_alone() {
             let (m, script) = warming("warm-parked", 0, ANSWERED);
@@ -725,12 +736,12 @@ mod tests {
                     .map(|(_, value)| value.clone())
             };
             let windows = m.ctx.os == crate::host::Os::Windows;
-            let (handed, named) = if windows {
-                (env("CLAUDE_CODE_OAUTH_TOKEN"), "CLAUDE_CODE_OAUTH_TOKEN")
+            let named = if windows {
+                "CLAUDE_CODE_OAUTH_TOKEN"
             } else {
-                (run.token.clone(), "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR")
+                "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"
             };
-            assert_eq!(handed.as_deref(), Some("access-there-refresh"));
+            assert_eq!(handed(&m, run).as_deref(), Some("access-there-refresh"));
             assert_eq!(
                 env("CLAUDE_CONFIG_DIR").map(std::path::PathBuf::from),
                 Some(home.join("config"))
@@ -815,7 +826,7 @@ mod tests {
             let done = warmed(&m).expect("warmed up").value;
             assert!(matches!(done, WarmUp::Started { ref account, .. } if account == "here"));
             assert_eq!(
-                script.runs()[0].token.as_deref(),
+                handed(&m, &script.runs()[0]).as_deref(),
                 Some("access-here-renewed")
             );
             let live = m.live().expect("a login stored");
