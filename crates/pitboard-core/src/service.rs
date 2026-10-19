@@ -1483,6 +1483,11 @@ impl Pitboard {
         schedule::uninstall(&self.ctx, self.permit()?)
     }
 
+    // Only where it runs the command line this context names, the app's own; `false` otherwise.
+    pub fn schedule_uninstall_for_app(&self) -> Result<bool> {
+        schedule::uninstall_for_app(&self.ctx, self.permit()?)
+    }
+
     /// Point a schedule an app up to 0.3.0 wrote, which runs the app itself, or on Windows a
     /// task whose Pitboard is gone and whose settings are as Pitboard wrote them, at the
     /// command line this context names. `true` when it did; nothing changes otherwise.
@@ -3804,7 +3809,7 @@ mod tests {
 
     /// Every change a front end can ask for, by its name. `enroll_signed_in` is asked apart,
     /// since it takes a sign-in made before.
-    const CHANGES: [(&str, Change); 16] = [
+    const CHANGES: [(&str, Change); 17] = [
         ("switch_to", |p, m| {
             p.switch_to(&m.key("there").typed()).err()
         }),
@@ -3823,6 +3828,9 @@ mod tests {
         ("renew", |p, _| failed(p.renew())),
         ("schedule_install", |p, _| failed(p.schedule_install())),
         ("schedule_uninstall", |p, _| failed(p.schedule_uninstall())),
+        ("schedule_uninstall_for_app", |p, _| {
+            failed(p.schedule_uninstall_for_app())
+        }),
         ("schedule_repair", |p, _| failed(p.schedule_repair())),
         ("adopt", |p, _| failed(p.adopt())),
         ("repair", |p, _| p.repair().err()),
