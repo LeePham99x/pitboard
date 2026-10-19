@@ -767,8 +767,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     the session's end does too, or ends where Restart Manager asks.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    Neither registers anything with Windows, and neither starts a Restart Manager session,
-    which Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
+    Neither registers anything with Windows but the Release build `ReleaseGateTests` starts at
+    1.x, which `--unregister` takes back, and neither starts a Restart Manager session, which
+    Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
     tests, `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the
     session's step A2. `ScreenshotTests` takes the docs' pictures of the window and of the
     menu, which it opens with the message Explorer sends on a right click.
@@ -1521,7 +1522,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   is signed; `Pitboard.exe --unregister` takes back what the app registered itself, and
   `--unregister-share` the package. CI's
   Windows legs fail a run that leaves a link scheme, a notification registration, a start at
-  sign-in, a `PATH` entry or a package behind.
+  sign-in, a `PATH` entry or a package behind. At 1.x `ReleaseGateTests` starts the MSI
+  image's Release build as the standard user, turns start at sign-in on, exits it and runs
+  `--unregister`, which must take back both registrations, then removes the data folder as
+  the MSI's `RemoveFolderEx` does.
 - Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
   holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
   Release build where another program holds one, and it hands a shared page to
