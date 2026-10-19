@@ -1,7 +1,8 @@
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.System.Recovery;
-using Windows.Win32.UI.Controls;
+using Windows.Win32.UI.HiDpi;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
 
@@ -45,12 +46,23 @@ public static class Shell
     public static string Downloads() => KnownFolder(PInvoke.FOLDERID_Downloads);
 
     // The .NET SDK numbers an ApplicationIcon 32512, IDI_APPLICATION's id.
-    public static unsafe nint AppIcon()
+    public static unsafe nint AppIcon(int size)
     {
         using var module = PInvoke.GetModuleHandle((string?)null);
         HICON icon;
-        PInvoke.LoadIconMetric((HINSTANCE)module.DangerousGetHandle(), (char*)32512, _LI_METRIC.LIM_SMALL, &icon).ThrowOnFailure();
+        PInvoke.LoadIconWithScaleDown((HINSTANCE)module.DangerousGetHandle(), (char*)32512, size, size, &icon).ThrowOnFailure();
         return (nint)icon.Value;
+    }
+
+    public static void DestroyIcon(nint icon) => PInvoke.DestroyIcon((HICON)icon);
+
+    // SM_CXSMICON at the primary display's scale, where the notification area is. GetSystemMetrics gives it at the scale
+    // the session started at.
+    public static int NotificationIconSize()
+    {
+        var primary = PInvoke.MonitorFromPoint(default, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTOPRIMARY);
+        PInvoke.GetDpiForMonitor(primary, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out var dpi, out _).ThrowOnFailure();
+        return PInvoke.GetSystemMetricsForDpi(SYSTEM_METRICS_INDEX.SM_CXSMICON, dpi);
     }
 
     // Allowed while the icon's click has handed this process the foreground.

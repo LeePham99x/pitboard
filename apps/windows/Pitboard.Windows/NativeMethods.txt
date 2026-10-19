@@ -24,7 +24,13 @@ WM_CONTEXTMENU
 WM_APP
 WM_CLOSE
 RegisterWindowMessage
-LoadIconMetric
+LoadIconWithScaleDown
+DestroyIcon
+MonitorFromPoint
+GetDpiForMonitor
+GetSystemMetricsForDpi
+WM_DISPLAYCHANGE
+WM_DPICHANGED
 SetForegroundWindow
 GetForegroundWindow
 GetDpiForWindow

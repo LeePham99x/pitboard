@@ -8,11 +8,17 @@ public sealed partial class HiddenWindowTests
     private const uint ParentOf = 1;
     private const uint Close = 0x0010;
     private const uint EndSession = 0x0016;
+    private const uint SettingChange = 0x001A;
+    private const uint DisplayChange = 0x007E;
+    private const uint DpiChanged = 0x02E0;
     private const nint CloseApp = 0x1;
 
     private static HiddenWindow Made(
-        Action? sessionEnding = null, Action? closing = null, Action<IconEvent>? icon = null, Action? taskbarCreated = null) =>
-        new(sessionEnding ?? (() => { }), closing ?? (() => { }), icon ?? (_ => { }), taskbarCreated ?? (() => { }));
+        Action? sessionEnding = null, Action? closing = null, Action<IconEvent>? icon = null, Action? taskbarCreated = null,
+        Action? displayChanged = null) =>
+        new(
+            sessionEnding ?? (() => { }), closing ?? (() => { }), icon ?? (_ => { }), taskbarCreated ?? (() => { }),
+            displayChanged ?? (() => { }));
 
     // As Explorer tells every top-level window once it starts again.
     [TestMethod]
@@ -28,6 +34,21 @@ public sealed partial class HiddenWindowTests
 
         Assert.AreEqual("Add, SetVersion, Add, SetVersion", string.Join(", ", area.Sent.Select(sent => sent.Message)));
         Assert.AreEqual(hidden.Handle, area.Sent[2].Icon.Window);
+    }
+
+    // Each can come with a new scale for the primary display, whose taskbar holds the icon, and the icon drawn for the
+    // scale before blurs.
+    [TestMethod]
+    public void AChangeOfTheDisplaysReachesTheApp()
+    {
+        var changes = 0;
+        var hidden = Made(displayChanged: () => changes++);
+
+        SendMessage(hidden.Handle, DisplayChange, 32, 0);
+        SendMessage(hidden.Handle, DpiChanged, 144 | (144 << 16), 0);
+        SendMessage(hidden.Handle, SettingChange, 0, 0);
+
+        Assert.AreEqual(3, changes);
     }
 
     // A message-only window's parent is HWND_MESSAGE's, and no broadcast reaches it.

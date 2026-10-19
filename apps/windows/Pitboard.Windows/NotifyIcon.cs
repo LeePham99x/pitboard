@@ -29,6 +29,7 @@ public sealed class NotifyIcon(INotificationArea area, nint window, nint image, 
     public const int TipLength = 127;
 
     private Guid? _guid = iconGuid;
+    private nint _image = image;
     private string _tip = "Pitboard";
     private bool _added;
 
@@ -43,6 +44,15 @@ public sealed class NotifyIcon(INotificationArea area, nint window, nint image, 
             Add();
         }
         else
+        {
+            area.Send(IconMessage.Modify, Data());
+        }
+    }
+
+    public void Redraw(nint image)
+    {
+        _image = image;
+        if (_added)
         {
             area.Send(IconMessage.Modify, Data());
         }
@@ -89,5 +99,5 @@ public sealed class NotifyIcon(INotificationArea area, nint window, nint image, 
         }
     }
 
-    private IconData Data() => new(window, Id, _guid, CallbackMessage, image, _tip);
+    private IconData Data() => new(window, Id, _guid, CallbackMessage, _image, _tip);
 }

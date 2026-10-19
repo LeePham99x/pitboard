@@ -684,7 +684,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `WM_CLOSE` and the icon's clicks, which `IconEvent` reads, and `Shell` is the known
     folder, the AppUserModelID, the app's icon and the refusal's message box. `NotifyIcon`
     keeps the icon in the notification area through `INotificationArea`, which
-    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, and `IconMenu`
+    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, at the size
+    `IconImage` loads it at for the primary display's scale, and `IconMenu`
     lists what the icon's menu offers, in the macOS menu's order. `WindowsNotifications`
     posts the model's notifications through `IAppNotifications`, which
     `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
@@ -4473,6 +4474,17 @@ Microsoft's documentation.
   `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj
   --coff-resources` on a win-x64 build made on macOS lists `GROUP_ICON` 32512 with eight
   `ICON` entries in the exe. So `Shell.AppIcon` loads 32512 from `Pitboard.exe`.
+- Microsoft's high DPI desktop development page (updated 10 September 2026) has a
+  per-monitor aware app load its images again for a new DPI, answers `GetSystemMetrics` at
+  the primary display's DPI as the session started and `GetSystemMetricsForDpi` at any, and
+  calls the primary display the one the system tray is on. So `IconImage` loads the icon
+  with `LoadIconWithScaleDown` at `SM_CXSMICON` for the primary display's DPI, in place of
+  `LoadIconMetric`, whose `LIM_SMALL` names no DPI, and loads it again when
+  `HiddenWindow` hears `WM_DISPLAYCHANGE`, `WM_DPICHANGED` or `WM_SETTINGCHANGE` and that
+  size has changed. `NotifyIcon` sends the new one with `NIM_MODIFY` before the one before
+  is destroyed (`IconImageTests`, `NotifyIconTests.ANewImageModifiesTheIconAddedAlready`,
+  `HiddenWindowTests.AChangeOfTheDisplaysReachesTheApp`). Which of the three a scale change
+  sends a hidden window, and how the icon looks after one, are measured by hand.
 - Microsoft's app icon guidance (updated 14 July and 5 August 2026) asks for a transparent
   icon drawn straight on, half of it at 3:1 against light and dark backgrounds, at 16, 24,
   32, 48 and 256 px at least, and the notification area draws it at 16 px at 100% up to 64

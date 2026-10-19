@@ -41,6 +41,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Windows, Narrator reads a note that takes another's place in an account's window.
 - Under a Windows contrast theme, the Pitboard window's minimize, maximize and close buttons
   take the theme's colours, where they stayed black or white.
+- After a change of display scale, Pitboard for Windows loads its notification area icon again
+  at the size the new scale asks for.
 - On Windows, a beta of the app checks for updates only once a full release of Pitboard for
   Windows is out, and dims **Check now** until then, instead of ending each check in an error.
 
