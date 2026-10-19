@@ -167,10 +167,10 @@ try {
     # A harvested file renamed in the File table, whose name msiexec /a lays it out under.
     $stranger = Edit-Msi 'stranger' "UPDATE ``File`` SET ``FileName`` = 'Stranger.dll' WHERE ``File`` = '$(Get-FileKey 'WinSparkle.dll')'"
     Assert-Thrown 'an unsigned program that is neither Pitboard''s nor WinSparkle.dll' $verify @{ Path = $stranger; Mode = 'unsigned' } `
-        'Pitboard\.msi/Stranger\.dll is NotSigned, not Valid as Microsoft Corporation signs it'
+        'Pitboard\.msi/PFiles64/Pitboard/Stranger\.dll is NotSigned, not Valid as Microsoft Corporation signs it'
     $impostor = Edit-Msi 'impostor' "UPDATE ``File`` SET ``FileName`` = 'Microsoft.Impostor.dll' WHERE ``File`` = '$(Get-FileKey 'CommunityToolkit.Common.dll')'"
     Assert-Thrown 'a program the .NET Foundation signed where Microsoft signs' $verify @{ Path = $impostor; Mode = 'unsigned' } `
-        "Pitboard\.msi/Microsoft\.Impostor\.dll is signed by '.*\(\.NET Foundation\).*', not by Microsoft Corporation"
+        "Pitboard\.msi/PFiles64/Pitboard/Microsoft\.Impostor\.dll is signed by '.*\(\.NET Foundation\).*', not by Microsoft Corporation"
     $renamed = Edit-Msi 'renamed' "UPDATE ``File`` SET ``FileName`` = 'other.exe' WHERE ``File`` = 'CommandLineExe'"
     Assert-Thrown 'an MSI that lays out a file under another name than it was built with' $verify `
         @{ Path = $renamed; Mode = 'unsigned'; Built = $built } 'holds other files than it was built with'
