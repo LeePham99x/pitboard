@@ -11,9 +11,11 @@ Each of the app's account windows keeps a claude.ai or chatgpt.com sign-in.
 | Version | Supported |
 | --- | --- |
 | The most recent release, and the newest beta published after it | Yes |
+| 0.15, the last 0.x line, for three months after 1.0.0 is published | Security fixes only |
 | Earlier releases and betas | No |
 
-Pitboard for Windows is in beta. A fix ships in the next release or beta. To update, follow
+Pitboard for Windows is in beta. A fix ships in the next release or beta, and a security fix
+for 0.15 in a 0.15 release. To update, follow
 [Update Pitboard](https://docs.usepitboard.com/install#update-pitboard).
 
 ## Report a vulnerability
