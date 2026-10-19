@@ -1,8 +1,9 @@
 // What the Windows app shows in the site's figures, in its own words: windows.test.ts finds each
 // in the file that says it.
-import { clock, warmUp, type Limit, type Moment, type Tool } from "./world.ts";
+import { clock, warmUp, type Account, type Limit, type Moment, type Tool } from "./world.ts";
 import {
   activity,
+  fullest,
   isInUse,
   level,
   listed,
@@ -36,6 +37,11 @@ const sites: [site: string, tool: Tool][] = [
   ["chatgpt.com", "codex"],
 ];
 
+// An item has one line, so the figure the menu bar would show of the account ends it (words.rs
+// `named_in_menu`).
+const itemTitle = (a: Account) =>
+  a.limits.length > 0 ? `${menuTitle(a)} · ${fullest(a)}%` : menuTitle(a);
+
 // IconMenu.cs `Entries`, a group between each two separators. A beta's menu has no Check for updates.
 // An account's tooltip is the line the menu bar app shows under it.
 export function iconMenu(moment: Moment, updates: boolean): MenuEntry[][] {
@@ -43,7 +49,7 @@ export function iconMenu(moment: Moment, updates: boolean): MenuEntry[][] {
     ...toolsOn("windows").map(([tool, name]) => [
       { heading: name },
       ...listed(tool, moment).map((a) => ({
-        account: menuTitle(a),
+        account: itemTitle(a),
         label: a.label,
         checked: isInUse(a, moment),
         tip: menuLine(a, moment),
