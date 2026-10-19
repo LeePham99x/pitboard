@@ -172,33 +172,46 @@ fn a_run_with_no_console_to_share_makes_none_and_one_shares_its_parents() {
     );
 }
 
+// What a status line's `line` prints, run in `shell` as Claude Code runs it there, with `more`
+// folders last on its PATH.
+fn shown(
+    env: &Env,
+    which: &str,
+    shell: &Path,
+    args: &[&str],
+    line: &str,
+    input: &str,
+    more: &[&Path],
+) -> String {
+    assert!(shell.is_file(), "{which} is not at {}", shell.display());
+    let mut command = env.started(shell, args);
+    let path = common::os::search_path(&env.root.join("bin"));
+    let mut folders: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    folders.extend(more.iter().map(|folder| folder.to_path_buf()));
+    // Claude Code puts Git Bash's own folder first on the line's PATH.
+    if which == "Git Bash" {
+        folders.insert(0, shell.parent().expect("its folder").to_path_buf());
+    }
+    let path = std::env::join_paths(folders).expect("a PATH");
+    command.arg(line).env("PATHEXT", PATHEXT).env("PATH", path);
+    let out = ran(command, input);
+    assert!(
+        out.status.success(),
+        "{which}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap_or_else(|e| panic!("{which}: {e}"))
+}
+
 // The line Claude Code shows is the same in each shell it may run it in, colours and all, with
 // the session's numbers read from the input the shell hands on.
 #[test]
 fn the_status_line_runs_in_git_bash_and_both_powershells_as_claude_code_runs_it() {
     let env = two_accounts("statusline-shells");
     env.put_pitboard_on_path();
-    let path = common::os::search_path(&env.root.join("bin"));
     for (which, shell, args) in shells() {
-        assert!(shell.is_file(), "{which} is not at {}", shell.display());
-        let line = |input: &str| {
-            let mut command = env.started(&shell, args);
-            command.arg("pitboard statusline").env("PATHEXT", PATHEXT);
-            // Claude Code puts Git Bash's own folder first on the line's PATH.
-            if which == "Git Bash" {
-                let mut first = shell.parent().expect("its folder").as_os_str().to_owned();
-                first.push(";");
-                first.push(&path);
-                command.env("PATH", first);
-            }
-            let out = ran(command, input);
-            assert!(
-                out.status.success(),
-                "{which}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8(out.stdout).unwrap_or_else(|e| panic!("{which}: {e}"))
-        };
+        let line =
+            |input: &str| shown(&env, which, &shell, args, "pitboard statusline", input, &[]);
         let id = format!("pane {which}");
         let opened = line(&session(&id, None));
         assert_eq!(
@@ -215,6 +228,60 @@ fn the_status_line_runs_in_git_bash_and_both_powershells_as_claude_code_runs_it(
             "alpha? 46%·70%  beta ?·?",
             "{which}"
         );
+    }
+}
+
+// A PowerShell status line of your own, started with -File as Claude Code's documentation shows,
+// hands its input on as docs/guides/status-line.mdx says: both lines show, a path outside ASCII
+// and all.
+#[test]
+fn a_powershell_status_line_of_your_own_hands_its_input_to_pitboard() {
+    let env = two_accounts("statusline-combined");
+    env.put_pitboard_on_path();
+    let script = env.root.join("statusline.ps1");
+    std::fs::write(
+        &script,
+        "$json = $input | Out-String\n\
+         $session = $json | ConvertFrom-Json\n\
+         Write-Host \"mine $($session.session_id)\"\n\
+         $json | pitboard statusline\n",
+    )
+    .expect("the script");
+    let script = script.display().to_string().replace('\\', "/");
+    let (powershell, pwsh) = (windows_powershell(), PathBuf::from(PWSH));
+    let folders = [&powershell, &pwsh].map(|program| program.parent().expect("its folder"));
+    for runs in ["powershell", "pwsh"] {
+        // Forward slashes, since Git Bash takes a backslash for an escape.
+        let own = format!("{runs} -NoProfile -ExecutionPolicy Bypass -File \"{script}\"");
+        for (which, shell, args) in shells() {
+            let id = format!("{runs} in {which}");
+            let lines = |limits| {
+                let mut input: serde_json::Value =
+                    serde_json::from_str(&session(&id, limits)).expect("a session");
+                input["cwd"] = serde_json::json!(r"C:\Users\bé");
+                let out = shown(
+                    &env,
+                    which,
+                    &shell,
+                    args,
+                    &own,
+                    &input.to_string(),
+                    &folders,
+                );
+                anstream::adapter::strip_str(&out)
+                    .to_string()
+                    .lines()
+                    .map(|line| line.trim_end().to_owned())
+                    .collect::<Vec<_>>()
+            };
+            let mine = format!("mine {id}");
+            assert_eq!(lines(None), [&*mine, "alpha ?·?  beta ?·?"], "{id}");
+            assert_eq!(
+                lines(Some((46.0, 70.0))),
+                [&*mine, "alpha? 46%·70%  beta ?·?"],
+                "{id}"
+            );
+        }
     }
 }
 
