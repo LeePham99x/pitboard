@@ -172,19 +172,24 @@ fn a_run_with_no_console_to_share_makes_none_and_one_shares_its_parents() {
     );
 }
 
-// What a status line's `line` prints, run in `shell` as Claude Code runs it there, with `more`
-// folders last on its PATH.
+// What a status line's `line` prints, run in `shell` as Claude Code runs it there, from `cwd`
+// where given, with `more` folders last on its PATH.
+#[allow(clippy::too_many_arguments)]
 fn shown(
     env: &Env,
     which: &str,
     shell: &Path,
     args: &[&str],
+    cwd: Option<&Path>,
     line: &str,
     input: &str,
     more: &[&Path],
 ) -> String {
     assert!(shell.is_file(), "{which} is not at {}", shell.display());
     let mut command = env.started(shell, args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     let path = common::os::search_path(&env.root.join("bin"));
     let mut folders: Vec<PathBuf> = std::env::split_paths(&path).collect();
     folders.extend(more.iter().map(|folder| folder.to_path_buf()));
@@ -210,8 +215,18 @@ fn the_status_line_runs_in_git_bash_and_both_powershells_as_claude_code_runs_it(
     let env = two_accounts("statusline-shells");
     env.put_pitboard_on_path();
     for (which, shell, args) in shells() {
-        let line =
-            |input: &str| shown(&env, which, &shell, args, "pitboard statusline", input, &[]);
+        let line = |input: &str| {
+            shown(
+                &env,
+                which,
+                &shell,
+                args,
+                None,
+                "pitboard statusline",
+                input,
+                &[],
+            )
+        };
         let id = format!("pane {which}");
         let opened = line(&session(&id, None));
         assert_eq!(
@@ -232,13 +247,15 @@ fn the_status_line_runs_in_git_bash_and_both_powershells_as_claude_code_runs_it(
 }
 
 // A PowerShell status line of your own, started with -File as Claude Code's documentation shows,
-// hands its input on as docs/guides/status-line.mdx says: both lines show, a path outside ASCII
-// and all.
+// hands its input on as docs/guides/status-line.mdx says, from a folder outside ASCII. Bypass,
+// which that documentation leaves out, keeps the runner's execution policy out of it.
 #[test]
 fn a_powershell_status_line_of_your_own_hands_its_input_to_pitboard() {
     let env = two_accounts("statusline-combined");
     env.put_pitboard_on_path();
-    let script = env.root.join("statusline.ps1");
+    let folder = env.root.join("bé");
+    std::fs::create_dir_all(&folder).expect("the folder");
+    let script = folder.join("statusline.ps1");
     std::fs::write(
         &script,
         "$json = $input | Out-String\n\
@@ -247,23 +264,24 @@ fn a_powershell_status_line_of_your_own_hands_its_input_to_pitboard() {
          $json | pitboard statusline\n",
     )
     .expect("the script");
+    // Forward slashes, since Git Bash takes a backslash for an escape.
     let script = script.display().to_string().replace('\\', "/");
     let (powershell, pwsh) = (windows_powershell(), PathBuf::from(PWSH));
     let folders = [&powershell, &pwsh].map(|program| program.parent().expect("its folder"));
     for runs in ["powershell", "pwsh"] {
-        // Forward slashes, since Git Bash takes a backslash for an escape.
         let own = format!("{runs} -NoProfile -ExecutionPolicy Bypass -File \"{script}\"");
         for (which, shell, args) in shells() {
             let id = format!("{runs} in {which}");
             let lines = |limits| {
                 let mut input: serde_json::Value =
                     serde_json::from_str(&session(&id, limits)).expect("a session");
-                input["cwd"] = serde_json::json!(r"C:\Users\bé");
+                input["cwd"] = serde_json::json!(folder);
                 let out = shown(
                     &env,
                     which,
                     &shell,
                     args,
+                    Some(&folder),
                     &own,
                     &input.to_string(),
                     &folders,
