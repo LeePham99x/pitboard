@@ -17,15 +17,44 @@ internal static class WindowChrome
         window.AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
         if (window.ExtendsContentIntoTitleBar && window.Content is FrameworkElement root)
         {
-            root.Loaded += (_, _) => Caption(window.AppWindow.TitleBar, root.ActualTheme);
-            root.ActualThemeChanged += (changed, _) => Caption(window.AppWindow.TitleBar, changed.ActualTheme);
+            FollowTheme(window, root, new SystemContrast(window.AppWindow.Id));
         }
     }
 
     // The WinUI Gallery's TitleBarHelper: over content extended into the title bar, the caption buttons keep the colours
     // of the mode they were first drawn in.
-    private static void Caption(AppWindowTitleBar bar, ElementTheme theme)
+    internal static void FollowTheme(Window window, FrameworkElement root, IContrastTheme contrast)
     {
+        var closed = false;
+        void Show() => Caption(window.AppWindow.TitleBar, root.ActualTheme, contrast.Shown);
+        void Changed(object? sender, EventArgs args) => window.DispatcherQueue.TryEnqueue(Ui.Guarded(() =>
+        {
+            if (!closed)
+            {
+                Show();
+            }
+        }));
+        root.Loaded += (_, _) => Show();
+        root.ActualThemeChanged += (_, _) => Show();
+        contrast.Changed += Changed;
+        window.Closed += (_, _) =>
+        {
+            closed = true;
+            contrast.Changed -= Changed;
+        };
+    }
+
+    // Under a contrast theme the system's own caption colours are the theme's.
+    private static void Caption(AppWindowTitleBar bar, ElementTheme theme, bool contrast)
+    {
+        if (contrast)
+        {
+            bar.ButtonForegroundColor = null;
+            bar.ButtonHoverForegroundColor = null;
+            bar.ButtonHoverBackgroundColor = null;
+            return;
+        }
+
         var dark = theme == ElementTheme.Dark;
         var glyph = dark ? Colors.White : Colors.Black;
         bar.ButtonForegroundColor = glyph;
@@ -76,3 +105,4 @@ internal static class WindowChrome
         }
     }
 }
+

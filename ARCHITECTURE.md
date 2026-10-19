@@ -743,7 +743,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `MenuHost` the pixel of a window it opens from. `AccountWindow`, with the `SignInWindow`s
     it owns, and `OpenLinkWindow` are the account windows and the **Open link** window, which
     `AccountWindows` opens. `WindowChrome`
-    gives each window the app's icon, a title bar in the app mode and a minimum size, and
+    gives each window the app's icon, a title bar in the app mode, or in a contrast theme's
+    colours, which `SystemContrast` reads through `IContrastTheme`, and a minimum size, and
     `Styles.xaml` holds the styles the views share.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
@@ -4282,7 +4283,14 @@ Microsoft's documentation.
   change them when the mode changes while the app runs, and WinUI's own TableView sample says
   the system draws them black whatever the content's theme. So `WindowChrome` does the same
   for a window whose content extends into its title bar, the main window
-  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`).
+  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`). Microsoft's title bar
+  guidance (updated 14 July 2026) has a title bar's colours follow a contrast theme, and the
+  Windows App SDK's `ThemeSettings` (`Microsoft.InteractiveExperiences.Projection.xml`,
+  InteractiveExperiences 2.1.9 in Windows App SDK 2.5.1) tells a Win32 app whether one is on
+  and when that changes. So under a contrast theme `WindowChrome` sets none of the caption's
+  colours, which the system then draws, and follows `ThemeSettings.Changed`
+  (`WindowChromeTests.UnderAContrastThemeTheCaptionButtonsTakeWindowsOwnColours`). How they
+  look under one is measured by hand.
 - Microsoft's Manage app windows page (updated 14 October 2026) gives a window that belongs
   to another an owner window, set through Win32 interop, and the WinUI Gallery's
   `ModalWindow.xaml.cs` sets it with `SetWindowLongPtr(GWLP_HWNDPARENT)`. An owned window
