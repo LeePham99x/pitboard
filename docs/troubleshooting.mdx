@@ -60,9 +60,13 @@ The only login of the account in use ended outside Pitboard. Pitboard held no co
 
 On Windows, Smart App Control blocks unsigned apps that Microsoft's cloud service cannot vouch for. It cannot allow a single app, as Microsoft's [What is Smart App Control](https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003) says.
 
-Pitboard's Windows files are signed from its first signed release on, as the [code signing policy](/install/code-signing-policy) says. With Smart App Control on, Windows opened Pitboard's unsigned installer and command line with no prompt, measured on 18 October 2026 on Windows 11 build 26300.
+With Smart App Control on, Windows opened Pitboard's unsigned installer and command line with no prompt, measured on 18 October 2026 on Windows 11 build 26300. Whether Smart App Control lets the app start has not been measured. The app loads `WinSparkle.dll`, which stays unsigned in signed releases too, as the [code signing policy](/install/code-signing-policy) says.
 
-To run a Pitboard file it blocks, turn Smart App Control off in **Windows Security**. Microsoft's page says how to turn it on again.
+<Warning>
+  Microsoft's page says recent Windows updates let you turn Smart App Control on again, and names none of them. On a Windows without them, it turns on again only after a clean installation of Windows.
+</Warning>
+
+To run a Pitboard file it blocks, open **Windows Security**, select **App & browser control** > **Smart App Control settings**, then **Off**. Windows asks for an administrator's consent.
 
 ## Report a problem
 

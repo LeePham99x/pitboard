@@ -96,6 +96,9 @@ protected like `main` and cut from the last 0.x tag. A release runs the `release
 commit it tags, so that tag must hold the release kinds above: release a 0.x with them
 before 1.0.0-beta.1.
 
+0.15 gets security fixes for three months after 1.0.0 is published. Then take its row out of
+Supported versions in `SECURITY.md`, with the sentence on 0.15 releases under it.
+
 ## Before 1.0.0-beta.1
 
 Tag the first release with Windows files only once each of these holds:
@@ -317,13 +320,14 @@ menu figure follow by themselves. What follows is written by hand, so rewrite it
 
 At the first signed Windows release, measure on
 [the session machine](AGENTS.md#the-session-machine) what Microsoft Edge and Windows show as its
-MSI downloads and opens, and whether a browser's share sheet lists Pitboard once it is
-installed. Then rewrite, from what you measured:
+MSI downloads and opens, whether Smart App Control lets the app start, and whether a browser's
+share sheet lists Pitboard once it is installed. Then rewrite, from what you measured:
 
 - "and its files are not signed" in `README.md` and in `docs/install.mdx` under What you need,
   and the step of `docs/install.mdx` that opens the installer.
 - The Windows tab of Check the signature in `docs/install/verify.mdx`, and "SignPath has signed
   no Pitboard file." in `docs/install/code-signing-policy.mdx`.
+- The Smart App Control section of `docs/troubleshooting.mdx`.
 - What `docs/guides/account-windows.mdx`, `docs/concepts/account-windows.mdx`,
   `docs/troubleshooting/account-windows.mdx` and `docs/reference/account-windows.mdx` say of the
   share sheet on Windows, and the Share extension's line in `SECURITY.md`.
@@ -335,13 +339,19 @@ At 1.0.0, rewrite:
 
 - "Pitboard for Windows is in beta" in `README.md`, `SECURITY.md`, `docs/install.mdx` and the
   Systems section of `docs/AGENTS.md`.
-- The paragraph of `docs/install/other-ways.mdx` that names the version for Cargo on Windows:
-  from 1.0.0, `cargo binstall pitboard` installs a build that runs there.
-- Add Scoop to `docs/install/other-ways.mdx`, with the lines of the bucket's page.
+- The paragraph of `docs/install/other-ways.mdx` that names the version for Cargo on Windows,
+  and the cargo-binstall sentence of Install the command line on Windows in
+  `docs/install.mdx`: from 1.0.0, `cargo binstall pitboard` installs a build that runs there.
+- Add Scoop to `docs/install/other-ways.mdx`, with the lines of the bucket's page. Scoop checks
+  each zip against the checksum the release wrote into the bucket, so add it to the Homebrew
+  sentence and the Windows sentence of Check the checksums in `docs/install/verify.mdx`, and
+  to the checksum bullet of `SECURITY.md`.
 
 Once `microsoft/winget-pkgs` holds both packages, add their `winget install` lines to
 `docs/install/other-ways.mdx`, and to `windowsWays` in `website/src/data/commands.ts`, which
-`/download` shows under Other ways.
+`/download` shows under Other ways. winget checks each installer against the hash its manifest
+holds, which `.github/scripts/check-winget-hashes.py` ties to `SHA256SUMS`, so add winget to the
+same sentences of `docs/install/verify.mdx` and `SECURITY.md`.
 
 ## The install script
 
