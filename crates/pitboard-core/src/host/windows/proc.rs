@@ -1,6 +1,6 @@
 //! Processes on Windows, and the programs a Windows shell starts.
 
-pub(crate) use super::job::{Tool, start};
+pub(crate) use super::job::{Tool, run_within, start};
 use crate::host::Listed;
 use crate::host::owner::{self, Owner, Told};
 use std::collections::HashMap;
@@ -451,19 +451,6 @@ pub(crate) fn version_string(path: &Path, name: &str) -> Option<String> {
             .trim_end_matches('\0')
             .to_string(),
     )
-}
-
-// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it starts one.
-pub(crate) fn run_within(
-    _: crate::service::Permit,
-    _command: std::process::Command,
-    _handed: Option<&[u8]>,
-    _ceiling: std::time::Duration,
-) -> std::io::Result<crate::host::Ran> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "no program is run with a ceiling on Windows",
-    ))
 }
 
 #[cfg(test)]
