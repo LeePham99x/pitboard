@@ -128,13 +128,31 @@ pub(crate) fn run_within(
     })
 }
 
-// Every process of the job, waited for so the run's files can go.
+// Every process of the job, waited for so the run's files can go. One leaves the job's list
+// before it closes its handles and ends, so each is waited on by a handle taken while listed.
 fn end_all(job: &Job) {
-    // SAFETY: the job this process made, with every right on it.
-    unsafe { TerminateJobObject(job.0.as_raw_handle(), 1) };
     let asked = Instant::now();
-    while !members(job).is_empty() && asked.elapsed() < Duration::from_millis(ENDING_MS.into()) {
-        std::thread::sleep(Duration::from_millis(20));
+    loop {
+        let listed: Vec<OwnedHandle> = members(job)
+            .into_iter()
+            .filter_map(|pid| opened(pid, PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION))
+            .filter(|process| in_job(process, job))
+            .collect();
+        // SAFETY: the job this process made, with every right on it.
+        unsafe { TerminateJobObject(job.0.as_raw_handle(), 1) };
+        if listed.is_empty() {
+            return;
+        }
+        for process in listed {
+            let spent = u32::try_from(asked.elapsed().as_millis()).unwrap_or(u32::MAX);
+            // SAFETY: an open handle with SYNCHRONIZE.
+            unsafe {
+                WaitForSingleObject(process.as_raw_handle(), ENDING_MS.saturating_sub(spent))
+            };
+        }
+        if asked.elapsed() >= Duration::from_millis(ENDING_MS.into()) {
+            return;
+        }
     }
 }
 
