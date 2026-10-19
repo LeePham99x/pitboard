@@ -13,7 +13,7 @@ if (Activation() is not ShareTargetActivatedEventArgs shared)
     return 2;
 }
 
-// Only a Release build, whose MSI registers the scheme, has a share target.
+// Only a Release build's MSI carries PitboardShare.exe, beside a Pitboard.exe that opens pitboard links.
 await Sharing.HandOverAsync(new SystemShareOperation(shared.ShareOperation), "pitboard");
 return 0;
 

@@ -1,6 +1,6 @@
 namespace Pitboard.Share.Core;
 
-// A share target's ShareOperation and Windows' launcher, which tests replace.
+// A share target's ShareOperation and the start of Pitboard.exe, which tests replace.
 public interface IShareOperation
 {
     void ReportStarted();
@@ -17,7 +17,7 @@ public interface IShareOperation
 // Pitboard.exe checks the link it is handed again, as it does any link.
 public static class Sharing
 {
-    public const string NotLaunched = "Windows found no Pitboard app to open the page in.";
+    public const string NotLaunched = "Pitboard couldn’t start the app that opens the page.";
 
     public const string NotRead = "Pitboard couldn’t read the link that was shared. Share the page again.";
 

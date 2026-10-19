@@ -204,6 +204,11 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
     Outcome::Report(report)
 }
 
+/// CF8: a probe started with a link as its only argument, as Pitboard.exe is.
+pub fn handed(link: &str) -> Outcome {
+    Outcome::Report(sparse::handed(link))
+}
+
 /// E5: the path this program reports for itself, as std and as `GetModuleFileNameW` give it,
 /// beside how it was started (`argv[0]`) and where its links lead, so a run through a
 /// WinGet link, a Scoop shim, a junction or a copy shows which path a scheduled task would

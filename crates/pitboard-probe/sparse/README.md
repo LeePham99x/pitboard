@@ -92,6 +92,10 @@ from the user's own `TrustedPeople` (0x800B0109, run 38882775456), registers eac
 the user, and adds the `pitboard-probe-cf8` link scheme under the user's
 `HKCU\Software\Classes`, whose handler is the plain probe writing with the tag `launched`.
 `sparse --action launch` opens that link from the identity process through `LaunchUriAsync`,
-as `PitboardShare.exe` hands a page to `Pitboard.exe`. Then `PitboardShare.exe --register`
-adds PitboardShare's package and `Pitboard.exe --unregister-share` removes it, as the MSI
-does. It undoes each change, and `k1.ps1` stays the VM's.
+as `PitboardShare.exe` once handed a page to `Pitboard.exe`. `sparse --action handoff` starts
+the plain probe beside it through `CreateProcessW` with a link of that scheme as its only
+argument, as `PitboardShare.exe` starts `Pitboard.exe`, once as is and once with the desktop
+app breakaway policy, and reports whether each child got the link whole and carried the
+identity. Then `PitboardShare.exe --register` adds PitboardShare's package and
+`Pitboard.exe --unregister-share` removes it, as the MSI does. It undoes each change, and
+`k1.ps1` stays the VM's.

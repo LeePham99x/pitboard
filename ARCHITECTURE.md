@@ -667,9 +667,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   assembly of their own, generated into `Generated/` and not committed, and
   `Pitboard.Core.Tests` calls the core through them. `Pitboard.Share.Core` is
   `pitboard-share-ffi`'s, generated the same way, beside `Sharing`, what `PitboardShare.exe`
-  answers a share with, over an `IShareOperation` that `Pitboard.Share.Core.Tests` replaces.
-  `Pitboard.slnx` holds the four, which build on every system. `Pitboard.Windows.slnx` adds
-  the app, which builds on Windows only:
+  answers a share with, over an `IShareOperation` that `Pitboard.Share.Core.Tests` replaces,
+  and `Handoff`, how it starts `Pitboard.exe` with the link. `Pitboard.slnx` holds the four,
+  which build on every system. `Pitboard.Windows.slnx` adds the app, which builds on Windows
+  only:
   - `Pitboard.Windows` is the glue, with no XAML. `AppModel` holds the `PitboardModel` and
     its newest snapshot, a property for each part, by the macOS `AppModel`'s rules; it
     compares a part's arrays by what they hold (`Structural`), and `ModelListening` hands it
@@ -767,7 +768,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     and the only program of Pitboard's with a package identity. Its manifest's `<msix>`
     element names the sparse package in `Package/`, the publisher written in at build time
     from `WINDOWS_SIGNER_SUBJECT`. Started by the share sheet, it hands `Sharing` the share
-    operation through `SystemShareOperation`. For the MSI, `--register` adds the package
+    operation through `SystemShareOperation`, and `Handoff` starts the `Pitboard.exe` beside
+    it with the Pitboard link as its only argument. For the MSI, `--register` adds the package
     beside it with its own folder as the external location. `Pitboard.exe --unregister-share`
     removes the package registered for its folder, since removing a package ends the
     package's own processes. It loads `pitboard_share_ffi.dll` and none of the core.
@@ -1516,8 +1518,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
   Release build where another program holds one, and it hands a shared page to
   `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
-  a process it starts carries none of its identity is Microsoft's contract until P2
-  measures it ([Documented, not measured](#documented-not-measured)).
+  the `Pitboard.exe` it starts through `CreateProcess` carries none of its identity is
+  measured for the probe's package only, until P2 measures Pitboard's
+  ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
@@ -2299,12 +2302,15 @@ The Windows app's account windows run in WebView2, over the same decisions from 
 
 The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
 with a package identity, which a share target needs. It is offered for a web link alone, as
-the macOS extension is for a web URL, and launches the Pitboard link `share_link` writes, which
-`Pitboard.exe`, with no identity, checks again as any link. A refusal, a link it cannot read
-and a launch that fails each go to `ReportError`, whose sentence Windows shows. Its sparse
+the macOS extension is for a web URL, and starts the `Pitboard.exe` beside it through
+`CreateProcess` with the Pitboard link `share_link` writes as its only argument, as the MSI's
+`pitboard` command starts it. `Pitboard.exe`, with no identity, checks the link again as any
+link. It does not open the link with `LaunchUriAsync`, which from a sparse package's identity
+gave false and started no handler (CF8 under [Windows](#windows)). A refusal, a link it cannot
+read and a start that fails each go to `ReportError`, whose sentence Windows shows. Its sparse
 package asks for nothing beyond `runFullTrust` and declares no write virtualization, since it
-writes nothing. Only a signed build carries it: a sparse package registers only when signed
-by a certificate the machine trusts, and its Publisher is the signer's subject.
+writes nothing. Only a signed build carries it: a sparse package registers only when signed by
+a certificate the machine trusts, and its Publisher is the signer's subject.
 `check-windows-app.ps1` fails a Release folder where another program carries an `<msix>`
 element, where `PitboardShare.exe`'s names another publisher, package or application than
 `PitboardShare.msix`, or where the package's Publisher is not the signer's.
@@ -2965,7 +2971,7 @@ on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
-| A process that `PitboardShare.exe` starts through `LaunchUriAsync` carries none of its package identity | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | From the probe's identity process, `LaunchUriAsync` of a link scheme the user registered gave false and started no handler (run 38928930271); its children carried none (CF8 under [Windows](#windows)). P2 measures Pitboard's. |
+| A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process without a desktop app policy starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The children the probe's identity process started through `CreateProcessW` carried none (run 38928930271), and CF8's `handoff` step starts one with a link as its only argument, with and without the breakaway policy (CF8 under [Windows](#windows)). P2 measures Pitboard's. |
 
 ### One sign-in at a time
 
