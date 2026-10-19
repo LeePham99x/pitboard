@@ -16,6 +16,8 @@ If that place is a `config.toml`, yours or the system's, set the file store in y
 cli_auth_credentials_store = "file"
 ```
 
+On Windows, the file is `.codex\config.toml` in your user folder, as [Codex files](/reference/files#codex-files) says.
+
 Then run `codex login` and sign in with ChatGPT.
 
 A store set in `requirements.toml`, `managed_config.toml` or a managed preference overrides yours, and only an administrator can change it. [Codex files](/reference/files#codex-files) says where each other store keeps the login, and lists every place Codex reads the setting from.

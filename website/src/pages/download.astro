@@ -52,7 +52,10 @@ const ways: { on: Platform[]; shell: "sh" | "pwsh"; rows: [string, Command[]][] 
     shell: "pwsh",
     rows: [
       ["With cargo-binstall", [win.binstall]],
-      ["From source, with Rust 1.91 or later and its MSVC toolchain", [win.cargoInstall]],
+      [
+        "From source, with Rust 1.91 or later and its MSVC toolchain, and clang on ARM64",
+        [win.cargoInstall],
+      ],
       ...(win.scoop ? [["With Scoop", win.scoop] as [string, Command[]]] : []),
     ],
   },
@@ -206,8 +209,10 @@ const jsonLd = [application(Astro.site!, downloads)];
             <h3 class={head} id="windows-cli-title">Command line</h3>
             <div class="mt-7">
               <p class={body}>
-                For the command line alone, download its zip and put <code>pitboard.exe</code> in a
-                folder on your <code>PATH</code>.
+                For the command line alone, download its zip and
+                <a href={`${DOCS}/install#install-the-command-line-on-windows`}
+                  >put <code>pitboard.exe</code> on your <code>PATH</code></a
+                >.
               </p>
               {winZips.map(([arch, z], i) => (
                 <p
@@ -374,6 +379,11 @@ const jsonLd = [application(Astro.site!, downloads)];
         <Part class="mt-5" on={["macos", "linux"]} label={false}>
           <p class="max-w-measure text-note text-pretty text-muted">
             Each tarball unpacks into a folder named like the tarball.
+          </p>
+        </Part>
+        <Part class="mt-5" on={["windows"]} label={false}>
+          <p class="max-w-measure text-note text-pretty text-muted">
+            Each zip of the command line unpacks into a folder named like the zip.
           </p>
         </Part>
       </div>

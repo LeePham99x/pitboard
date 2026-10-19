@@ -53,7 +53,11 @@ If your status line script runs in bash and reads its input with `input=$(cat)`,
 echo "$input" | pitboard statusline
 ```
 
-On Windows, this works where Claude Code runs the line in Git Bash.
+If it runs in PowerShell, read its input with `$json = $input | Out-String`, and parse `$json` for its fields. Then add this line to it:
+
+```powershell
+$json | pitboard statusline
+```
 
 Pass the input unchanged: Pitboard reads the session's `session_id` and usage from it. Without `session_id`, it prints the line but records none of the session's usage.
 

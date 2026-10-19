@@ -11,9 +11,11 @@ Each of the app's account windows keeps a claude.ai or chatgpt.com sign-in.
 | Version | Supported |
 | --- | --- |
 | The most recent release, and the newest beta published after it | Yes |
+| 0.15, the last 0.x line, for three months after 1.0.0 is published | Security fixes only |
 | Earlier releases and betas | No |
 
-Pitboard for Windows is in beta. A fix ships in the next release or beta. To update, follow
+Pitboard for Windows is in beta. A fix ships in the next release or beta, and a security fix
+for 0.15 in a 0.15 release. To update, follow
 [Update Pitboard](https://docs.usepitboard.com/install#update-pitboard).
 
 ## Report a vulnerability
@@ -71,9 +73,10 @@ works.
 - Pitboard sends each login only to the service that issued it, verifies TLS, and has no
   telemetry.
 - `PITBOARD_API_BASE`, for tests, sends requests only to a loopback IP address.
-- Every release file is attested, and the install script and casks install only files
-  matching the release's checksums. See
+- Every release file is attested. See
   [Verify a download](https://docs.usepitboard.com/install/verify).
+- On macOS and Linux, the install script and casks install only files matching the release's
+  checksums.
 - On macOS, the app installs only an update signed with its update key or, in a Developer ID
   copy, by the same team. On Windows, it installs only an update whose installer is signed
   with its Windows update key.
