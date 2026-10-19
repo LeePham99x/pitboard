@@ -1113,8 +1113,10 @@ function Find-SdkTool([string] $Name) {
 # the user's own TrustedPeople with 0x800B0109 in run 38882775456. Each package is offered for
 # the user with its program's folder as its external location, and the pitboard-probe-cf8 link
 # scheme is put under the user's HKCU\Software\Classes, its handler the plain probe. The identity
-# process writes, starts its children and opens the link through LaunchUriAsync, as
-# PitboardShare.exe hands a page on; a process without identity reads back what each wrote.
+# process writes, starts its children, opens the link through LaunchUriAsync, as
+# PitboardShare.exe hands a page on, and starts the plain probe through CreateProcessW with a
+# link as its only argument, with and without the desktop app breakaway policy; a process
+# without identity reads back what each wrote.
 # PitboardShare.exe --register then adds PitboardShare's package, as the MSI does, and
 # Pitboard.exe --unregister-share removes it, as the MSI's removal does. The user's part runs in
 # its own Windows PowerShell, whose Appx cmdlets PowerShell 7 cannot load, and each change is
@@ -1232,6 +1234,7 @@ try {
                     $r.write = Invoke-AsUser $User "cf8-$kind-write" @('sparse', '--action', 'write', '--tag', 'identity-parent') -FilePath $identityProbe
                     $r.children = Invoke-AsUser $User "cf8-$kind-children" @('sparse', '--action', 'children', '--scratch', $s) -FilePath $identityProbe
                     $r.launch = Invoke-AsUser $User "cf8-$kind-launch" @('sparse', '--action', 'launch', '--scratch', $s) -FilePath $identityProbe -TimeoutSeconds 120
+                    $r.handoff = Invoke-AsUser $User "cf8-$kind-handoff" @('sparse', '--action', 'handoff', '--scratch', $s) -FilePath $identityProbe -TimeoutSeconds 120
                     $r.read_without_identity = Invoke-AsUser $User "cf8-$kind-read" @('sparse', '--action', 'read') -FilePath $handler
                 } finally {
                     $r.clean = Invoke-AsUser $User "cf8-$kind-clean" @('sparse', '--action', 'clean') -FilePath $handler

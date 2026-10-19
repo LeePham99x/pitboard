@@ -7,9 +7,14 @@
 
 use crate::report::Report;
 use clap::{Parser, Subcommand, ValueEnum};
+use std::ffi::OsString;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+// CF8's link scheme, and where a probe handed a link of it as its only argument writes its report.
+pub const CF8_SCHEME: &str = "pitboard-probe-cf8";
+pub const HANDED_OUT: &str = "PITBOARD_PROBE_CF8_HANDED_OUT";
 
 /// Measure the Windows facts Pitboard for Windows is built on. A disposable machine and a
 /// throwaway account only: never an account that holds a real login.
@@ -549,6 +554,9 @@ pub enum SparseAction {
     Children,
     /// From an identity process: open the pitboard-probe-cf8 link, whose handler writes too.
     Launch,
+    /// From an identity process: start the plain probe with a pitboard-probe-cf8 link as its
+    /// only argument, as PitboardShare.exe starts Pitboard.exe.
+    Handoff,
     /// Read back every tag, from wherever this process runs.
     Read,
     /// Remove everything the block made.
@@ -582,12 +590,21 @@ pub enum Outcome {
 
 /// The probe's `main`, for every program the crate builds.
 pub fn main() -> ExitCode {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if let Some(link) = handed_link(&args) {
+        let out = std::env::var_os(HANDED_OUT).map(PathBuf::from);
+        return finish(handed(link), out.as_deref());
+    }
     let cli = Cli::parse();
-    match run(&cli) {
+    finish(run(&cli), cli.out.as_deref())
+}
+
+fn finish(outcome: Outcome, out: Option<&Path>) -> ExitCode {
+    match outcome {
         Outcome::Report(report) => {
             let text = report.render();
             let mut failed = report.failed();
-            if let Some(out) = &cli.out
+            if let Some(out) = out
                 && let Err(reason) = write_out(out, &text)
             {
                 let _ = writeln!(std::io::stderr(), "pitboard-probe: --out: {reason}");
@@ -609,14 +626,27 @@ pub fn main() -> ExitCode {
     }
 }
 
+// PitboardShare.exe hands Pitboard.exe the link as its only argument, so the stand-in takes nothing else.
+pub fn handed_link(args: &[OsString]) -> Option<&str> {
+    let [only] = args else { return None };
+    let link = only.to_str()?;
+    let (scheme, _) = link.split_once(':')?;
+    scheme.eq_ignore_ascii_case(CF8_SCHEME).then_some(link)
+}
+
 #[cfg(windows)]
 fn run(cli: &Cli) -> Outcome {
     crate::win::run(&cli.command, cli.out.as_deref())
 }
 
 #[cfg(windows)]
-fn write_out(out: &std::path::Path, text: &str) -> Result<(), String> {
+fn write_out(out: &Path, text: &str) -> Result<(), String> {
     crate::win::write_out(out, text)
+}
+
+#[cfg(windows)]
+fn handed(link: &str) -> Outcome {
+    crate::win::handed(link)
 }
 
 #[cfg(not(windows))]
@@ -630,8 +660,18 @@ fn run(cli: &Cli) -> Outcome {
 }
 
 #[cfg(not(windows))]
-fn write_out(_out: &std::path::Path, _text: &str) -> Result<(), String> {
+fn write_out(_out: &Path, _text: &str) -> Result<(), String> {
     Err("the probe writes nothing on a system that is not Windows".into())
+}
+
+#[cfg(not(windows))]
+fn handed(_link: &str) -> Outcome {
+    Outcome::Report(Report::refused(
+        "sparse",
+        crate::logon::LogonSession::unknown(),
+        "pitboard-probe measures Windows facts and runs on Windows only; this is another \
+         system",
+    ))
 }
 
 /// The block a command reports as.
@@ -756,6 +796,28 @@ mod tests {
     }
 
     #[test]
+    fn a_lone_link_of_its_scheme_is_a_handoff() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        let link = "pitboard-probe-cf8://open?url=https%3A%2F%2Fexample.com%2F";
+        assert_eq!(handed_link(&args(&[link])), Some(link));
+        assert_eq!(
+            handed_link(&args(&["PITBOARD-PROBE-CF8://open"])),
+            Some("PITBOARD-PROBE-CF8://open")
+        );
+        for refused in [
+            &[][..],
+            &[link, link][..],
+            &["sparse"][..],
+            &["--out", link][..],
+            &["pitboard://open?url=x"][..],
+            &["pitboard-probe-cf8x://open"][..],
+        ] {
+            assert_eq!(handed_link(&args(refused)), None, "{refused:?}");
+        }
+        assert!(Cli::try_parse_from(["pitboard-probe", "sparse", "--action", "handoff"]).is_ok());
+    }
+
+    #[test]
     fn every_command_has_a_block_name() {
         let cli = Cli::try_parse_from(["pitboard-probe", "symlink", "--scratch", "x"]).unwrap();
         assert_eq!(block_name(&cli.command), "symlink");
@@ -774,7 +836,14 @@ mod tests {
             }
             _ => panic!("a report"),
         }
-        assert!(write_out(std::path::Path::new("x"), "y").is_err());
+        assert!(write_out(Path::new("x"), "y").is_err());
+        match handed("pitboard-probe-cf8://open") {
+            Outcome::Report(r) => {
+                assert!(r.failed());
+                assert_eq!(r.to_json()["block"], "sparse");
+            }
+            _ => panic!("a report"),
+        }
     }
 
     #[test]
