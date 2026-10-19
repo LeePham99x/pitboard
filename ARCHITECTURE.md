@@ -2304,10 +2304,10 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   a ListView over the model's `PickerAccount`s and its buttons in a ContentDialog's order:
   the default first, Cancel last.
 - `apps/windows/Pitboard.Views/AccountWindows.cs` opens a window per store and brings an open
-  one forward, tells the model each opened and closed, closes those the model says close,
-  and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
-  while one is under way. It brings the **Open link** window forward with each link that
-  arrives, and withdraws it once none waits.
+  one forward, or back where it went out of sight, tells the model each opened and closed,
+  closes those the model says close, and hands each store asked for to the janitor. It owns
+  `Downloads`, and asks before Quit while one is under way. It brings the **Open link**
+  window forward with each link that arrives, and withdraws it once none waits.
 
 The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
 with a package identity, which a share target needs. It is offered for a web link alone, as
@@ -2389,15 +2389,26 @@ Cancel, or as its window closes and withdraws it; a download saved is named by
 `download_destination`, which on Windows numbers a copy `report (1).pdf` and splits a name
 as WebView2 does, `archive (1).tar.gz`. `Downloads` tells the model each one's start, file
 and end, and counts those under way for `downloads_quit_question`: Quit asks over a window
-of an account whose download runs, or another account window, then cancels them all. A
-paused download is under way: WebView2 leaves it interrupted and able to resume, and one
-still under way as its browser process exits ends cancelled. The download list is WebView2's
-own dialog, which Downloads in the command bar opens, so no surface of Pitboard's reveals a
-file. On both images it lists each file with Open file, and offers Open downloads folder and
-Search downloads, with no Show in folder of a file's own (run 38872384945).
+of an account whose download runs, brought back where the person closed it, or another
+account window, then cancels them all. A paused download is under way: WebView2 leaves it
+interrupted and able to resume, and one still under way as its browser process exits ends
+cancelled. The download list is WebView2's own dialog, which Downloads in the command bar
+opens, so no surface of Pitboard's reveals a file. On both images it lists each file with
+Open file, and offers Open downloads folder and Search downloads, with no Show in folder of a
+file's own (run 38872384945).
 `ASiteDownloadIsListedInTheWindow` looks for Open downloads folder.
 `DownloadTests` hold this against the stand-in site, and print for CF7 the events WebView2
 raised around each kind of download.
+
+A download ends with its browser process, which exits as its last page closes (CF7), where a
+macOS download goes on after its window closes. So an account window the person closes, from
+its caption, Alt+F4 or Ctrl+W, while one of its downloads is under way goes out of sight with
+its page instead: muted, its sign-in window closed and its questions answered no. The model
+hears `WindowClosed` then, and `WindowOpened` once opening the account's window, or Quit,
+brings that window back. It closes as the last of its downloads ends, or before the model has
+its store deleted, since a deletion closes the store's pages.
+`AccountWindowTests.ClosedWhileItDownloadsItWaitsOutOfSightForTheDownload` holds this, and its
+neighbours the question, the window brought back, Quit and the deletion.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
 144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
@@ -4336,6 +4347,14 @@ Microsoft's documentation.
   downloads is WebView2's own, with no Clear of Pitboard's, so `OpenWindow.clear_downloads`
   is `None` on Windows (`model::windowing`'s
   `a_window_on_windows_offers_no_clear_of_its_downloads`).
+- The Windows App SDK's `AppWindow` reference (`Microsoft.UI.xml` in InteractiveExperiences
+  2.1.9, Windows App SDK 2.5.1, and Microsoft Learn, updated 28 July 2026) raises `Closing` for
+  a close through a system affordance, which `Cancel` stops, and not for `Destroy`. `Hide`
+  keeps the window alive and `Show` brings it back, and `Window.Close` destroys the window
+  (updated 31 July 2026). So an account window that keeps its page for a download hears the
+  caption's close and Alt+F4 in `Closing`, puts Ctrl+W through the same check, and closes
+  itself with `Close` as its last download ends. The tests close it with `WM_SYSCOMMAND`
+  `SC_CLOSE`, as Alt+F4 does.
 - Microsoft's ResourceDictionary page (updated 13 October 2026) has `XamlReader.Load` parse in
   a context that knows no other ResourceDictionary, not even `Application.Resources`, and take
   no ThemeResource, and has `XamlControlsResources` merged first. So the views' shared styles

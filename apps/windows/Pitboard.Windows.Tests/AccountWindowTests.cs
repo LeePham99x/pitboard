@@ -16,6 +16,10 @@ public sealed partial class AccountWindowTests
 {
     private const uint Owner = 4;
 
+    private const uint SysCommand = 0x0112;
+
+    private const nuint ScClose = 0xF060;
+
     private static readonly WindowAccount Main = Items.Window("codex", "main", inUse: true);
 
     private static AccountWindowsShown Shown(WaitingShown waiting, params OpenWindow[] open) =>
@@ -44,6 +48,49 @@ public sealed partial class AccountWindowTests
 
     [LibraryImport("user32.dll")]
     private static partial nint GetWindow(nint window, uint relation);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static partial nint SendMessage(nint window, uint message, nuint command, nint unused);
+
+    // As the caption's close and Alt+F4 ask it, through the system, which raises AppWindow.Closing.
+    private static void CloseAsAPersonDoes(Window window) =>
+        _ = SendMessage(WindowNative.GetWindowHandle(window), SysCommand, ScClose, 0);
+
+    // A frame of the stand-in site whose file asks first, then saves until the site finishes it.
+    private static string StalledFrame(StandInSite site) =>
+        $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address("/stalled/away.bin")}\"></iframe>'); 0";
+
+    // That file, allowed as a person allows it, until it is saving.
+    private static async Task Saving(AccountWindow window, StandInSite site, Func<IEnumerable<Intent>> sent)
+    {
+        await Page(window)!.Script(StalledFrame(site));
+        Views.Press(await DialogButton(window, "Download"));
+        await Views.Until(() => sent().OfType<Intent.DownloadSaving>().Any(), "the download did not start saving", Webs.Patience);
+    }
+
+    // The account windows over a stand-in model, which lists the window of the account at the site's home.
+    private static (AccountWindows Windows, StandInModel Model) AccountWindowsOver(Webs webs, WindowAccount account)
+    {
+        var model = new StandInModel(Snapshots.Read(1) with
+        {
+            AccountWindows = Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)) with { Accounts = [account] },
+        });
+        return (new AccountWindows(new AppModel(model), webs.Web, Webs.Window), model);
+    }
+
+    // The account's window, opened as its menu item opens it, and closed by the person while a download of it saves.
+    private static async Task<AccountWindow> Away(AccountWindows windows, StandInModel model, WindowAccount account, StandInSite site)
+    {
+        windows.Open(account);
+        var window = windows.Window(account.Store)!;
+        await Views.Until(() => model.Sent.Contains(new Intent.PageShown(account.Store, Home)), "the page did not load", Webs.Patience);
+        await Saving(window, site, () => model.Sent);
+
+        CloseAsAPersonDoes(window);
+
+        Assert.IsTrue(window.Away, "the window closed with its download under way");
+        return window;
+    }
 
     // From the command bar's More, as a person chooses it.
     private static void RemoveWebsiteData(AccountWindow window)
@@ -126,6 +173,167 @@ public sealed partial class AccountWindowTests
 
         Assert.IsFalse(await shown.WaitAsync(Webs.Patience));
         Assert.IsFalse(await waiting.WaitAsync(Webs.Patience));
+    }
+
+    // WebView2 ends a download with its browser process, which exits as its last page closes (CF7). A macOS download goes
+    // on past its window, so a window the person closes while one saves keeps its page out of sight until it ends.
+    [UITestMethod]
+    public async Task ClosedWhileItDownloadsItWaitsOutOfSightForTheDownload()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var sent = new List<Intent>();
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        var closed = false;
+        window.Closed += (_, _) => closed = true;
+        var wentAway = 0;
+        window.WentAway += () => wentAway++;
+        try
+        {
+            window.Follow(Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)));
+            await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
+            await Saving(window, site, () => webs.Sent);
+
+            CloseAsAPersonDoes(window);
+
+            Assert.IsFalse(closed, "the window closed with its download under way");
+            Assert.IsTrue(window.Away);
+            Assert.AreEqual(1, wentAway);
+            Assert.IsFalse(window.AppWindow.IsVisible, "the window stayed in sight");
+            Assert.IsTrue(Page(window)!.IsMuted, "its page could still be heard");
+
+            site.Finish();
+
+            await Views.Until(() => closed, "the window stayed after its download ended", Webs.Patience);
+            Assert.IsInstanceOfType<DownloadEnd.Finished>(webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
+        }
+        finally
+        {
+            if (!closed)
+            {
+                window.Close();
+            }
+        }
+    }
+
+    // A question up as the person closes the window is answered no, and with no download left the window closes.
+    [UITestMethod]
+    public async Task ClosedWhileItAsksAboutADownloadItAnswersNoAndCloses()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var sent = new List<Intent>();
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        var closed = false;
+        window.Closed += (_, _) => closed = true;
+        try
+        {
+            window.Follow(Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)));
+            await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
+            await Page(window)!.Script(StalledFrame(site));
+            await DialogButton(window, "Download");
+
+            CloseAsAPersonDoes(window);
+
+            await Views.Until(() => closed, "the window stayed after its question was answered", Webs.Patience);
+            Assert.AreEqual(new DownloadEnd.Cancelled(), webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
+            Assert.IsEmpty(webs.Sent.OfType<Intent.DownloadSaving>());
+        }
+        finally
+        {
+            if (!closed)
+            {
+                window.Close();
+            }
+        }
+    }
+
+    // The model hears the window closed as it goes out of sight, and opened as it comes back, the same window with the
+    // same page and downloads.
+    [UITestMethod]
+    public async Task OpeningAWindowOutOfSightAgainShowsTheSameOne()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var account = webs.Own(Main);
+        var (windows, model) = AccountWindowsOver(webs, account);
+        try
+        {
+            var window = await Away(windows, model, account, site);
+            Assert.AreEqual(new Intent.WindowClosed(account.Store), model.Sent.OfType<Intent.WindowClosed>().Single());
+
+            windows.Open(account);
+
+            Assert.AreSame(window, windows.Window(account.Store));
+            Assert.IsFalse(window.Away);
+            Assert.IsTrue(window.AppWindow.IsVisible, "the window stayed out of sight");
+            Assert.IsFalse(Page(window)!.IsMuted, "its page stayed muted");
+            Assert.HasCount(2, model.Sent.OfType<Intent.WindowOpened>());
+        }
+        finally
+        {
+            windows.Window(account.Store)?.Close();
+        }
+    }
+
+    // Exit asks in the window of the download it would stop, back in sight where the person closed it.
+    [UITestMethod]
+    public async Task ExitAsksInTheWindowOfADownloadOutOfSight()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var account = webs.Own(Main);
+        var (windows, model) = AccountWindowsOver(webs, account);
+        try
+        {
+            var window = await Away(windows, model, account, site);
+
+            var asking = windows.MayQuit();
+
+            await DialogButton(window, "Quit");
+            Assert.IsTrue(window.AppWindow.IsVisible, "the question was asked out of sight");
+            Assert.HasCount(2, model.Sent.OfType<Intent.WindowOpened>());
+            Views.Press(await DialogButton(window, "Cancel"));
+            Assert.IsFalse(await asking.WaitAsync(Webs.Patience));
+        }
+        finally
+        {
+            windows.Window(account.Store)?.Close();
+        }
+    }
+
+    // Deleting a store closes its pages, so a window out of sight for its download closes first, and says nothing more.
+    [UITestMethod]
+    public async Task AWindowOutOfSightClosesBeforeItsStoreIsDeleted()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var account = webs.Own(Main);
+        var (windows, model) = AccountWindowsOver(webs, account);
+        try
+        {
+            var window = await Away(windows, model, account, site);
+            var closed = false;
+            window.Closed += (_, _) => closed = true;
+
+            windows.Follow(model.Snapshot().AccountWindows with
+            {
+                Accounts = [], Open = [], Deleting = [new StoreDeletion(account.Store, 1)],
+            });
+
+            await Views.Until(() => closed, "the window outlived its store", Webs.Patience);
+            Assert.IsNull(windows.Window(account.Store));
+            Assert.HasCount(1, model.Sent.OfType<Intent.WindowClosed>());
+            await Views.Until(
+                () => model.Sent.Any(intent => intent is Intent.StoreDeleted or Intent.StoreHeld), "the store was not deleted",
+                Webs.Patience);
+        }
+        finally
+        {
+            windows.Window(account.Store)?.Close();
+        }
     }
 
     // The page loads in WebView2, over the fixture's stand-ins, and the model hears where it is.

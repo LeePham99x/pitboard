@@ -6,14 +6,15 @@ using System.Text;
 namespace Pitboard.Windows.Tests;
 
 // A web site on this PC's loopback for the WebView2 tests, so nothing reaches the network: every path is a page, /set
-// sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, /file/<name>
-// a text file it does not say to save, /anchor/<name> a page that saves that file through an <a download>, and /leave a
-// page whose script goes to /away. It says which paths it was asked for, each with the headers that tell a navigation
-// from a prefetch.
+// sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that finishes only once Finish is
+// called, /file/<name> a text file it does not say to save, /anchor/<name> a page that saves that file through an
+// <a download>, and /leave a page whose script goes to /away. It says which paths it was asked for, each with the
+// headers that tell a navigation from a prefetch.
 internal sealed class StandInSite : IDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
+    private readonly TaskCompletionSource _finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public StandInSite()
     {
@@ -26,6 +27,9 @@ internal sealed class StandInSite : IDisposable
     public ConcurrentQueue<string> Heard { get; } = new();
 
     public string Address(string path) => $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}{path}";
+
+    // Sends the rest of every stalled file, and of each asked for after.
+    public void Finish() => _finish.TrySetResult();
 
     public void Dispose()
     {
@@ -111,7 +115,7 @@ internal sealed class StandInSite : IDisposable
         await stream.WriteAsync(Encoding.UTF8.GetBytes(answer));
     }
 
-    // Its content is its name. A stalled one says it is a megabyte and sends a kilobyte, until the site stops.
+    // Its content is its name. A stalled one says it is a megabyte and sends a kilobyte, then the rest once finished.
     private async Task Attach(NetworkStream stream, string name, bool stalled)
     {
         var body = Encoding.UTF8.GetBytes(Uri.UnescapeDataString(name));
@@ -127,6 +131,7 @@ internal sealed class StandInSite : IDisposable
         }
 
         await stream.WriteAsync(new byte[1024]);
-        await Task.Delay(Timeout.Infinite, _stop.Token);
+        await _finish.Task.WaitAsync(_stop.Token);
+        await stream.WriteAsync(new byte[length - 1024]);
     }
 }

@@ -24,12 +24,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- On Windows, an account's window shows its page's title before the account's label.
-
-### Changed
-
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.16.0/pitboard_core/) shows the new one.
+- On Windows, an account's window shows its page's title before the account's label.
+- On Windows, a download goes on after you close its account's window, as on macOS, and
+  opening that window again before the download ends brings back the one you closed.
 
 ### Removed
 
