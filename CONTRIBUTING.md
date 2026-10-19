@@ -304,7 +304,7 @@ folder, the app's data folder, a link scheme, a notification registration, a sta
 sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a release is
 built, with no cfg, and checks that a 0.x build refuses and changes nothing, and that a 1.x
 build answers with no argument as a fresh standard user, as winget's validation runs a program.
-It runs the opened build that way too. One test reads the app execution aliases in the job
+It holds the opened build to the same. One test reads the app execution aliases in the job
 user's own profile, since a fresh standard user's has none.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,

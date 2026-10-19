@@ -237,15 +237,14 @@ jobs:
           cargo nextest run --locked --workspace --no-capture
           -E 'binary_id(pitboard-core) & test(=host::windows::proc::tests::an_app_execution_alias_runs_from_windows_apps)'
       # winget's validation installs as a standard user, runs the program with no argument and
-      # wants 0. Until Windows is released the opened build only has to run to its own exit, and
-      # the step says what it gave.
+      # wants 0, and the opened build is held to it as the gated 1.x build is.
       - name: The opened build with no argument, as a standard user
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/check-windows-build.ps1 -Exe target/debug/pitboard.exe -Triple $env:TRIPLE
-          -Opened -Probe target/debug/pitboard-probe.exe
+          -Opened -Strict -Probe target/debug/pitboard-probe.exe
 
   # The zips release.yml ships from 1.0.0, built by the same action on each image. Nothing is
   # uploaded, so no runnable build of a pull request leaves the runner.
