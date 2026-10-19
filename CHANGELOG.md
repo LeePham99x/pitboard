@@ -52,6 +52,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since Windows PowerShell refuses a bare `claude` or `codex` there by default.
 - On Windows, `pitboard doctor` names the Claude Code and Codex builds Pitboard's facts for
   Windows were read from, not the macOS ones.
+- On Windows, Pitboard says to restart Codex's background app server from a terminal that is
+  not elevated, since Codex refuses to start it from an elevated one.
 
 ## [1.0.0-beta.3] - 2026-10-19
 

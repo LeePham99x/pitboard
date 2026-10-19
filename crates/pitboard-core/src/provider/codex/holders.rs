@@ -10,6 +10,7 @@
 //! codex runs in that package waits on the session's step 10.
 
 use crate::holder::{AppId, Holder, Location, Noun, Remedy};
+use crate::host::{OS, Os};
 
 pub(crate) const HOLDERS: &[Holder] = &[
     // `/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`,
@@ -41,7 +42,7 @@ pub(crate) const HOLDERS: &[Holder] = &[
         kind: "app_server_daemon",
         noun: Noun::One("Codex's background app server"),
         location: Location::Within("app-server-daemon"),
-        remedy: Remedy::Run("codex app-server daemon restart"),
+        remedy: restart_the_app_server(OS),
     },
     // `<extensions>/openai.chatgpt-<version>-<platform>/bin/<platform>/codex`.
     Holder {
@@ -62,10 +63,20 @@ pub(crate) const HOLDERS: &[Holder] = &[
     },
 ];
 
+// Codex refuses to start its Windows daemon from an elevated terminal (codex_windows_app_server).
+const fn restart_the_app_server(os: Os) -> Remedy {
+    match os {
+        Os::MacOs | Os::Linux => Remedy::Run("codex app-server daemon restart"),
+        Os::Windows => Remedy::Do(
+            "from a terminal that is not elevated, run `codex app-server daemon restart`",
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::holder::classify;
+    use crate::holder::{Holding, classify};
     use crate::host::Process;
     use std::path::PathBuf;
 
@@ -153,6 +164,36 @@ mod tests {
                 app: AppId::WindowsAumid("OpenAI.Codex_2p2nqsd0c76g0!App"),
                 name: "ChatGPT",
             }
+        );
+    }
+
+    #[test]
+    fn the_app_server_is_restarted_from_a_terminal_codex_starts_it_from() {
+        let server = *HOLDERS
+            .iter()
+            .find(|h| h.kind == "app_server_daemon")
+            .expect("the app server");
+        assert_eq!(server.remedy, restart_the_app_server(OS));
+        let said = |os| {
+            let holding = [Holding {
+                holder: Holder {
+                    remedy: restart_the_app_server(os),
+                    ..server
+                },
+                pids: vec![7],
+            }];
+            crate::holder::remedies(&holding, "to take a switch")
+        };
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(
+                said(os),
+                "Run `codex app-server daemon restart` to take a switch."
+            );
+        }
+        assert_eq!(
+            said(Os::Windows),
+            "From a terminal that is not elevated, run `codex app-server daemon restart` to take \
+             a switch."
         );
     }
 
