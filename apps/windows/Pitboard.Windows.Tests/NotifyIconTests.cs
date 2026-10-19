@@ -80,6 +80,23 @@ public sealed class NotifyIconTests
         Assert.AreEqual("Pitboard, work 42%", area.Sent[^1].Icon.Tip);
     }
 
+    // As the display's scale changes, the image the notification area draws at its new size.
+    [TestMethod]
+    public void ANewImageModifiesTheIconAddedAlready()
+    {
+        var area = new StandInArea();
+        var icon = new NotifyIcon(area, Window, Image, Debug);
+        icon.Redraw(0x9abc);
+        Assert.AreEqual("", Said(area), "nothing to modify before it is added");
+
+        icon.Show("Pitboard");
+        icon.Redraw(0xdef0);
+
+        Assert.AreEqual("Add, SetVersion, Modify", Said(area));
+        Assert.AreEqual((nint)0x9abc, area.Sent[0].Icon.Image);
+        Assert.AreEqual((nint)0xdef0, area.Sent[^1].Icon.Image);
+    }
+
     [TestMethod]
     public void TheTipIsWhatNarratorSays()
     {

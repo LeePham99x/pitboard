@@ -21,12 +21,17 @@ public sealed class Downloads
         web.BrowserExited += () => Stop(cancel: false);
     }
 
+    public event Action? Ended;
+
     // Counted here rather than from a snapshot: a download started a moment before Quit is under way before the
     // snapshot that lists it.
     public Question? QuitQuestion => PitboardFfiMethods.DownloadsQuitQuestion((uint)_live.Count);
 
     // The stores of the windows whose downloads are under way, the newest first.
     public IEnumerable<string> Stores => _live.Select(running => running.Store).Reverse();
+
+    public bool UnderWay(string store) =>
+        _live.Any(running => string.Equals(running.Store, store, StringComparison.OrdinalIgnoreCase));
 
     // Holds WebView2 until it is answered, so nothing is saved before the person says yes. Pitboard may quit meanwhile.
     public async Task Start(
@@ -117,6 +122,7 @@ public sealed class Downloads
         if (_live.Remove(running))
         {
             _send(new Intent.DownloadEnded(running.Id, end));
+            Ended?.Invoke();
         }
     }
 

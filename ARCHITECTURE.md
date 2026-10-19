@@ -684,12 +684,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `WM_CLOSE` and the icon's clicks, which `IconEvent` reads, and `Shell` is the known
     folder, the AppUserModelID, the app's icon and the refusal's message box. `NotifyIcon`
     keeps the icon in the notification area through `INotificationArea`, which
-    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, and `IconMenu`
+    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, at the size
+    `IconImage` loads it at for the primary display's scale, and `IconMenu`
     lists what the icon's menu offers, in the macOS menu's order. `WindowsNotifications`
     posts the model's notifications through `IAppNotifications`, which
     `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
     Release build registers, and a click comes back as the intent the Switch button or the
-    notification itself asks for. `WindowsApps` is the model's `AppControl`: through
+    notification itself asks for. Its `Read` is why Windows shows none of them, from the
+    manager's `Setting` at each settings visit, as a `NotificationsBlocked`. `WindowsApps` is the model's `AppControl`: through
     `PackagedApps` it finds the process of a Store app's package that owns a top-level
     window, asks Restart Manager to end it, never forced, through `IRestartManager`, which
     `SystemRestartManager` sends to Restart Manager and tests replace, and opens the app by
@@ -703,9 +705,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
-    `FixtureStartupItem`. It reads `StartupApproved\Run`, which only Settings > Apps >
-    Startup writes: where that turned the `Run` value off, the switch is off and held back,
-    and its note says to turn it on there. `SettingsViewModel` is what the settings page shows and sends,
+    `FixtureStartupItem`, which `PITBOARD_FIXTURE_STARTUP=off` makes a value Settings turned
+    off. It reads `StartupApproved\Run`, which only Settings > Apps > Startup writes: where
+    that turned the `Run` value off, the switch is off and held back, its note says to turn it
+    on there, and a link opens `ms-settings:startupapps`. The settings read it again at each
+    visit and as `MainWindow` is activated while they show. `SettingsViewModel` is what the settings page shows and sends,
     beyond the model's words its own, each warm-up account a `WarmAccountRow`, and
     `Versions` the app's own version. `AccountsViewModel`, `ActivityViewModel` and `MachineViewModel` are what
     the accounts, activity and This PC pages bind to, told part by part as `AppModel` tells
@@ -723,7 +727,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     test app shows them as `Pitboard.exe` does. `MainWindow` is a `TitleBar` over a
     `NavigationView`, whose `Frame` shows a page for each of the model's `Pane`s and the
     settings page, each navigated to with a `PaneContext` and kept for the next visit; it
-    takes Ctrl+N, Ctrl+comma, Ctrl+W, F6 and Shift+F6 from any of them. `AccountsPage` lists
+    takes Ctrl+N, Ctrl+comma, Ctrl+W, F1, F6 and Shift+F6 from any of them. `AccountsPage` lists
     the accounts under their notices and setup step, each an `AccountRow` with an
     `AccountMenu`, and shows an `EmptyState` in place of an empty list; `ActivityPage` is the
     log, a table whose column headers are its list's header, each change stacked under its
@@ -740,7 +744,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `MenuHost` the pixel of a window it opens from. `AccountWindow`, with the `SignInWindow`s
     it owns, and `OpenLinkWindow` are the account windows and the **Open link** window, which
     `AccountWindows` opens. `WindowChrome`
-    gives each window the app's icon, a title bar in the app mode and a minimum size, and
+    gives each window the app's icon, a title bar in the app mode, or in a contrast theme's
+    colours, which `SystemContrast` reads through `IContrastTheme`, and a minimum size, and
     `Styles.xaml` holds the styles the views share.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
@@ -762,8 +767,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     the session's end does too, or ends where Restart Manager asks.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    Neither registers anything with Windows, and neither starts a Restart Manager session,
-    which Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
+    Neither registers anything with Windows but the Release build `ReleaseGateTests` starts at
+    1.x, which `--unregister` takes back, and neither starts a Restart Manager session, which
+    Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
     tests, `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the
     session's step A2. `ScreenshotTests` takes the docs' pictures of the window and of the
     menu, which it opens with the message Explorer sends on a right click.
@@ -1516,7 +1522,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   is signed; `Pitboard.exe --unregister` takes back what the app registered itself, and
   `--unregister-share` the package. CI's
   Windows legs fail a run that leaves a link scheme, a notification registration, a start at
-  sign-in, a `PATH` entry or a package behind.
+  sign-in, a `PATH` entry or a package behind. At 1.x `ReleaseGateTests` starts the MSI
+  image's Release build as the standard user, turns start at sign-in on, exits it and runs
+  `--unregister`, which must take back both registrations, then removes the data folder as
+  the MSI's `RemoveFolderEx` does.
 - Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
   holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
   Release build where another program holds one, and it hands a shared page to
@@ -2299,10 +2308,10 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   a ListView over the model's `PickerAccount`s and its buttons in a ContentDialog's order:
   the default first, Cancel last.
 - `apps/windows/Pitboard.Views/AccountWindows.cs` opens a window per store and brings an open
-  one forward, tells the model each opened and closed, closes those the model says close,
-  and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
-  while one is under way. It brings the **Open link** window forward with each link that
-  arrives, and withdraws it once none waits.
+  one forward, or back where it went out of sight, tells the model each opened and closed,
+  closes those the model says close, and hands each store asked for to the janitor. It owns
+  `Downloads`, and asks before Quit while one is under way. It brings the **Open link**
+  window forward with each link that arrives, and withdraws it once none waits.
 
 The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
 with a package identity, which a share target needs. It is offered for a web link alone, as
@@ -2384,15 +2393,26 @@ Cancel, or as its window closes and withdraws it; a download saved is named by
 `download_destination`, which on Windows numbers a copy `report (1).pdf` and splits a name
 as WebView2 does, `archive (1).tar.gz`. `Downloads` tells the model each one's start, file
 and end, and counts those under way for `downloads_quit_question`: Quit asks over a window
-of an account whose download runs, or another account window, then cancels them all. A
-paused download is under way: WebView2 leaves it interrupted and able to resume, and one
-still under way as its browser process exits ends cancelled. The download list is WebView2's
-own dialog, which Downloads in the command bar opens, so no surface of Pitboard's reveals a
-file. On both images it lists each file with Open file, and offers Open downloads folder and
-Search downloads, with no Show in folder of a file's own (run 38872384945).
+of an account whose download runs, brought back where the person closed it, or another
+account window, then cancels them all. A paused download is under way: WebView2 leaves it
+interrupted and able to resume, and one still under way as its browser process exits ends
+cancelled. The download list is WebView2's own dialog, which Downloads in the command bar
+opens, so no surface of Pitboard's reveals a file. On both images it lists each file with
+Open file, and offers Open downloads folder and Search downloads, with no Show in folder of a
+file's own (run 38872384945).
 `ASiteDownloadIsListedInTheWindow` looks for Open downloads folder.
 `DownloadTests` hold this against the stand-in site, and print for CF7 the events WebView2
 raised around each kind of download.
+
+A download ends with its browser process, which exits as its last page closes (CF7), where a
+macOS download goes on after its window closes. So an account window the person closes, from
+its caption, Alt+F4 or Ctrl+W, while one of its downloads is under way goes out of sight with
+its page instead: muted, its sign-in window closed and its questions answered no. The model
+hears `WindowClosed` then, and `WindowOpened` once opening the account's window, or Quit,
+brings that window back. It closes as the last of its downloads ends, or before the model has
+its store deleted, since a deletion closes the store's pages.
+`AccountWindowTests.ClosedWhileItDownloadsItWaitsOutOfSightForTheDownload` holds this, and its
+neighbours the question, the window brought back, Quit and the deletion.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
 144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
@@ -4279,7 +4299,14 @@ Microsoft's documentation.
   change them when the mode changes while the app runs, and WinUI's own TableView sample says
   the system draws them black whatever the content's theme. So `WindowChrome` does the same
   for a window whose content extends into its title bar, the main window
-  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`).
+  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`). Microsoft's title bar
+  guidance (updated 14 July 2026) has a title bar's colours follow a contrast theme, and the
+  Windows App SDK's `ThemeSettings` (`Microsoft.InteractiveExperiences.Projection.xml`,
+  InteractiveExperiences 2.1.9 in Windows App SDK 2.5.1) tells a Win32 app whether one is on
+  and when that changes. So under a contrast theme `WindowChrome` sets none of the caption's
+  colours, which the system then draws, and follows `ThemeSettings.Changed`
+  (`WindowChromeTests.UnderAContrastThemeTheCaptionButtonsTakeWindowsOwnColours`). How they
+  look under one is measured by hand.
 - Microsoft's Manage app windows page (updated 14 October 2026) gives a window that belongs
   to another an owner window, set through Win32 interop, and the WinUI Gallery's
   `ModalWindow.xaml.cs` sets it with `SetWindowLongPtr(GWLP_HWNDPARENT)`. An owned window
@@ -4310,6 +4337,28 @@ Microsoft's documentation.
   Shift+F6 the same cycle reversed. So F6 and Shift+F6 move between the main window's two
   regions, its navigation pane and its page, and Ctrl+W closes it as its caption's close does
   (`LifecycleTests.F6MovesFocusBetweenThePaneAndThePage`, `CtrlWClosesTheWindowAndPitboardKeepsRunning`).
+- WinUI's WebView2 (microsoft-ui-xaml main at 1af995b, `controls/dev/WebView2/WebView2.cpp`)
+  handles no `AcceleratorKeyPressed`, so no XAML accelerator hears a key pressed in the page,
+  where WebView2's own browser keys serve Back, Forward and Reload. So an account window takes
+  Ctrl+W, and the browser keys for its Back, Forward and Reload, on its root, for its toolbar
+  and its note (`AccountWindowTests.TheWindowTakesTheKeysOfItsCommands`,
+  `TheToolbarTakesBackAndCtrlW`).
+- Microsoft's User Interface Text guidelines (updated 15 April 2025) title a top-level
+  document-centric window "document name - program name", the document first. So an account
+  window is titled with its page's `DocumentTitle`, a hyphen and the account's title, where
+  the macOS window shows the page as its subtitle
+  (`AccountWindowTests.ItsTitleIsItsPagesAndThenItsAccounts`). An account window's list of
+  downloads is WebView2's own, with no Clear of Pitboard's, so `OpenWindow.clear_downloads`
+  is `None` on Windows (`model::windowing`'s
+  `a_window_on_windows_offers_no_clear_of_its_downloads`).
+- The Windows App SDK's `AppWindow` reference (`Microsoft.UI.xml` in InteractiveExperiences
+  2.1.9, Windows App SDK 2.5.1, and Microsoft Learn, updated 28 July 2026) raises `Closing` for
+  a close through a system affordance, which `Cancel` stops, and not for `Destroy`. `Hide`
+  keeps the window alive and `Show` brings it back, and `Window.Close` destroys the window
+  (updated 31 July 2026). So an account window that keeps its page for a download hears the
+  caption's close and Alt+F4 in `Closing`, puts Ctrl+W through the same check, and closes
+  itself with `Close` as its last download ends. The tests close it with `WM_SYSCOMMAND`
+  `SC_CLOSE`, as Alt+F4 does.
 - Microsoft's ResourceDictionary page (updated 13 October 2026) has `XamlReader.Load` parse in
   a context that knows no other ResourceDictionary, not even `Application.Resources`, and take
   no ThemeResource, and has `XamlControlsResources` merged first. So the views' shared styles
@@ -4387,7 +4436,9 @@ Microsoft's documentation.
 - Microsoft's InfoBar page raises no notification for a bar changed while open, and has it
   closed and opened again for a screen reader to hear the new content
   ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25
-  June 2026). So the sheet's failure bar closes and opens again for each new failure, and a
+  June 2026). So the sheet's failure bar closes and opens again for each new failure, an
+  account window's note bar for a note in place of another, as the macOS window announces
+  each (`AccountWindowTests.ANoteInPlaceOfAnotherOpensItsBarAgain`), and a
   code the tool refused is an error InfoBar under the code field, where plain text was. A new
   failure gives focus back to the field it is about, as the sheet's opening does, so the
   default button is the one Enter presses.
@@ -4418,6 +4469,12 @@ Microsoft's documentation.
   and leaves About to the settings page, and the Windows app writes all its text in sentence
   case: its own, and the model's buttons, menu items and headings, which `words::titled`
   words for each system, title case on macOS as Apple's guidelines have it.
+- WinUI 2.3.9's `Themes/generic.xaml` draws a `RadioMenuFlyoutItem`'s text in one
+  TextBlock that trims, where the macOS menu puts an account's limits on a line under its
+  name. So on Windows `AccountItem.menu_title` ends with the figure the menu bar would show
+  of the account, `headline`'s, where that line says its limits, and the line is the item's
+  tooltip and help text (`present::accounts`'
+  `a_windows_menu_item_ends_with_the_figure_the_bar_would_show`).
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
   flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
   foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes
@@ -4440,6 +4497,17 @@ Microsoft's documentation.
   `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj
   --coff-resources` on a win-x64 build made on macOS lists `GROUP_ICON` 32512 with eight
   `ICON` entries in the exe. So `Shell.AppIcon` loads 32512 from `Pitboard.exe`.
+- Microsoft's high DPI desktop development page (updated 10 September 2026) has a
+  per-monitor aware app load its images again for a new DPI, answers `GetSystemMetrics` at
+  the primary display's DPI as the session started and `GetSystemMetricsForDpi` at any, and
+  calls the primary display the one the system tray is on. So `IconImage` loads the icon
+  with `LoadIconWithScaleDown` at `SM_CXSMICON` for the primary display's DPI, in place of
+  `LoadIconMetric`, whose `LIM_SMALL` names no DPI, and loads it again when
+  `HiddenWindow` hears `WM_DISPLAYCHANGE`, `WM_DPICHANGED` or `WM_SETTINGCHANGE` and that
+  size has changed. `NotifyIcon` sends the new one with `NIM_MODIFY` before the one before
+  is destroyed (`IconImageTests`, `NotifyIconTests.ANewImageModifiesTheIconAddedAlready`,
+  `HiddenWindowTests.AChangeOfTheDisplaysReachesTheApp`). Which of the three a scale change
+  sends a hidden window, and how the icon looks after one, are measured by hand.
 - Microsoft's app icon guidance (updated 14 July and 5 August 2026) asks for a transparent
   icon drawn straight on, half of it at 3:1 against light and dark backgrounds, at 16, 24,
   32, 48 and 256 px at least, and the notification area draws it at 16 px at 100% up to 64
@@ -4510,6 +4578,19 @@ Microsoft's documentation.
   a click, which has no arguments to hand over, `Pitboard.ico` ships beside `Pitboard.exe`,
   and `Pitboard.Probe` calls `UnregisterAll` only after a `Register`.
   `WindowsNotificationsTests` and `LaunchingTests` hold them.
+- `AppNotificationManager.Setting` answers `Unsupported` where `IsSupported` refuses, and
+  otherwise `ToastNotifications_QuerySettings` for the AppUserModelID its constructor took,
+  registered or not (`dev/AppNotifications/AppNotificationManager.cpp` at v2.5.1, commit
+  13160d54). `AppNotificationSetting` holds `Enabled`, `DisabledForApplication`,
+  `DisabledForUser`, `DisabledByGroupPolicy`, `DisabledByManifest` and `Unsupported`
+  (Microsoft.WindowsAppSDK.Foundation 2.3.12's metadata, which WindowsAppSDK 2.5.1 pulls
+  in); Microsoft's reference calls the second an app setting of the person's and the third a
+  global one. "Launch the Windows Settings app" (updated 26 September 2026) lists
+  `ms-settings:notifications` and `ms-settings:startupapps`. So `WindowsNotifications.Read`
+  asks for `Setting` only once it has registered, says each value but `Enabled`, and the
+  settings link to Settings for the person's own two. Which value Windows gives an
+  unpackaged Pitboard turned off in Settings is not measured. `WindowsNotificationsTests`
+  holds it.
 - The app notifications quickstart (updated 10 September 2026) listens, registers and then
   calls `GetActivatedEventArgs`, and says a cold start reports `Launch` with its arguments
   in `NotificationInvoked`, where the source above reports `AppNotification`; the app takes
@@ -4586,7 +4667,12 @@ Microsoft's documentation.
   version of an update found from the feed, asks the downloads question in the can-shutdown
   callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
   an uninstall removes with the folder. Turned on after a start with them off, automatic
-  checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
+  checks begin at Pitboard's next start. GitHub answered
+  `releases/latest/download/appcast-windows.xml` with a redirect to v0.15.0's asset, which
+  is missing, and then 404 (19 October 2026): no full release carries a Windows feed before
+  1.0.0, and a beta's check ended in WinSparkle's error. So a beta reads the feed first and
+  starts WinSparkle only on an answer other than 404, reading it again at each settings
+  visit. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
   An update's MSI is checked whole with orlp's `ed25519_verify`, its signature the base64 of
   64 bytes (`signatureverifier.cpp`). Sparkle 2.10.0's `sign_update` signs a file that is no
   feed or release notes whole with the same library, reads the key's base64 seed from

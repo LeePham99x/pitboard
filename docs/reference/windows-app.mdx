@@ -42,7 +42,7 @@ What needs attention, in this order:
 | The notice's title, such as **Couldn't read usage**, or **2 things to look at** for several | **Show in Pitboard**, or the first notice's title | **Accounts** has a notice with a warning or error mark and no switch button. | Opens **Accounts**. |
 | **Install Pitboard 1.0.1** | None | A copy installed from a release, a beta included, found an update. | Opens the update window. |
 
-A dot marks the account in use in each tool. An account shows its label, its email address while it has none, or **Login Pitboard can't use**. Where its login says a plan, the plan follows, as in **work · Max 20x**. [Account status](/reference/account-status) explains its tooltip. With several tools, each tool's name heads its accounts.
+A dot marks the account in use in each tool. An account shows its label, its email address while it has none, or **Login Pitboard can't use**. Where its login says a plan, the plan follows, as in **work · Max 20x**. The percentage the [menu bar item](/reference/mac-app#menu-bar-item) would show of it comes last: **work · Max 20x · 42%**. An account whose tooltip says what stands in its way, such as **Needs signing in again**, shows none. [Account status](/reference/account-status) explains its tooltip. With several tools, each tool's name heads its accounts.
 
 Instead of accounts, the menu can show **Reading accounts**, **No accounts yet** or **No accounts to show**, when the [menu bar app](/reference/mac-app#menu) shows them. Selecting an account does what it does there.
 
@@ -58,7 +58,7 @@ The commands, in this order:
 | **Settings** | Opens [Settings](/reference/settings) in the Pitboard window. |
 | **Check for updates** | Opens the update window. Only in a copy of a full release. |
 | **Pitboard help** | Opens this site. |
-| **Exit** | Stops Pitboard. While an account window downloads, it asks first, as [Downloads](/reference/account-windows#downloads) says. |
+| **Exit** | Stops Pitboard. While a download runs, it asks first, as [Downloads](/reference/account-windows#downloads) says. |
 
 ## Window
 
@@ -164,7 +164,7 @@ Each says what the menu bar app's says, as its [Alerts](/reference/mac-app#alert
 
 The app posts the notifications the [menu bar app](/reference/mac-app#notifications) lists, as Windows notifications, with the same titles, bodies and **Switch** button. Selecting a notification itself opens **Accounts**.
 
-Windows can turn them off in **Settings** > **System** > **Notifications**. Where Windows gives Pitboard no notifications, Pitboard's **Settings** says why under **General**.
+Windows can turn them off in **Settings** > **System** > **Notifications**. Where Windows shows none of Pitboard's notifications, Pitboard's **Settings** says why under **General**, as [Notifications in Settings](/reference/settings#notifications) lists.
 
 ## Keyboard shortcuts
 
@@ -172,9 +172,13 @@ Windows can turn them off in **Settings** > **System** > **Notifications**. Wher
 | --- | --- | --- |
 | Ctrl+N | The Pitboard window | Opens **Add account** |
 | Ctrl+Comma | The Pitboard window | Shows **Settings** |
+| F1 | The Pitboard window | Opens this site, as **Pitboard help** does |
 | F5 or Ctrl+R | **Accounts**, **Activity** and **This PC** | **Refresh**, or **Check again** in **This PC** |
 | F6, Shift+F6 | The Pitboard window | Moves between the navigation pane and the page |
 | Ctrl+W | The Pitboard window | Closes it. Pitboard keeps running. |
+| Ctrl+W | An account window, outside its page | Closes it |
+| Alt+Left, Alt+Right | An account window | **Back**, **Forward** |
+| F5 or Ctrl+R | An account window | **Reload** |
 | Enter, or double-click | A row in **Accounts** | What the row's button does. On the account in use when it is not enrolled, opens **Name this account**. |
 | Delete | A row in **Accounts** | **Forget**, after asking |
 | F2 | A row in **Accounts** | **Rename** |

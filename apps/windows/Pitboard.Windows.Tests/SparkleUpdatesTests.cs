@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.InteropServices;
 
 namespace Pitboard.Windows.Tests;
@@ -24,6 +25,10 @@ public sealed class SparkleUpdatesTests
         </rss>
         """;
 
+    // releases/latest/download/appcast-windows.xml on 19 October 2026: a redirect to v0.15.0's, then 404.
+    private static readonly Func<Task<string>> Missing =
+        () => Task.FromException<string>(new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
+
     private readonly List<string> _folders = [];
 
     [TestCleanup]
@@ -44,14 +49,14 @@ public sealed class SparkleUpdatesTests
 
     private IUpdates Made(
         StandInSparkle sparkle, Build build = Build.Release, string? key = Key, string version = "1.0.0",
-        Func<Task<bool>>? mayQuit = null, Action? quit = null, string? folder = null) =>
+        Func<Task<bool>>? mayQuit = null, Action? quit = null, string? folder = null, Func<Task<string>>? feed = null) =>
         SparkleUpdates.For(
             build, key, version, folder ?? DataFolder(), sparkle, action =>
             {
                 action();
                 return true;
             },
-            mayQuit ?? (() => Task.FromResult(true)), quit ?? (() => { }), () => Task.FromResult(Offered));
+            mayQuit ?? (() => Task.FromResult(true)), quit ?? (() => { }), feed ?? (() => Task.FromResult(Offered)));
 
     private SparkleUpdates Started(
         StandInSparkle sparkle, string version = "1.0.0", Func<Task<bool>>? mayQuit = null, Action? quit = null)
@@ -141,6 +146,83 @@ public sealed class SparkleUpdatesTests
         Assert.AreEqual("1.0.0-beta.1", sparkle.Version);
         Assert.IsTrue(sparkle.ChecksAutomatically);
         Assert.IsFalse(Started(new StandInSparkle()).Beta);
+    }
+
+    // Before 1.0.0 no full release carries a feed: WinSparkle's own checks failed, and Check now showed its error.
+    [TestMethod]
+    public void ABetaChecksNothingUntilAFullReleaseHasAFeed()
+    {
+        var feed = Missing;
+        var sparkle = new StandInSparkle();
+        var updates = Made(sparkle, version: "1.0.0-beta.4", feed: () => feed());
+        var changes = 0;
+        updates.Changed += (_, _) => changes++;
+
+        updates.Start();
+        updates.Check();
+
+        Assert.IsFalse(sparkle.Started, "WinSparkle checks on its own");
+        Assert.IsFalse(updates.Available);
+        Assert.AreEqual(SparkleUpdates.NoFeed, updates.Refusal);
+        Assert.IsFalse(updates.ChecksAutomatically);
+        Assert.AreEqual(0, sparkle.Checks);
+        Assert.AreEqual(1, changes);
+
+        feed = () => Task.FromResult(Offered);
+        updates.LookForFeed();
+
+        Assert.IsTrue(sparkle.Started);
+        Assert.IsTrue(updates.Available);
+        Assert.IsNull(updates.Refusal);
+        Assert.IsTrue(sparkle.ChecksAutomatically);
+        Assert.AreEqual(2, changes);
+    }
+
+    // Offline, a beta cannot tell, so WinSparkle starts as it does for a full release and says what it finds.
+    [TestMethod]
+    public void ABetaThatCannotReadTheFeedStartsWinSparkle()
+    {
+        var sparkle = new StandInSparkle();
+        var updates = Made(
+            sparkle, version: "1.0.0-beta.4",
+            feed: () => Task.FromException<string>(new HttpRequestException("No such host is known.")));
+
+        updates.Start();
+
+        Assert.IsTrue(sparkle.Started);
+        Assert.IsTrue(updates.Available);
+        Assert.IsNull(updates.Refusal);
+    }
+
+    [TestMethod]
+    public void AFullReleaseNeverWaitsForTheFeed()
+    {
+        var sparkle = new StandInSparkle();
+        var updates = Made(sparkle, feed: Missing);
+
+        Assert.IsTrue(updates.Available, "before it starts, as the window may show first");
+        updates.Start();
+        updates.LookForFeed();
+
+        Assert.IsTrue(sparkle.Started);
+        Assert.IsNull(updates.Refusal);
+    }
+
+    // Pitboard ends while the read is out, and WinSparkle would start over an app that is quitting.
+    [TestMethod]
+    public void ABetaStoppedBeforeTheFeedAnswersNeverStartsWinSparkle()
+    {
+        var answer = new TaskCompletionSource<string>();
+        var sparkle = new StandInSparkle();
+        var updates = Made(sparkle, version: "1.0.0-beta.4", feed: () => answer.Task);
+
+        updates.Start();
+        updates.Shutdown();
+        answer.SetResult(Offered);
+        updates.LookForFeed();
+
+        Assert.IsFalse(sparkle.Started);
+        Assert.AreEqual(0, sparkle.Stops);
     }
 
     [TestMethod]

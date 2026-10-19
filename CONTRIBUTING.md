@@ -458,8 +458,9 @@ own files. That script first holds the WiX SDK to nuget.org's hash, so raising
 `WixToolset.Sdk` in `global.json` needs its hash there too. CI never installs an MSI:
 `extract-msi.ps1` extracts each with `msiexec /a`, `check-windows-app.ps1` checks the files
 the signed one holds, `check-windows-msi.ps1` each one's version, layout, command line in `bin`
-and share target, at 0.x the UI test of the release gate starts the signed one's
-`Pitboard.exe`, and `Pitboard.Installer.Tests` reads each one's tables and asks its
+and share target, the UI tests of the release gate start the signed one's `Pitboard.exe`,
+which refuses at 0.x and at 1.x takes back what it registered with `--unregister`, and
+`Pitboard.Installer.Tests` reads each one's tables and asks its
 `pitboard_ffi.dll` whether it opens. `test-windows-app.ps1` tests `check-windows-msi.ps1` and `validate-windows-msi.ps1` too,
 and runs the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of
 it with a row changed and on the package the job signed. The MSI takes its version from

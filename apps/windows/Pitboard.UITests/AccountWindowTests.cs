@@ -20,7 +20,7 @@ public sealed class AccountWindowTests
 
         OpenFromItsRow(launched, "claude/work", "claude.ai");
 
-        Launched.Loads(launched.Window("work"), "claude.ai stand-in");
+        Launched.Loads(launched.AccountWindow("work"), "claude.ai stand-in");
     }
 
     [TestMethod]
@@ -40,7 +40,7 @@ public sealed class AccountWindowTests
     public void ASignInLinkOpensASignInWindowThatClosesItself()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
 
         Launched.Press(window, "Continue with appleid.apple.com");
         var signIn = launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
@@ -55,7 +55,7 @@ public sealed class AccountWindowTests
     {
         using var launched = OpenChatGPT();
 
-        Launched.Press(launched.Window("main"), "Sign in in a window");
+        Launched.Press(launched.AccountWindow("main"), "Sign in in a window");
         var signIn = launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
         Launched.Press(signIn, "Done");
 
@@ -66,7 +66,7 @@ public sealed class AccountWindowTests
     public void ClosingTheAccountsWindowClosesItsSignInWindow()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
         Launched.Press(window, "Continue with appleid.apple.com");
         launched.Find(found => found.ByAutomationId("sign-in"), "sign-in window");
 
@@ -83,7 +83,7 @@ public sealed class AccountWindowTests
     public void GoogleSignInIsStoppedInTheWindow()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
 
         Launched.Press(window, "Continue with Google");
 
@@ -97,7 +97,7 @@ public sealed class AccountWindowTests
     public void ASiteDownloadIsListedInTheWindow()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
 
         Launched.Press(window, "Download notes");
         launched.Invoke("Download");
@@ -136,7 +136,7 @@ public sealed class AccountWindowTests
     public void FindShowsTheFindBar()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
         Foreground.Require(window);
         Launched.Within(window, found => found.ByName("chatgpt.com stand-in").And(found.ByControlType(ControlType.Text)), "the page")
             .Click();
@@ -149,11 +149,31 @@ public sealed class AccountWindowTests
         Assert.IsNotNull(bar, "WebView2's find bar did not show");
     }
 
+    // From the toolbar, where the page's own keys do not reach.
+    [TestMethod]
+    public void TheToolbarTakesBackAndCtrlW()
+    {
+        using var launched = OpenChatGPT();
+        var window = launched.AccountWindow("main");
+        Launched.Press(window, "A chat");
+        Launched.Shows(window, "A Pitboard fixture page at /chat/fixture", exact: false);
+        Foreground.Require(window);
+        Launched.Within(window, found => found.ByAutomationId("MoreButton"), "the command bar's More").Focus();
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.ALT, VirtualKeyShort.LEFT);
+
+        Launched.Shows(window, "A Pitboard fixture page at /.", exact: false);
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_W);
+        Assert.IsTrue(
+            Retry.WhileTrue(() => Windows(launched, "main") > 0, TimeSpan.FromSeconds(10), ignoreException: true).Result,
+            $"the account's window stayed: {launched.Shown()}");
+    }
+
     [TestMethod]
     public void RemovingWebsiteDataAsksFirstAndStartsOver()
     {
         using var launched = OpenChatGPT();
-        var window = launched.Window("main");
+        var window = launched.AccountWindow("main");
         // The first opening says how to sign in; put it away, and leave the home page.
         var note = Launched.Within(window, found => found.ByAutomationId("window.note"), "note");
         Launched.Within(note, found => found.ByAutomationId("CloseButton"), "the note's close button").Patterns.Invoke.Pattern.Invoke();
@@ -176,7 +196,7 @@ public sealed class AccountWindowTests
 
         OpenFromItsRow(launched, "codex/spare");
 
-        Launched.Loads(launched.Window("spare"), "chatgpt.com stand-in");
+        Launched.Loads(launched.AccountWindow("spare"), "chatgpt.com stand-in");
     }
 
     // From its row's shortcut menu, which needs no notification-area icon. Ended if it fails here: a Pitboard left
@@ -188,7 +208,7 @@ public sealed class AccountWindowTests
         {
             launched.OpenWindow();
             OpenFromItsRow(launched, "codex/main");
-            Launched.Loads(launched.Window("main"), "chatgpt.com stand-in");
+            Launched.Loads(launched.AccountWindow("main"), "chatgpt.com stand-in");
             return launched;
         }
         catch
@@ -205,7 +225,7 @@ public sealed class AccountWindowTests
         launched.Find(found => found.ByAutomationId($"window.{site}/{label}"), "the row's window item").Patterns.Invoke.Pattern.Invoke();
     }
 
-    private static int Windows(Launched launched, string title) => launched.Titles().Count(shown => shown == title);
+    private static int Windows(Launched launched, string label) => launched.Titles().Count(shown => Launched.OfAccount(shown, label));
 
     private static bool Says(AutomationElement window, string automationId, string text) =>
         Retry.WhileFalse(

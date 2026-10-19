@@ -1594,16 +1594,27 @@ fn the_menu_lists_every_account_under_its_tool() {
             )
         })
         .collect();
+    let with_figure = |title: &str, figure: &str| match OS {
+        Os::Windows => format!("{title} · {figure}"),
+        Os::MacOs | Os::Linux => title.to_owned(),
+    };
     assert_eq!(
         sections,
         [
             (
                 Some("Claude Code".into()),
-                vec!["work".into(), "old".into(), "personal".into()]
+                vec![
+                    with_figure("work", "42%"),
+                    "old".into(),
+                    with_figure("personal", "100%")
+                ]
             ),
             (
                 Some("Codex".into()),
-                vec!["main · Pro".into(), "spare · Pro".into()]
+                vec![
+                    with_figure("main · Pro", "18%"),
+                    with_figure("spare · Pro", "0%")
+                ]
             ),
         ]
     );

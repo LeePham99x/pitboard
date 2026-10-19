@@ -59,6 +59,22 @@ public sealed class SettingsTests
         Assert.IsTrue(Becomes(toggle, ToggleState.Off));
     }
 
+    // The fixture's stand-in for a Run value Settings > Apps > Startup turned off. The link is not pressed: it opens
+    // the runner's own Settings.
+    [TestMethod]
+    public void StartAtSignInTurnedOffInWindowsSettingsLinksThere()
+    {
+        using var launched = Launched.Start(
+            Builds.Debug, "oneTool", new Dictionary<string, string> { ["PITBOARD_FIXTURE_STARTUP"] = "off" });
+        OpenSettings(launched);
+        var toggle = Control(launched, "settings.startAtSignIn");
+
+        Assert.IsTrue(Enables(toggle, false), "the switch can be turned on past Settings");
+        Assert.AreEqual(ToggleState.Off, State(toggle));
+        Assert.IsTrue(Says(launched, "Turned off in Settings > Apps > Startup", Shortly));
+        Assert.IsNotNull(Launched.Pressable(launched.Window("Pitboard"), "Open Startup settings"), "no link to Settings > Apps > Startup");
+    }
+
     [TestMethod]
     public void SwitchingBeforeAnAccountRunsOut()
     {

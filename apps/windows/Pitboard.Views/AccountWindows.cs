@@ -23,12 +23,13 @@ public sealed class AccountWindows
         _janitor = new StoreJanitor(new ProfileFolders(web, hidden));
     }
 
-    // Opening one again brings the open one forward. A held store opens none: its menu item says why.
+    // Opening one again brings the open one forward, or back where it went out of sight. A held store opens none: its
+    // menu item says why.
     public void Open(WindowAccount account)
     {
         if (_open.TryGetValue(account.Store, out var shown))
         {
-            shown.Bring();
+            InFront(shown);
             return;
         }
 
@@ -38,10 +39,15 @@ public sealed class AccountWindows
         }
 
         var window = new AccountWindow(account.Store, _web, _downloads, _model.Send);
+        window.WentAway += () => _model.Send(new Intent.WindowClosed(window.Store));
         window.Closed += (_, _) =>
         {
             _open.Remove(window.Store);
-            _model.Send(new Intent.WindowClosed(window.Store));
+            // One out of sight said so as it went.
+            if (!window.Away)
+            {
+                _model.Send(new Intent.WindowClosed(window.Store));
+            }
         };
         _open[account.Store] = window;
         _model.Send(new Intent.WindowOpened(account.Store));
@@ -49,8 +55,8 @@ public sealed class AccountWindows
         window.Activate();
     }
 
-    // Asked over the window of an account whose download is under way, or another account window. With none open,
-    // nothing is: a download goes with the browser process, which exits once the last page closes.
+    // Asked over the window of an account whose download is under way, brought back where the person closed it, or over
+    // another account window. With none, nothing is: every download went with the browser process.
     public async Task<bool> MayQuit()
     {
         if (_downloads.QuitQuestion is not { } question)
@@ -65,7 +71,7 @@ public sealed class AccountWindows
             return true;
         }
 
-        window.Bring();
+        InFront(window);
         return await window.Confirm(question);
     }
 
@@ -81,6 +87,15 @@ public sealed class AccountWindows
             }
         }
 
+        // Deleting a store closes its pages, so one out of sight for its downloads closes first.
+        foreach (var deletion in shown.Deleting)
+        {
+            if (_open.TryGetValue(deletion.Store, out var away) && away.Away)
+            {
+                away.Close();
+            }
+        }
+
         foreach (var window in _open.Values.ToArray())
         {
             window.Follow(shown);
@@ -90,6 +105,20 @@ public sealed class AccountWindows
             shown.Deleting, shown.Held,
             (store, deleted) => _model.Send(deleted ? new Intent.StoreDeleted(store) : new Intent.StoreHeld(store)));
         FollowLink(shown.Picker);
+    }
+
+    internal AccountWindow? Window(string store) => _open.GetValueOrDefault(store);
+
+    // One out of sight comes back, and the model hears it opened again.
+    private void InFront(AccountWindow window)
+    {
+        if (window.Away)
+        {
+            window.Return();
+            _model.Send(new Intent.WindowOpened(window.Store));
+        }
+
+        window.Bring();
     }
 
     // Each link that arrives brings the window forward, since the app that handed it over is in front; it goes once

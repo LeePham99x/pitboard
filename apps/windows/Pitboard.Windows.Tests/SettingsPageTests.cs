@@ -34,8 +34,8 @@ public sealed class SettingsPageTests
 
     private static Task<SettingsPage> Shown(
         AppModel model, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0", Action<Uri>? open = null,
-        Action<string>? copy = null, string? notificationsOff = null) =>
-        Views.Navigated<SettingsPage>(Views.Context(model, start, updates, version, open, copy: copy, notificationsOff: notificationsOff));
+        Action<string>? copy = null, Func<NotificationsBlocked?>? notifications = null) =>
+        Views.Navigated<SettingsPage>(Views.Context(model, start, updates, version, open, copy: copy, notifications: notifications));
 
     private static bool Shows(SettingsPage page, string automationId) =>
         Views.Visible<TextBlock>(page).Any(text => AutomationProperties.GetAutomationId(text) == automationId);
@@ -85,6 +85,31 @@ public sealed class SettingsPageTests
 
         toggle.IsOn = false;
         Assert.IsFalse(start.On);
+    }
+
+    // As the macOS settings offer Open Login Items Settings: only Windows' own switch turns it on again.
+    [UITestMethod]
+    public async Task StartAtSignInTurnedOffInWindowsSettingsLinksThere()
+    {
+        var opened = new List<Uri>();
+        var page = await Shown(
+            new AppModel(new StandInModel(Snapshots.Read(1))), new StartAtSignIn(new FixtureStartupItem(offInSettings: true)),
+            open: opened.Add);
+        var toggle = Views.Element<ToggleSwitch>(page, "settings.startAtSignIn");
+        var link = Views.Element<HyperlinkButton>(page, "settings.startupSettings");
+
+        Assert.IsFalse(toggle.IsOn);
+        Assert.IsFalse(toggle.IsEnabled);
+        Assert.Contains(SettingsViewModel.TurnedOffNote, Views.Texts(page));
+        Assert.AreSame(Card(toggle), Card(link));
+        new HyperlinkButtonAutomationPeer(link).Invoke();
+        Assert.AreEqual(new Uri("ms-settings:startupapps"), opened.Single());
+
+        var on = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))));
+
+        Assert.IsFalse(
+            Views.Visible<HyperlinkButton>(on).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.startupSettings"),
+            "a link to Settings while nothing there holds Pitboard back");
     }
 
     [UITestMethod]
@@ -396,6 +421,32 @@ public sealed class SettingsPageTests
         Assert.Contains(SettingsViewModel.BetaNote, Views.Texts(page));
     }
 
+    // Before 1.0.0 the feed of full releases is GitHub's 404, which Check now showed as WinSparkle's error.
+    [UITestMethod]
+    public async Task ABetaHoldsChecksBackUntilAFullReleaseHasAFeed()
+    {
+        var updates = new StandInUpdates(beta: true);
+        updates.Feed(found: false);
+        var page = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), updates: updates, version: "1.0.0-beta.4");
+        var checkNow = Views.Element<Button>(page, "settings.checkNow");
+
+        Assert.IsFalse(checkNow.IsEnabled);
+        Assert.Contains(SparkleUpdates.NoFeed, Views.Texts(page));
+        Assert.IsFalse(
+            Views.Visible<ToggleSwitch>(page).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.checkAutomatically"),
+            "automatic checks are offered");
+        Assert.AreEqual(1, updates.Looks, "the visit did not look for the feed again");
+
+        updates.Feed(found: true);
+
+        Assert.IsTrue(checkNow.IsEnabled);
+        await Views.Until(
+            () => !Views.Texts(page).Contains(SparkleUpdates.NoFeed)
+                && Views.Visible<ToggleSwitch>(page).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.checkAutomatically"),
+            "the page still holds checks back once a full release has a feed");
+        Assert.Contains(SettingsViewModel.BetaNote, Views.Texts(page));
+    }
+
     [UITestMethod]
     public async Task AboutOpensOnItsVersionAndItsLinks()
     {
@@ -414,6 +465,11 @@ public sealed class SettingsPageTests
         var report = Views.Visible<HyperlinkButton>(page).Single(link => link.Content as string == "Report a problem");
         new HyperlinkButtonAutomationPeer(report).Invoke();
         Assert.AreEqual(new Uri("https://github.com/datlechin/pitboard/issues"), opened.Single());
+
+        // The window had no way to the help but the icon's menu.
+        var help = Views.Visible<HyperlinkButton>(page).Single(link => link.Content as string == "Pitboard help");
+        new HyperlinkButtonAutomationPeer(help).Invoke();
+        Assert.AreEqual(new Uri("https://docs.usepitboard.com"), opened.Last());
     }
 
     // A switch sat about 100 epx in from its card's edge with "Off" after it. Windows Settings puts it at
@@ -519,14 +575,38 @@ public sealed class SettingsPageTests
     [UITestMethod]
     public async Task AReleaseBuildWhoseNotificationsAreOffSaysWhy()
     {
-        const string why = "Windows offers this process no app notifications.";
-        var off = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), notificationsOff: why);
+        const string why = WindowsNotifications.Unoffered;
+        var off = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), notifications: () => new(why, InSettings: false));
 
         Assert.AreSame(Card(Said(off, why)), Views.Element<SettingsCard>(off, "settings.notifications"));
+        Assert.IsFalse(
+            Views.Visible<HyperlinkButton>(off).Any(link => AutomationProperties.GetAutomationId(link) == "settings.notificationSettings"),
+            "a link to a switch that is not the person's");
 
         var on = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))));
 
         Assert.IsFalse(Views.Visible<SettingsCard>(on).Any(card => AutomationProperties.GetAutomationId(card) == "settings.notifications"));
+    }
+
+    // docs/reference/windows-app.mdx promised that Settings says why Windows shows none; only a failed registration was said.
+    [UITestMethod]
+    public async Task NotificationsTurnedOffInWindowsSettingsLinkThere()
+    {
+        var opened = new List<Uri>();
+        NotificationsBlocked? blocked = new(WindowsNotifications.OffForPitboard, InSettings: true);
+        var page = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), open: opened.Add, notifications: () => blocked);
+        var card = Views.Element<SettingsCard>(page, "settings.notifications");
+        var link = Views.Element<HyperlinkButton>(page, "settings.notificationSettings");
+
+        Assert.AreSame(card, Card(Said(page, WindowsNotifications.OffForPitboard)));
+        Assert.AreSame(card, Card(link));
+        new HyperlinkButtonAutomationPeer(link).Invoke();
+        Assert.AreEqual(new Uri("ms-settings:notifications"), opened.Single());
+
+        blocked = null;
+        page.ViewModel!.ReadWindowsSettings();
+
+        Assert.AreEqual(Visibility.Collapsed, card.Visibility);
     }
 
     private sealed class Refusing : IStartupItem

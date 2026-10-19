@@ -41,7 +41,7 @@ public sealed partial class SettingsPage : Page
         {
             _context = (PaneContext)e.Parameter;
             ViewModel = new SettingsViewModel(
-                _context.Model, _context.StartAtSignIn, _context.Updates, _context.Version, _context.NotificationsOff);
+                _context.Model, _context.StartAtSignIn, _context.Updates, _context.Version, _context.Notifications);
             Bindings.Update();
             // After the bindings, so a failure's words are in place before Narrator is told of them.
             ViewModel.PropertyChanged += OnViewModelChanged;
@@ -72,6 +72,12 @@ public sealed partial class SettingsPage : Page
 
     private void OnStartAtSignInToggled(object sender, RoutedEventArgs args) =>
         ViewModel?.SetStartsAtSignIn(((ToggleSwitch)sender).IsOn);
+
+    private void OnOpenStartupSettings(object sender, RoutedEventArgs args) =>
+        Context.Open(new Uri(SettingsViewModel.StartupSettings));
+
+    private void OnOpenNotificationSettings(object sender, RoutedEventArgs args) =>
+        Context.Open(new Uri(SettingsViewModel.NotificationSettings));
 
     private void OnAutoSwitchToggled(object sender, RoutedEventArgs args) => ViewModel?.SetAutoSwitch(((ToggleSwitch)sender).IsOn);
 

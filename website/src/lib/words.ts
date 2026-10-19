@@ -66,7 +66,7 @@ export function menuLine(a: Account, moment: Moment): string {
 }
 
 // The in-use account closest to running out, a tie going to Claude Code (reference/mac-app#menu-bar-item).
-const fullest = (a: Account) => Math.max(...a.limits.map((l) => l.used));
+export const fullest = (a: Account) => Math.max(...a.limits.map((l) => l.used));
 const titled = (moment: Moment) =>
   (["claude", "codex"] as Tool[])
     .map((tool) => accounts.find((a) => a.tool === tool && isInUse(a, moment))!)

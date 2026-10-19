@@ -7,9 +7,20 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
+// Why Windows shows none of Pitboard's notifications, and whether Settings > System > Notifications turns them on.
+public sealed record NotificationsBlocked(string Why, bool InSettings);
+
 public sealed class WindowsNotifications(Build build, Func<IAppNotifications> system, string icon) : Notifications
 {
     public const string DisplayName = "Pitboard";
+
+    public const string Unoffered = "Windows offers this process no app notifications.";
+
+    public const string OffForPitboard = "Notifications from Pitboard are turned off in Settings > System > Notifications.";
+
+    public const string OffForEveryApp = "Notifications are turned off for every app in Settings > System > Notifications.";
+
+    public const string OffByPolicy = "Group Policy turns off app notifications on this PC.";
 
     public const string IconFile = "Pitboard.ico";
 
@@ -42,7 +53,7 @@ public sealed class WindowsNotifications(Build build, Func<IAppNotifications> sy
         {
             if (!notifications.IsSupported())
             {
-                Off = "Windows offers this process no app notifications.";
+                Off = Unoffered;
                 return null;
             }
 
@@ -81,6 +92,40 @@ public sealed class WindowsNotifications(Build build, Func<IAppNotifications> sy
 
         registered?.Show(Notification(notice));
     }
+
+    // At each settings visit, since the person turns them off and on in Settings while Pitboard runs.
+    public NotificationsBlocked? Read()
+    {
+        if (Refusal is { } refusal)
+        {
+            return new(refusal, InSettings: false);
+        }
+
+        IAppNotifications? registered;
+        lock (_lock)
+        {
+            registered = _registered;
+        }
+
+        try
+        {
+            return registered is null ? null : Blocked(registered.Setting());
+        }
+        catch (Exception error) when (Refused(error))
+        {
+            return null;
+        }
+    }
+
+    // Only the person's own switches are in Settings: Group Policy's and a manifest's are not.
+    public static NotificationsBlocked? Blocked(AppNotificationSetting setting) => setting switch
+    {
+        AppNotificationSetting.Enabled => null,
+        AppNotificationSetting.DisabledForApplication => new(OffForPitboard, InSettings: true),
+        AppNotificationSetting.DisabledForUser => new(OffForEveryApp, InSettings: true),
+        AppNotificationSetting.DisabledByGroupPolicy => new(OffByPolicy, InSettings: false),
+        _ => new(Unoffered, InSettings: false),
+    };
 
     // Before Pitboard exits, so a later click starts it again.
     public void Stop()

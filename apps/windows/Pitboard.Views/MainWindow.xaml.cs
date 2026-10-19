@@ -21,7 +21,7 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(
         AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow,
-        WindowPlacement placement, string? notificationsOff = null)
+        WindowPlacement placement, Func<NotificationsBlocked?>? notifications = null)
     {
         _model = model;
         InitializeComponent();
@@ -48,7 +48,7 @@ public sealed partial class MainWindow : Window
         _context = new PaneContext(model, _dialogs, startAtSignIn, updates, version)
         {
             OpenWindow = openWindow,
-            NotificationsOff = notificationsOff,
+            Notifications = notifications ?? (() => null),
         };
         // A dialog needs the window's XamlRoot, which its content has once loaded.
         Navigation.Loaded += (_, _) =>
@@ -66,12 +66,22 @@ public sealed partial class MainWindow : Window
             _sheets?.Dispose();
             _alerts?.Dispose();
         };
-        // Back from installing a tool the sheet said Pitboard could not find.
+        // Back from installing a tool the sheet said Pitboard could not find, or from a setting Windows keeps.
         Activated += (_, args) =>
         {
-            if (args.WindowActivationState != WindowActivationState.Deactivated && _model.Sheet is not null)
+            if (args.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                return;
+            }
+
+            if (_model.Sheet is not null)
             {
                 _model.Send(new Intent.LookForTools());
+            }
+
+            if (Pages.Content is SettingsPage { ViewModel: { } settings })
+            {
+                settings.ReadWindowsSettings();
             }
         };
         // VK_OEM_COMMA, which VirtualKey has no name for.
@@ -149,6 +159,12 @@ public sealed partial class MainWindow : Window
     {
         args.Handled = true;
         Close();
+    }
+
+    private void OnHelp(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        _context.Open(new Uri(IconMenu.HelpLink));
     }
 
     // Ctrl+N adds an account from any pane; the model then shows the accounts.

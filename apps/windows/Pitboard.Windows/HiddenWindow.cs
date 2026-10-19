@@ -20,15 +20,18 @@ public sealed unsafe class HiddenWindow
     private readonly Action _closing;
     private readonly Action<IconEvent> _icon;
     private readonly Action _taskbarCreated;
+    private readonly Action _displayChanged;
     private readonly uint _taskbarCreatedMessage;
     private readonly HWND _window;
 
-    public HiddenWindow(Action sessionEnding, Action closing, Action<IconEvent> icon, Action taskbarCreated)
+    public HiddenWindow(
+        Action sessionEnding, Action closing, Action<IconEvent> icon, Action taskbarCreated, Action displayChanged)
     {
         _sessionEnding = sessionEnding;
         _closing = closing;
         _icon = icon;
         _taskbarCreated = taskbarCreated;
+        _displayChanged = displayChanged;
         var instance = PInvoke.GetModuleHandle((string?)null);
         Register(instance);
         _taskbarCreatedMessage = PInvoke.RegisterWindowMessage("TaskbarCreated");
@@ -121,7 +124,15 @@ public sealed unsafe class HiddenWindow
             case PInvoke.WM_SETTINGCHANGE:
                 CultureInfo.CurrentCulture.ClearCachedData();
                 TimeZoneInfo.ClearCachedData();
+                _displayChanged();
                 return false;
+            case PInvoke.WM_DISPLAYCHANGE:
+                _displayChanged();
+                return false;
+            // A window of no size has nothing to resize to the rectangle suggested.
+            case PInvoke.WM_DPICHANGED:
+                _displayChanged();
+                return true;
             case PInvoke.WM_TIMECHANGE:
                 TimeZoneInfo.ClearCachedData();
                 return false;

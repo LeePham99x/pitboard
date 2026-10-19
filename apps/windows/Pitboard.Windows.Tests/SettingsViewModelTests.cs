@@ -25,12 +25,13 @@ public sealed class SettingsViewModelTests
     }
 
     private static (SettingsViewModel Shown, StandInModel Model, AppModel App) Over(
-        Snapshot snapshot, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0", string? notificationsOff = null)
+        Snapshot snapshot, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0",
+        Func<NotificationsBlocked?>? notifications = null)
     {
         var model = new StandInModel(snapshot);
         var app = new AppModel(model);
         var shown = new SettingsViewModel(
-            app, start ?? new StartAtSignIn(new FixtureStartupItem()), updates ?? new NoUpdates(), version, notificationsOff);
+            app, start ?? new StartAtSignIn(new FixtureStartupItem()), updates ?? new NoUpdates(), version, notifications ?? (() => null));
         shown.Listen();
         return (shown, model, app);
     }
@@ -54,6 +55,23 @@ public sealed class SettingsViewModelTests
             SettingsViewModel.UpdatesNotes(new NoUpdates(), "1.0.0-beta.1"));
         Assert.IsEmpty(SettingsViewModel.UpdatesNotes(new StandInUpdates(), "1.0.0"));
         Assert.AreEqual(NoUpdates.BadKey, SettingsViewModel.UpdatesNotes(new NoUpdates(NoUpdates.BadKey), "1.0.0").Single());
+
+        var waiting = new StandInUpdates(beta: true);
+        waiting.Feed(found: false);
+        CollectionAssert.AreEqual(
+            new[] { SparkleUpdates.NoFeed, SettingsViewModel.BetaNote }, SettingsViewModel.UpdatesNotes(waiting, "1.0.0-beta.4"));
+    }
+
+    // A beta that found no feed when Pitboard started looks again, as 1.0.0 may have come out since.
+    [TestMethod]
+    public void ShowingThePageLooksForTheFeedAgain()
+    {
+        var updates = new StandInUpdates(beta: true);
+        var (shown, _, _) = Over(Snapshots.Read(1), updates: updates);
+
+        shown.Shown();
+
+        Assert.AreEqual(1, updates.Looks);
     }
 
     // The model's span runs to 24:00, which a time picker cannot hold.
@@ -219,16 +237,58 @@ public sealed class SettingsViewModelTests
         Assert.IsFalse(shown.StartsAtSignIn);
         Assert.IsFalse(shown.CanStartAtSignIn);
         Assert.AreEqual(SettingsViewModel.TurnedOffNote, shown.StartupNote);
+        Assert.IsTrue(shown.OffersStartupSettings);
     }
 
+    // Back from Settings > Apps > Startup, where the person turned Pitboard off while the page showed.
     [TestMethod]
-    public void NotificationsAreSaidOnlyWhereARefusalTurnedThemOff()
+    public void ReadingWindowsSettingsAgainShowsWhatSettingsChangedAndAsksTheModelNothing()
     {
-        Assert.IsFalse(Over(Snapshots.Read(1)).Shown.HasNotificationsOff);
+        var key = new StandInRunKey();
+        var item = new RunValue(Build.Release, @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe", key);
+        item.Write(starts: true);
+        var (shown, model, _) = Over(Snapshots.Read(1), new StartAtSignIn(item));
+        shown.Shown();
+        var sent = model.Sent.Count;
+        var told = 0;
+        shown.PropertyChanged += (_, _) => told++;
 
-        var (off, _, _) = Over(Snapshots.Read(1), notificationsOff: "Windows offers this process no app notifications.");
+        Assert.IsTrue(shown.StartsAtSignIn);
+        Assert.IsFalse(shown.OffersStartupSettings);
+
+        key.Approvals["Pitboard"] = [0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        shown.ReadWindowsSettings();
+
+        Assert.IsFalse(shown.StartsAtSignIn);
+        Assert.IsTrue(shown.OffersStartupSettings);
+        Assert.IsGreaterThan(0, told);
+        Assert.AreEqual(sent, model.Sent.Count, string.Join(", ", model.Sent.Skip(sent)));
+    }
+
+    // Read at each visit and as the window comes back, from Settings > System > Notifications among others.
+    [TestMethod]
+    public void NotificationsAreSaidOnlyWhileWindowsBlocksThem()
+    {
+        var (on, _, _) = Over(Snapshots.Read(1));
+        on.Shown();
+        Assert.IsFalse(on.HasNotificationsOff);
+
+        NotificationsBlocked? blocked = new(WindowsNotifications.Unoffered, InSettings: false);
+        var (off, _, _) = Over(Snapshots.Read(1), notifications: () => blocked);
+        off.Shown();
 
         Assert.IsTrue(off.HasNotificationsOff);
-        Assert.AreEqual("Windows offers this process no app notifications.", off.NotificationsOff);
+        Assert.AreEqual(WindowsNotifications.Unoffered, off.NotificationsOff);
+        Assert.IsFalse(off.OffersNotificationSettings, "a link to a switch that is not the person's");
+
+        blocked = new(WindowsNotifications.OffForPitboard, InSettings: true);
+        off.ReadWindowsSettings();
+        Assert.AreEqual(WindowsNotifications.OffForPitboard, off.NotificationsOff);
+        Assert.IsTrue(off.OffersNotificationSettings);
+
+        blocked = null;
+        off.ReadWindowsSettings();
+        Assert.IsFalse(off.HasNotificationsOff);
+        Assert.IsFalse(off.OffersNotificationSettings);
     }
 }

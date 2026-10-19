@@ -71,8 +71,9 @@ pub struct OpenWindow {
     /// What it says above its page as it opens: how to sign in, where its store is new to
     /// this Pitboard directory and so holds no sign-in.
     pub note: Option<WindowNoteKind>,
-    /// The button of its list of downloads that takes away the ones that have ended.
-    pub clear_downloads: Choice,
+    /// The button of its list of downloads that takes away the ones that have ended. `None`
+    /// on Windows, where the list is WebView2's own.
+    pub clear_downloads: Option<Choice>,
 }
 
 /// What an account window shows in place of its page until it can show it.
@@ -223,7 +224,7 @@ pub(crate) fn account_windows(seen: &Seen) -> AccountWindowsShown {
                 note,
                 // Held back until one of its own downloads has ended: before then it would
                 // clear nothing.
-                clear_downloads: Choice {
+                clear_downloads: (!matches!(seen.os, Os::Windows)).then(|| Choice {
                     title: "Clear".into(),
                     intent: Intent::ClearDownloads {
                         store: window.store.clone(),
@@ -232,7 +233,7 @@ pub(crate) fn account_windows(seen: &Seen) -> AccountWindowsShown {
                         .downloads
                         .iter()
                         .any(|download| download.store == window.store && !download.running()),
-                },
+                }),
             })
         })
         .collect();

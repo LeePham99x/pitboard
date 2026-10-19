@@ -116,8 +116,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `APPDATA`, `LOCALAPPDATA`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `PITBOARD_HOME` at fresh
   folders, set after building, as [Run the Windows debug build](CONTRIBUTING.md#run-the-windows-debug-build)
   shows. A Release build reads no fixture, and its data folder, icon and notifications ignore
-  scratch homes: only CI's UI test of the release gate starts one, and only at 0.x, where it
-  refuses. [The session machine](#the-session-machine) is the exception.
+  scratch homes: only CI's UI tests of the release gate start one. At 0.x it refuses. At 1.x
+  `TheReleasedBuildTakesBackWhatItRegisteredOnUnregister` starts it, exits it and runs it with
+  `--unregister`, only on a GitHub-hosted runner as the fresh standard user
+  `test-as-standard-user.ps1` makes. [The session machine](#the-session-machine) is the
+  exception.
 - Never start a built `Pitboard.exe` or `PitboardShare.exe` from Explorer, Start, a shortcut,
   `start`, `Invoke-Item`, a notification, the share sheet or a `pitboard://` or
   `pitboard-debug://` link, on any account but [the session machine's](#the-session-machine)
@@ -129,7 +132,10 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never let a test, a fixture or a Debug build register with Windows: no
   `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
   no package and no certificate in a store. Only a Release build installed by an MSI
-  registers, and `Pitboard.Probe` on [the session machine](#the-session-machine).
+  registers, and `Pitboard.Probe` on [the session machine](#the-session-machine). The
+  exception is the Release build `TheReleasedBuildTakesBackWhatItRegisteredOnUnregister`
+  starts at 1.x as a runner's fresh standard user, whose `--unregister` takes back what it
+  registered before the leak check.
 - Never give `Pitboard.exe`, `pitboard.exe` or a process they start a package identity. Only
   `PitboardShare.exe` carries an `<msix>` manifest element.
 - Never install an MSI built from a branch on an account that holds real logins, or on a CI

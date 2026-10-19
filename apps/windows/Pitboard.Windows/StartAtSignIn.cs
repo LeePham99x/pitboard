@@ -27,7 +27,7 @@ public sealed class StartAtSignIn(IStartupItem item)
 #if DEBUG
         if (start.Fixture is not null)
         {
-            return new(new FixtureStartupItem());
+            return new(new FixtureStartupItem(start.Environment.GetValueOrDefault(FixtureStartupItem.Variable) == "off"));
         }
 #endif
         return new(new RunValue(start.Identity.Build, exe, new RegistryRunKey()));
@@ -76,17 +76,33 @@ public sealed class StartAtSignIn(IStartupItem item)
 }
 
 #if DEBUG
-// Starts nothing, so a fixture's settings turn start at sign-in on and off as the macOS fixture's login item does.
-public sealed class FixtureStartupItem : IStartupItem
+// Starts nothing, so a fixture's settings turn start at sign-in on and off as the macOS fixture's login item does. Off in
+// Settings, it is a Run value that Settings > Apps > Startup turned off, which RunValue leaves as it finds it.
+public sealed class FixtureStartupItem(bool offInSettings = false) : IStartupItem
 {
-    private bool _on;
+    // A UI test sets it to "off".
+    public const string Variable = "PITBOARD_FIXTURE_STARTUP";
+
+    private readonly bool _offInSettings = offInSettings;
+    private bool _written = offInSettings;
 
     public string? Refusal => null;
 
-    public bool Read() => _on;
+    public bool Read() => _written && !_offInSettings;
 
-    public bool TurnedOff() => false;
+    public bool TurnedOff() => _written && _offInSettings;
 
-    public void Write(bool starts) => _on = starts;
+    public void Write(bool starts)
+    {
+        if (starts && TurnedOff())
+        {
+            throw new InvalidOperationException(SettingsViewModel.TurnedOffNote);
+        }
+
+        if (!TurnedOff())
+        {
+            _written = starts;
+        }
+    }
 }
 #endif

@@ -3,7 +3,7 @@ namespace Pitboard.Windows;
 // The updater, as the macOS app's Updates: one that cannot update says why and offers nothing.
 public interface IUpdates
 {
-    // Raised on the app's thread when Waiting changes.
+    // Raised on the app's thread when Available, Refusal or Waiting changes.
     event EventHandler? Changed;
 
     bool Available { get; }
@@ -21,6 +21,9 @@ public interface IUpdates
     void Start();
 
     void Check();
+
+    // Each settings visit: a beta that found no full release with a feed reads it again.
+    void LookForFeed();
 
     void Shutdown();
 }
@@ -63,6 +66,10 @@ public sealed class NoUpdates(string refusal = NoUpdates.NoKey) : IUpdates
     }
 
     public void Check()
+    {
+    }
+
+    public void LookForFeed()
     {
     }
 

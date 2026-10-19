@@ -11,16 +11,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Pitboard warms up Claude Code accounts on Windows, from `pitboard warm`, `pitboard watch` and
   the app.
+- Where Windows' Startup settings turned Pitboard off, the Windows app's **Start when you sign in
+  to Windows** offers **Open Startup settings**, and reads the setting again as you come back to
+  the window.
+- The Windows app's **Settings** says when Windows turned Pitboard's notifications off, or every
+  app's, and offers **Open notification settings**.
+- The Windows app's window opens Pitboard's help with F1, and its **About** links to it.
+- The Windows app's menu shows each account's most used limit after its name, as in
+  **work · Max 20x · 42%**, where the menu bar app shows the account's limits under it.
+- On Windows, an account's window closes with Ctrl+W, and its toolbar takes Alt+Left, Alt+Right
+  and F5 or Ctrl+R for **Back**, **Forward** and **Reload**, as its page does.
 
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.16.0/pitboard_core/) shows the new one.
+- On Windows, an account's window shows its page's title before the account's label.
+- On Windows, a download goes on after you close its account's window, as on macOS, and
+  opening that window again before the download ends brings back the one you closed.
 
 ### Removed
 
 - **Breaking:** On Windows, `pitboard doctor` has no `warm_up` check, and nothing refuses with
   `warm_up_unbuilt`, since warm-ups run there. A script that looks for either can stop.
+
+### Fixed
+
+- On Windows, Narrator reads a note that takes another's place in an account's window.
+- Under a Windows contrast theme, the Pitboard window's minimize, maximize and close buttons
+  take the theme's colours, where they stayed black or white.
+- After a change of display scale, Pitboard for Windows loads its notification area icon again
+  at the size the new scale asks for.
+- On Windows, a beta of the app checks for updates only once a full release of Pitboard for
+  Windows is out, and dims **Check now** until then, instead of ending each check in an error.
 
 ## [1.0.0-beta.3] - 2026-10-19
 

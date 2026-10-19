@@ -227,10 +227,12 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
         words::capitalised(&said::runs_out(&scoped_name(&windows[limit]), in_seconds))
     });
-    let menu_title = match &account.plan {
-        Some(plan) => words::named_with_plan(&title, plan),
-        None => title.clone(),
-    };
+    let in_place_of_limits = in_place_of_limits(account, switching, needs_sign_in);
+    let figure = headline(account.usage.as_ref().map_or(&[], |usage| &usage.windows))
+        .filter(|_| in_place_of_limits.is_none())
+        .map(|limit| words::figure(limit.percent));
+    let menu_title =
+        words::named_in_menu(seen.os, &title, account.plan.as_deref(), figure.as_deref());
     let mut spoken = vec![spoken_name.clone()];
     if let Some(plan) = &account.plan {
         spoken.push(plan.clone());
@@ -245,7 +247,7 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         id: account.id.clone(),
         provider: account.provider.clone(),
         qualified: account.qualified.clone(),
-        summary: summary(seen, account, switching, needs_sign_in),
+        summary: in_place_of_limits.unwrap_or_else(|| limits_said(seen, account)),
         title,
         email: account.email.clone(),
         plan: account.plan.clone(),
@@ -540,31 +542,35 @@ fn login_unread(account: &Account) -> bool {
     !account.signed_in && account.stale.as_deref() == Some("login_unreadable")
 }
 
-/// Under the name in the menu, one line: what the account's limits stand at, and when one
-/// that has run out comes back. What stands in the way instead, when something does.
-fn summary(seen: &Seen, account: &Account, switching: bool, needs_sign_in: bool) -> String {
+/// The menu's line under an account where something stands in the way of its limits.
+fn in_place_of_limits(account: &Account, switching: bool, needs_sign_in: bool) -> Option<String> {
     if switching {
-        return "Switching…".into();
+        return Some("Switching…".into());
     }
     if account.unplaced || login_unread(account) {
-        return account
-            .stale_explanation
-            .clone()
-            .unwrap_or_else(|| "Can’t be read or switched".into());
+        return Some(
+            account
+                .stale_explanation
+                .clone()
+                .unwrap_or_else(|| "Can’t be read or switched".into()),
+        );
     }
     if account.label.is_none() {
-        return "Not named yet".into();
+        return Some("Not named yet".into());
     }
     if needs_sign_in {
-        return "Needs signing in again".into();
+        return Some("Needs signing in again".into());
     }
     let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
     if windows.is_empty() && account.stale.as_deref() == Some("no_usage") {
-        return words::NO_USAGE_READ.into();
+        return Some(words::NO_USAGE_READ.into());
     }
-    if windows.is_empty() {
-        return account.email.clone();
-    }
+    windows.is_empty().then(|| account.email.clone())
+}
+
+/// The menu's line under an account otherwise: its limits, and when a used-up one is back.
+fn limits_said(seen: &Seen, account: &Account) -> String {
+    let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
     // The limit that runs out first, said beside its own figure, where there is one.
     let first = runs_out_first(account, seen.now);
     let said: Vec<String> = windows
@@ -1052,6 +1058,46 @@ mod tests {
         assert_eq!(
             desktop_rows(vec![lapsed])[0].parked_note.as_deref(),
             Some("Its sign-in may have lapsed")
+        );
+    }
+
+    fn menu_titles(os: Os, accounts: Vec<Account>) -> Vec<String> {
+        let state = read(status(accounts, Vec::new()), vec![claude_code()]);
+        present_on(os, &state, NOW, &Utc)
+            .sections
+            .into_iter()
+            .flat_map(|section| section.accounts)
+            .map(|item| item.menu_title)
+            .collect()
+    }
+
+    // A Windows menu item has one line, where macOS puts the account's limits on a second.
+    #[test]
+    fn a_windows_menu_item_ends_with_the_figure_the_bar_would_show() {
+        let mut work = account(Some("work"))
+            .signed_in()
+            .limits(vec![window("session", 12.0), window("weekly_all", 64.4)])
+            .build();
+        work.plan = Some("Team 5x".into());
+        let accounts = vec![
+            work,
+            account(Some("personal"))
+                .limits(vec![window("session", 100.0)])
+                .build(),
+            account(Some("spare")).build(),
+            account(Some("old"))
+                .switchable(false)
+                .limits(vec![window("session", 3.0)])
+                .build(),
+        ];
+        assert_eq!(
+            menu_titles(Os::Windows, accounts.clone()),
+            ["work · Team 5x · 64%", "personal · 100%", "spare", "old"],
+            "no figure where the line under it says something else"
+        );
+        assert_eq!(
+            menu_titles(Os::MacOs, accounts),
+            ["work · Team 5x", "personal", "spare", "old"]
         );
     }
 

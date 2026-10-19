@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 using Pitboard.Windows;
@@ -14,11 +15,13 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private readonly WebEnvironment _web;
     private readonly Downloads _downloads;
     private readonly Action<Intent> _send;
-    private readonly DialogHost _dialogs;
+    // Withdrawn as the window goes out of sight, which answers its questions no, and made again as it comes back.
+    private DialogHost _dialogs;
     private WebView2? _view;
     private WebSession? _session;
     private SignInWindow? _signIn;
     private Action? _standInChoice;
+    private WindowNoteKind? _noteShown;
     private bool _starting;
     private bool _closed;
 
@@ -35,9 +38,13 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(800 * scale)));
         WindowChrome.MinimumSize(this, 480, 360);
 
+        // The caption's close and Alt+F4. Close() raises no Closing.
+        AppWindow.Closing += (_, args) => args.Cancel = GoAway();
+        _downloads.Ended += OnDownloadEnded;
         Closed += (_, _) =>
         {
             _closed = true;
+            _downloads.Ended -= OnDownloadEnded;
             _dialogs.Withdraw();
             _signIn?.Close();
             _view?.Close();
@@ -45,8 +52,13 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         Show(null);
     }
 
+    public event Action? WentAway;
+
     // Its account's store, which is also its identity: one window per account.
     public string Store { get; }
+
+    // Closed by the person while a download of it was under way, and kept out of sight with its page until none is.
+    public bool Away { get; private set; }
 
     internal SignInWindow? SignIn => _signIn;
 
@@ -74,8 +86,21 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         }
     }
 
-    // A window closed meanwhile answers no.
+    // A window closed or out of sight meanwhile answers no.
     public Task<bool> Confirm(Question question) => _dialogs.Confirm(question);
+
+    // Back in sight, with the page it kept.
+    public void Return()
+    {
+        Away = false;
+        _dialogs = new DialogHost(() => Root.XamlRoot);
+        if (Page is { } page)
+        {
+            page.IsMuted = false;
+        }
+
+        AppWindow.Show();
+    }
 
     public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
     {
@@ -119,7 +144,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        Title = open.Account.Title;
+        ShowTitle(open.Account);
         if (_session is { } session)
         {
             session.Update(open.Account);
@@ -187,7 +212,18 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         page.HistoryChanged += (_, _) => ShowHistory();
         page.NavigationStarting += (_, args) => ShowLoading(!args.Cancel);
         page.NavigationCompleted += (_, _) => ShowLoading(false);
+        page.DocumentTitleChanged += (_, _) =>
+        {
+            if (_session is { } session)
+            {
+                ShowTitle(session.Account);
+            }
+        };
     }
+
+    // Microsoft's title bar text guidance names the document before the program.
+    private void ShowTitle(WindowAccount account) =>
+        Title = Page?.DocumentTitle is { Length: > 0 } page ? $"{page} - {account.Title}" : account.Title;
 
     private void Wait(WindowWaiting waiting)
     {
@@ -226,8 +262,16 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        Note.Message = session.Note is { } note ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
-        Note.IsOpen = session.Note is not null;
+        // Narrator hears an InfoBar as it opens, so a note in place of another opens it again.
+        var note = session.Note;
+        if (note is not null && Note.IsOpen && !Equals(note, _noteShown))
+        {
+            Note.IsOpen = false;
+        }
+
+        _noteShown = note;
+        Note.Message = note is not null ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
+        Note.IsOpen = note is not null;
         RemoveDataButton.IsEnabled = !session.PageClosed;
         ReloadButton.IsEnabled = true;
         ShowHistory();
@@ -297,6 +341,74 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     private void OnStop(object sender, RoutedEventArgs args) => Page?.Stop();
 
+    private void OnClose(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        if (!GoAway())
+        {
+            Close();
+        }
+    }
+
+    // The person's close while a download of the window is under way. WebView2 ends a download with its browser
+    // process, which exits as its last page closes, so the window goes out of sight with its page, as a macOS download
+    // goes on past its window.
+    private bool GoAway()
+    {
+        if (_closed || !_downloads.UnderWay(Store))
+        {
+            return false;
+        }
+
+        if (Away)
+        {
+            return true;
+        }
+
+        Away = true;
+        _dialogs.Withdraw();
+        _signIn?.Close();
+        if (Page is { } page)
+        {
+            page.IsMuted = true;
+        }
+
+        AppWindow.Hide();
+        WentAway?.Invoke();
+        return true;
+    }
+
+    // After the event, which may be WebView2's own.
+    private void OnDownloadEnded() =>
+        DispatcherQueue.TryEnqueue(Ui.Guarded(() =>
+        {
+            if (Away && !_closed && !_downloads.UnderWay(Store))
+            {
+                Close();
+            }
+        }));
+
+    private void OnBackKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(BackButton, () => Page?.GoBack());
+
+    private void OnForwardKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(ForwardButton, () => Page?.GoForward());
+
+    private void OnReloadKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(ReloadButton, TryAgain);
+
+    // What its button would do, while the button could be pressed.
+    private static bool Commanded(Control button, Action does)
+    {
+        if (!button.IsEnabled)
+        {
+            return false;
+        }
+
+        does();
+        return true;
+    }
+
     private void OnShowDownloads(object sender, RoutedEventArgs args) => Page?.OpenDefaultDownloadDialog();
 
     private void OnRemoveData(object sender, RoutedEventArgs args) => Removing = RemoveWebsiteData();
@@ -314,7 +426,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         }
 
         var alert = PitboardFfiMethods.RemoveDataAlert(session.Account);
-        if (!await _dialogs.Confirm(new Question(alert.Title, alert.Message, "Remove")))
+        if (!await Confirm(new Question(alert.Title, alert.Message, "Remove")))
         {
             return;
         }

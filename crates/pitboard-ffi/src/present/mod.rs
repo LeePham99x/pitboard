@@ -106,7 +106,8 @@ pub struct AccountItem {
     pub email: String,
     /// The plan its login says it is on, as the window's tag beside its name: "Team 5x".
     pub plan: Option<String>,
-    /// Its title as the menu says it, with its plan: "work · Team 5x".
+    /// Its title as the menu says it, with its plan: "work · Team 5x", and on Windows the
+    /// figure the menu bar would show of it: "work · Team 5x · 64%".
     pub menu_title: String,
     /// Its name where nothing around it says which tool it is for, as VoiceOver reads a row
     /// apart from its heading: "work", or "work (Codex)" beside another tool's accounts.

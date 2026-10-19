@@ -53,17 +53,20 @@ test("a beta's menu has no Check for updates, as IconMenu.cs offers it only besi
   assert.ok(!menu(false).some((e) => "command" in e && e.command === "Check for updates"));
 });
 
-test("the menu heads each tool's accounts with its name, and names each account with its plan", () => {
-  assert.ok(present("words.rs").includes('format!("{title} · {plan}")'));
+test("the menu heads each tool's accounts with its name, and names each account with its plan and the menu bar's figure", () => {
+  const words = present("words.rs");
+  assert.ok(words.includes("said.extend(plan);"));
+  assert.ok(words.includes("if matches!(os, Os::Windows) {\n        said.extend(figure);"));
+  assert.ok(present("accounts.rs").includes(".map(|limit| words::figure(limit.percent));"));
   for (const e of menu(false)) {
     if ("heading" in e) assert.ok(headings.has(e.heading), e.heading);
-    if ("account" in e) assert.match(e.account, /^\w+ · (Max 20x|Pro|Plus)$/);
+    if ("account" in e) assert.match(e.account, /^\w+ · (Max 20x|Pro|Plus) · \d+%$/);
   }
   assert.ok(!menu(false).some((e) => "heading" in e && e.heading === "Claude Desktop"));
   const checked = menu(false).filter((e) => "account" in e && e.checked);
   assert.deepEqual(
     checked.map((e) => ("account" in e ? e.account : "")),
-    ["work · Max 20x", "main · Pro"],
+    ["work · Max 20x · 40%", "main · Pro · 18%"],
   );
 });
 
@@ -71,7 +74,9 @@ test("an account's tooltip in the icon's menu is the line the menu bar app shows
   assert.ok(shell("IconMenu.cs").includes("Lines(item.Summary, item.Help)"));
   assert.ok(views("IconMenuFlyout.cs").includes("ToolTipService.SetToolTip(item, detail);"));
   assert.ok(
-    present("accounts.rs").includes("summary: summary(seen, account, switching, needs_sign_in),"),
+    present("accounts.rs").includes(
+      "summary: in_place_of_limits.unwrap_or_else(|| limits_said(seen, account)),",
+    ),
   );
   const [work] = iconMenu("before", false)
     .flat()

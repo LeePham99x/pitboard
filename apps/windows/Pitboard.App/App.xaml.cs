@@ -59,12 +59,14 @@ public partial class App : Application, IIconTargets
         Shell.RestartAfterUpdate(_start.Identity.Build);
         _startAtSignIn = StartAtSignIn.For(_start, Program.Exe);
         model.PropertyChanged += OnModelChanged;
+        var image = new IconImage(Shell.NotificationIconSize, Shell.AppIcon, Shell.DestroyIcon);
         _hidden = new HiddenWindow(
             sessionEnding: () => _lifetime?.EndSession(),
             closing: () => _lifetime?.End(),
             icon: happened => _commands?.Heard(happened),
-            taskbarCreated: () => _icon?.Readd());
-        _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
+            taskbarCreated: () => _icon?.Readd(),
+            displayChanged: () => image.Follow(shown => _icon?.Redraw(shown)));
+        _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, image.Handle, _start.Identity.IconGuid);
         _icon.Show(model.MenuBar.Spoken);
         var accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
         _accountWindows = accountWindows;
@@ -223,7 +225,7 @@ public partial class App : Application, IIconTargets
         {
             var window = new MainWindow(
                 _model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account),
-                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")), _notifications?.Refusal);
+                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")), () => _notifications?.Read());
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

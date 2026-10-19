@@ -35,6 +35,7 @@
     <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="{StaticResource PageContentPadding}">
       <StackPanel MaxWidth="1064" Spacing="{StaticResource SettingsCardSpacing}">
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Margin="1,0,0,6" Text="General" />
+        <!-- The toolkit's own sample puts a HyperlinkButton in a card's description, which the card's template styles. -->
         <toolkit:SettingsCard Header="Start when you sign in to Windows">
           <toolkit:SettingsCard.Description>
             <StackPanel>
@@ -44,6 +45,11 @@
                   Style="{StaticResource CriticalCaptionTextBlockStyle}"
                   Visibility="Collapsed"
                   AutomationProperties.LiveSetting="Assertive" />
+              <HyperlinkButton
+                  Content="Open Startup settings"
+                  Visibility="{x:Bind ViewModel.OffersStartupSettings, Mode=OneWay}"
+                  AutomationProperties.AutomationId="settings.startupSettings"
+                  Click="OnOpenStartupSettings" />
             </StackPanel>
           </toolkit:SettingsCard.Description>
           <ToggleSwitch
@@ -55,9 +61,19 @@
         </toolkit:SettingsCard>
         <toolkit:SettingsCard
             Header="Notifications"
-            Description="{x:Bind ViewModel.NotificationsOff}"
-            Visibility="{x:Bind ViewModel.HasNotificationsOff}"
-            AutomationProperties.AutomationId="settings.notifications" />
+            Visibility="{x:Bind ViewModel.HasNotificationsOff, Mode=OneWay}"
+            AutomationProperties.AutomationId="settings.notifications">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.NotificationsOff, Mode=OneWay}" />
+              <HyperlinkButton
+                  Content="Open notification settings"
+                  Visibility="{x:Bind ViewModel.OffersNotificationSettings, Mode=OneWay}"
+                  AutomationProperties.AutomationId="settings.notificationSettings"
+                  Click="OnOpenNotificationSettings" />
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+        </toolkit:SettingsCard>
 
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Limits" />
         <toolkit:SettingsExpander Header="Switch Claude Code automatically" AutomationProperties.AutomationId="settings.autoSwitchGroup">
@@ -245,7 +261,7 @@
           <toolkit:SettingsCard.Description>
             <StackPanel>
               <TextBlock Text="{x:Bind ViewModel.UpdatesState, Mode=OneWay}" />
-              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines}" IsTabStop="False">
+              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines, Mode=OneWay}" IsTabStop="False">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="x:String">
                     <TextBlock Text="{x:Bind}" TextWrapping="Wrap" />
