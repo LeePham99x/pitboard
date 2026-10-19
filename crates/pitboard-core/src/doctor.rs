@@ -992,11 +992,16 @@ fn judge_windows_settings(facts: &Facts) -> Vec<Check> {
     let mut checks = Vec::new();
     let settings = facts.windows_settings.clone().unwrap_or_default();
     if !settings.wsl.is_empty() {
+        // The ChatGPT app's WSL mode can hand a Linux codex this home (H9), not yet measured.
         checks.push(Check {
-            advice: "Claude Code and Codex installed there are installs of their own, with logins \
-                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in a \
-                     virtual machine, so Windows' list of processes does not show them running."
-                .into(),
+            advice: format!(
+                "Claude Code and Codex installed there are installs of their own, which Pitboard \
+                 on Windows does not switch. Claude Code there keeps its own login. Where Codex \
+                 there uses {}, Codex's home here, a switch here changes its login too. WSL 2 \
+                 runs them in a virtual machine, so Windows' list of processes does not show \
+                 them running.",
+                facts.codex.home.display()
+            ),
             ..ok(
                 "wsl",
                 "WSL",
@@ -8144,6 +8149,7 @@ mod tests {
             admin_approval: Some(true),
         });
         facts.pitboards = vec![copy("a"), copy("b"), copy("c")];
+        facts.codex.home = PathBuf::from(r"C:\Users\x\.codex");
         assert_eq!(
             said(&facts),
             [
@@ -8151,9 +8157,11 @@ mod tests {
                     "wsl",
                     Level::Ok,
                     "WSL holds Ubuntu and Debian".to_string(),
-                    "Claude Code and Codex installed there are installs of their own, with logins \
-                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in \
-                     a virtual machine, so Windows' list of processes does not show them running."
+                    "Claude Code and Codex installed there are installs of their own, which \
+                     Pitboard on Windows does not switch. Claude Code there keeps its own login. \
+                     Where Codex there uses C:\\Users\\x\\.codex, Codex's home here, a switch here \
+                     changes its login too. WSL 2 runs them in a virtual machine, so Windows' list \
+                     of processes does not show them running."
                         .to_string()
                 ),
                 (

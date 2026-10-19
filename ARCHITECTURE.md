@@ -3704,7 +3704,10 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
   Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
   names Microsoft, and there starts no shared background server where its home is on 9p,
-  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way.
+  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way. On Windows it says a
+  switch changes the login of a Codex in WSL that uses the Windows Codex home. Whether the
+  ChatGPT app's WSL mode hands its Linux codex that home is not measured (session M8), so
+  doctor says it of no distribution in particular.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor

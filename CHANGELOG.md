@@ -54,6 +54,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Windows were read from, not the macOS ones.
 - On Windows, Pitboard says to restart Codex's background app server from a terminal that is
   not elevated, since Codex refuses to start it from an elevated one.
+- On Windows, `pitboard doctor` says a switch changes the login of a Codex in WSL that uses
+  the Windows Codex home, where it said every tool in WSL keeps a login of its own.
 
 ## [1.0.0-beta.3] - 2026-10-19
 
