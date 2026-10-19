@@ -9,6 +9,10 @@
 //! - `children`: from an identity process, start the plain probe and a stand-in `claude.exe`
 //!   (a copy of the probe), each doing `write` with a tag of its own, and report whether each
 //!   carried the identity;
+//! - `launch`: from an identity process, open CF8's link through `LaunchUriAsync`, whose
+//!   handler writes too;
+//! - `handoff`: from an identity process, start the plain probe with a CF8 link as its only
+//!   argument, and report whether it got the link whole and carried the identity;
 //! - `read`: from any process, list the tags it can see in the real folder and key, and the
 //!   tags in the package's own redirected folder;
 //! - `clean`: remove the folder, the key, and `%LOCALAPPDATA%\Pitboard` itself when the
@@ -23,8 +27,6 @@ use super::{logon_now, sibling_exe, take_child_report};
 use crate::cli::{CF8_SCHEME, HANDED_OUT, SparseAction};
 use crate::report::Report;
 use serde_json::{Value, json};
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use windows::Foundation::Uri;
@@ -39,13 +41,6 @@ use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegEnumValueW, RegGetValueW, RegOpenKeyExW,
     RegSetValueExW,
 };
-use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
-    PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY, PROCESS_INFORMATION, STARTUPINFOEXW,
-    UpdateProcThreadAttribute,
-};
-use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE;
 
 const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
 const KEY: &str = r"Software\pitboard-probe-k1";
@@ -304,140 +299,28 @@ pub(super) fn handed(link: &str) -> Report {
     )
 }
 
-// The way PitboardShare.exe starts the Pitboard.exe beside it, and the policy it would add
-// should that child keep this process's identity.
+// The way PitboardShare.exe starts the Pitboard.exe beside it.
 fn handoff(scratch: &Path) -> Value {
     let link = format!("{CF8_SCHEME}://{HANDED_QUERY}");
-    let plain = sibling_exe("pitboard-probe");
-    let mut handed = serde_json::Map::new();
-    for (way, name, policy) in [
-        ("create_process", "plain", None),
-        (
-            "desktop_app_breakaway",
-            "breakaway",
-            Some(PROCESS_CREATION_DESKTOP_APP_BREAKAWAY_ENABLE_PROCESS_TREE),
-        ),
-    ] {
-        let report = scratch.join(format!("{}cf8-handed-{name}.json", crate::PROBE_PREFIX));
-        let _ = std::fs::remove_file(&report);
-        let result = match start_handed(&plain, &link, &report, policy) {
-            Err(code) => json!({ "start_error": code }),
-            Ok(child) => {
-                let exit = child.wait_ms(30_000);
-                if exit.is_none() {
-                    child.kill();
-                }
-                let child_report = take_child_report(&report).map(|r| r["data"].clone());
-                json!({
-                    "exit": exit,
-                    "link_arrived_whole": child_report.as_ref().map(|r| r["link"] == link.as_str()),
-                    "identity": child_report.map(|r| r["identity"].clone()),
-                })
-            }
-        };
-        handed.insert(way.into(), result);
-    }
-    json!({ "identity": identity(), "link": link, "handed": handed })
-}
-
-fn start_handed(
-    exe: &Path,
-    link: &str,
-    report: &Path,
-    policy: Option<u32>,
-) -> Result<ffi::Child, u32> {
-    let mut env = Vec::new();
-    for (name, value) in std::env::vars_os() {
-        if !name.eq_ignore_ascii_case(HANDED_OUT) {
-            push_variable(&mut env, &name, &value);
-        }
-    }
-    push_variable(&mut env, OsStr::new(HANDED_OUT), report.as_os_str());
-    env.push(0);
-    let Some(policy) = policy else {
-        return ffi::spawn(
-            None,
-            exe,
-            &[OsStr::new(link)],
-            CREATE_NO_WINDOW,
-            Some(&env),
-            None,
-        );
-    };
-
-    let mut size = 0usize;
-    // SAFETY: a null list asks only for the size one attribute needs.
-    unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size) };
-    // usize units, so the list is aligned as the pointers it holds.
-    let mut list = vec![0usize; size.div_ceil(size_of::<usize>())];
-    let attributes = list.as_mut_ptr().cast();
-    // SAFETY: a buffer of at least the size asked for.
-    if unsafe { InitializeProcThreadAttributeList(attributes, 1, 0, &mut size) } == 0 {
-        return Err(ffi::last_error());
-    }
-    // SAFETY: `policy` outlives the list, which is deleted below before this frame ends.
-    let updated = unsafe {
-        UpdateProcThreadAttribute(
-            attributes,
-            0,
-            PROC_THREAD_ATTRIBUTE_DESKTOP_APP_POLICY as usize,
-            (&policy as *const u32).cast(),
-            size_of::<u32>(),
-            std::ptr::null_mut(),
-            std::ptr::null(),
-        )
-    };
-    let started = if updated == 0 {
-        Err(ffi::last_error())
-    } else {
-        let app = ffi::wide(exe);
-        let mut line = ffi::quote_arg(exe.as_os_str());
-        line.push(u16::from(b' '));
-        line.extend(ffi::quote_arg(OsStr::new(link)));
-        line.push(0);
-        let mut start = STARTUPINFOEXW::default();
-        start.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
-        start.lpAttributeList = attributes;
-        let mut pi = PROCESS_INFORMATION::default();
-        // SAFETY: `app` and `line` are NUL-terminated and `line` is mutable as the call needs;
-        // `env` ends in two NULs; `start` is sized and its list initialized; `pi` receives two
-        // handles, one closed here and one owned by the result.
-        let ok = unsafe {
-            CreateProcessW(
-                app.as_ptr(),
-                line.as_mut_ptr(),
-                std::ptr::null(),
-                std::ptr::null(),
-                0,
-                EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-                env.as_ptr().cast(),
-                std::ptr::null(),
-                &start.StartupInfo,
-                &mut pi,
-            )
-        };
-        if ok == 0 {
-            Err(ffi::last_error())
-        } else {
-            drop(ffi::Owned::new(pi.hThread));
-            ffi::Owned::new(pi.hProcess)
-                .map(|process| ffi::Child {
-                    process,
-                    pid: pi.dwProcessId,
-                })
-                .ok_or_else(ffi::last_error)
-        }
-    };
-    // SAFETY: the list was initialized above.
-    unsafe { DeleteProcThreadAttributeList(attributes) };
-    started
-}
-
-fn push_variable(block: &mut Vec<u16>, name: &OsStr, value: &OsStr) {
-    block.extend(name.encode_wide());
-    block.push(u16::from(b'='));
-    block.extend(value.encode_wide());
-    block.push(0);
+    let report = scratch.join(format!("{}cf8-handed.json", crate::PROBE_PREFIX));
+    let _ = std::fs::remove_file(&report);
+    let status = std::process::Command::new(sibling_exe("pitboard-probe"))
+        .arg(&link)
+        .env(HANDED_OUT, &report)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let child = take_child_report(&report).map(|r| r["data"].clone());
+    json!({
+        "identity": identity(),
+        "link": link,
+        "handed": {
+            "exit": status.ok().and_then(|s| s.code()),
+            "link_arrived_whole": child.as_ref().map(|r| r["link"] == link.as_str()),
+            "identity": child.map(|r| r["identity"].clone()),
+        },
+    })
 }
 
 fn tags_in(dir: &Path) -> Vec<String> {

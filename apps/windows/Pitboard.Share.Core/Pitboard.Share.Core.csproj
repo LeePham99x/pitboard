@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     PitboardShare.exe's core, which builds on every system: pitboard-share-ffi's C# bindings,
-    generated into Generated/ by `cargo run -p uniffi-bindgen-csharp` and not committed, and
-    Sharing, what a share answers over the share operation the exe hands it.
+    generated into Generated/ by `cargo run -p uniffi-bindgen-csharp` and not committed,
+    Sharing, what a share answers over the share operation the exe hands it, and Handoff, how
+    PitboardShare.exe starts Pitboard.exe with the link.
   -->
   <PropertyGroup>
     <!-- Generated code reaches the library through pointers. -->

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Pitboard.Share.Core.Tests;
 
 [TestClass]
@@ -24,7 +26,7 @@ public sealed class HandoffTests
         var folder = Directory.CreateTempSubdirectory("pitboard-share-tests-");
         try
         {
-            Assert.IsFalse(Handoff.Start(folder.FullName, Link));
+            Assert.ThrowsExactly<Win32Exception>(() => Handoff.Start(folder.FullName, Link));
         }
         finally
         {

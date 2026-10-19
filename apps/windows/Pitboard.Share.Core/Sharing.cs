@@ -7,7 +7,7 @@ public interface IShareOperation
 
     Task<string?> WebLinkAsync();
 
-    Task<bool> LaunchAsync(string link);
+    void StartPitboard(string link);
 
     void ReportCompleted();
 
@@ -17,7 +17,7 @@ public interface IShareOperation
 // Pitboard.exe checks the link it is handed again, as it does any link.
 public static class Sharing
 {
-    public const string NotLaunched = "Pitboard couldn’t start the app that opens the page.";
+    public const string NotStarted = "Pitboard couldn’t start the app that opens the page.";
 
     public const string NotRead = "Pitboard couldn’t read the link that was shared. Share the page again.";
 
@@ -48,23 +48,16 @@ public static class Sharing
             return;
         }
 
-        bool launched;
         try
         {
-            launched = await share.LaunchAsync(link).ConfigureAwait(false);
+            share.StartPitboard(link);
         }
         catch (Exception)
         {
-            launched = false;
+            share.ReportError(NotStarted);
+            return;
         }
 
-        if (launched)
-        {
-            share.ReportCompleted();
-        }
-        else
-        {
-            share.ReportError(NotLaunched);
-        }
+        share.ReportCompleted();
     }
 }

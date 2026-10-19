@@ -1115,8 +1115,8 @@ function Find-SdkTool([string] $Name) {
 # scheme is put under the user's HKCU\Software\Classes, its handler the plain probe. The identity
 # process writes, starts its children, opens the link through LaunchUriAsync, as
 # PitboardShare.exe once handed a page on, and starts the plain probe through CreateProcessW
-# with a link as its only argument, with and without the desktop app breakaway policy, as
-# PitboardShare.exe starts Pitboard.exe; a process without identity reads back what each wrote.
+# with a link as its only argument, as PitboardShare.exe starts Pitboard.exe; a process
+# without identity reads back what each wrote.
 # PitboardShare.exe --register then adds PitboardShare's package, as the MSI does, and
 # Pitboard.exe --unregister-share removes it, as the MSI's removal does. The user's part runs in
 # its own Windows PowerShell, whose Appx cmdlets PowerShell 7 cannot load, and each change is

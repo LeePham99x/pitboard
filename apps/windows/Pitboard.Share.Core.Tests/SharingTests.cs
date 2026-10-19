@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Pitboard.Share.Core.Tests;
 
 [TestClass]
@@ -10,13 +12,13 @@ public sealed class SharingTests
     private const string NoLink = "There is no claude.ai or chatgpt.com link in what was shared.";
 
     [TestMethod]
-    public async Task ASitesPageLaunchesItsPitboardLinkAndCompletes()
+    public async Task ASitesPageStartsPitboardWithItsPitboardLinkAndCompletes()
     {
         var share = new RecordedShare(webLink: "https://chat.openai.com/c/x?y=1#z");
 
         await Sharing.HandOverAsync(share, "pitboard");
 
-        string[] said = ["started", "launched pitboard://open?url=https%3A%2F%2Fchatgpt.com%2Fc%2Fx%3Fy%3D1%23z", "completed"];
+        string[] said = ["started", "Pitboard.exe pitboard://open?url=https%3A%2F%2Fchatgpt.com%2Fc%2Fx%3Fy%3D1%23z", "completed"];
         CollectionAssert.AreEqual(said, share.Said);
     }
 
@@ -24,24 +26,13 @@ public sealed class SharingTests
     [DataRow("https://claude.ai/magic-link#a:b", SignIn, DisplayName = "a sign-in page")]
     [DataRow("https://example.com/", "Pitboard opens claude.ai and chatgpt.com links only. This link is on example.com.", DisplayName = "another site")]
     [DataRow(null, NoLink, DisplayName = "no web link")]
-    public async Task APageItRefusesReportsTheRefusalAndLaunchesNothing(string? webLink, string sentence)
+    public async Task APageItRefusesReportsTheRefusalAndStartsNothing(string? webLink, string sentence)
     {
         var share = new RecordedShare(webLink);
 
         await Sharing.HandOverAsync(share, "pitboard");
 
         string[] said = ["started", "error: " + sentence];
-        CollectionAssert.AreEqual(said, share.Said);
-    }
-
-    [TestMethod]
-    public async Task ALinkNoAppTakesIsReportedAsAnError()
-    {
-        var share = new RecordedShare(webLink: "https://chatgpt.com/", launches: false);
-
-        await Sharing.HandOverAsync(share, "pitboard");
-
-        string[] said = ["started", "launched pitboard://open?url=https%3A%2F%2Fchatgpt.com%2F", "error: " + Sharing.NotLaunched];
         CollectionAssert.AreEqual(said, share.Said);
     }
 
@@ -58,17 +49,17 @@ public sealed class SharingTests
     }
 
     [TestMethod]
-    public async Task ALaunchThatThrowsIsReportedAsAnError()
+    public async Task APitboardExeThatDoesNotStartIsReportedAsAnError()
     {
-        var share = new RecordedShare(webLink: "https://chatgpt.com/", launchThrows: true);
+        var share = new RecordedShare(webLink: "https://chatgpt.com/", startFails: true);
 
         await Sharing.HandOverAsync(share, "pitboard");
 
-        string[] said = ["started", "launched pitboard://open?url=https%3A%2F%2Fchatgpt.com%2F", "error: " + Sharing.NotLaunched];
+        string[] said = ["started", "Pitboard.exe pitboard://open?url=https%3A%2F%2Fchatgpt.com%2F", "error: " + Sharing.NotStarted];
         CollectionAssert.AreEqual(said, share.Said);
     }
 
-    private sealed class RecordedShare(string? webLink = null, bool launches = true, bool unreadable = false, bool launchThrows = false)
+    private sealed class RecordedShare(string? webLink = null, bool unreadable = false, bool startFails = false)
         : IShareOperation
     {
         public List<string> Said { get; } = [];
@@ -78,10 +69,13 @@ public sealed class SharingTests
         public Task<string?> WebLinkAsync() =>
             unreadable ? Task.FromException<string?>(new InvalidOperationException("The data is no longer there.")) : Task.FromResult(webLink);
 
-        public Task<bool> LaunchAsync(string link)
+        public void StartPitboard(string link)
         {
-            Said.Add("launched " + link);
-            return launchThrows ? Task.FromException<bool>(new InvalidOperationException("No app takes the link.")) : Task.FromResult(launches);
+            Said.Add("Pitboard.exe " + link);
+            if (startFails)
+            {
+                throw new Win32Exception(2, "The system cannot find the file specified.");
+            }
         }
 
         public void ReportCompleted() => Said.Add("completed");

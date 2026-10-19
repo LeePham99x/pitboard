@@ -11,7 +11,7 @@ internal sealed class SystemShareOperation(ShareOperation operation) : IShareOpe
     public async Task<string?> WebLinkAsync() =>
         operation.Data.Contains(StandardDataFormats.WebLink) ? (await operation.Data.GetWebLinkAsync()).AbsoluteUri : null;
 
-    public Task<bool> LaunchAsync(string link) => Task.FromResult(Handoff.Start(AppContext.BaseDirectory, link));
+    public void StartPitboard(string link) => Handoff.Start(AppContext.BaseDirectory, link);
 
     public void ReportCompleted() => operation.ReportCompleted();
 

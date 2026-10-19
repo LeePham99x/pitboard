@@ -204,7 +204,7 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
     Outcome::Report(report)
 }
 
-/// CF8: a probe started with a link as its only argument, as Pitboard.exe is.
+// CF8: a probe started with a link as its only argument, as Pitboard.exe is.
 pub fn handed(link: &str) -> Outcome {
     Outcome::Report(sparse::handed(link))
 }

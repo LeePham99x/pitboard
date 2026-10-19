@@ -94,8 +94,7 @@ the user, and adds the `pitboard-probe-cf8` link scheme under the user's
 `sparse --action launch` opens that link from the identity process through `LaunchUriAsync`,
 as `PitboardShare.exe` once handed a page to `Pitboard.exe`. `sparse --action handoff` starts
 the plain probe beside it through `CreateProcessW` with a link of that scheme as its only
-argument, as `PitboardShare.exe` starts `Pitboard.exe`, once as is and once with the desktop
-app breakaway policy, and reports whether each child got the link whole and carried the
-identity. Then `PitboardShare.exe --register` adds PitboardShare's package and
-`Pitboard.exe --unregister-share` removes it, as the MSI does. It undoes each change, and
-`k1.ps1` stays the VM's.
+argument, as `PitboardShare.exe` starts `Pitboard.exe`, and reports whether the child got
+the link whole and carried the identity. Then `PitboardShare.exe --register` adds
+PitboardShare's package and `Pitboard.exe --unregister-share` removes it, as the MSI does. It
+undoes each change, and `k1.ps1` stays the VM's.
