@@ -5,6 +5,7 @@ use super::engine::access_token;
 use crate::context::Context;
 use crate::duty::warm::Failure;
 use crate::duty::warm::run::{self, Headless, Ran};
+use crate::host::Os;
 use crate::provider::{ProviderError, ProviderId};
 use crate::service::Permit;
 use serde_json::Value;
@@ -48,13 +49,22 @@ pub(crate) fn headless(
             "json",
         ])
         .env("CLAUDE_CONFIG_DIR", home.join("config"))
-        .env("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "3")
         .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
         .env("DISABLE_AUTOUPDATER", "1");
-    Ok(Headless {
-        command,
-        token: Some(token.to_owned()),
-    })
+    let token = match ctx.os {
+        Os::MacOs | Os::Linux => {
+            command.env("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "3");
+            Some(token.to_owned())
+        }
+        // It reads no descriptor there (`windows_token_handover`), and this ahead of any login.
+        Os::Windows => {
+            command
+                .env("CLAUDE_CODE_OAUTH_TOKEN", token)
+                .env("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "1");
+            None
+        }
+    };
+    Ok(Headless { command, token })
 }
 
 /// Print mode's JSON result (`headless_result`): `is_error`, with `api_error_status` and
@@ -91,8 +101,107 @@ pub(crate) fn verdict(ran: &Ran) -> Result<(), Failure> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
+    use crate::host::Os;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn windows_hands_the_token_in_claude_codes_variable_and_every_other_system_on_descriptor_3() {
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let program = dir.path().join("bin").join("claude.exe");
+        std::fs::create_dir_all(program.parent().expect("a folder")).expect("bin");
+        std::fs::write(&program, "never run").expect("a program");
+        crate::host::fs::testing::make_runnable(&program).expect("runnable");
+        let home = dir.path().join("warm").join("claude");
+        let login = serde_json::json!({
+            "claudeAiOauth": {"accessToken": "access-work", "refreshToken": "refresh-work"}
+        });
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let mut ctx = Context::new(dir.path().to_path_buf())
+                .with_claude_program(program.clone())
+                .with_user("dana".into());
+            ctx.os = os;
+            ctx.system_root = Some(PathBuf::from(r"C:\Windows"));
+            let run = headless(&ctx, Permit::for_a_test(), &home, &login).expect("a run");
+            let env: BTreeMap<String, String> = run
+                .command
+                .get_envs()
+                .filter_map(|(name, value)| {
+                    Some((
+                        name.to_string_lossy().into_owned(),
+                        value?.to_string_lossy().into_owned(),
+                    ))
+                })
+                .collect();
+            let names: Vec<&str> = env.keys().map(String::as_str).collect();
+            let path = |under: &str| home.join(under).to_string_lossy().into_owned();
+            assert_eq!(env["CLAUDE_CONFIG_DIR"], path("config"), "{os:?}");
+            assert_eq!(env["HOME"], path("home"), "{os:?}");
+            assert!(
+                !env.values().any(|value| value.contains("refresh-work")),
+                "{os:?}: no refresh token is handed on"
+            );
+            match os {
+                Os::MacOs | Os::Linux => {
+                    assert_eq!(run.token.as_deref(), Some("access-work"), "{os:?}");
+                    assert_eq!(
+                        names,
+                        [
+                            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+                            "CLAUDE_CONFIG_DIR",
+                            "DISABLE_AUTOUPDATER",
+                            "HOME",
+                            "LANG",
+                            "NO_COLOR",
+                            "PATH",
+                            "TERM",
+                            "TMPDIR",
+                            "USER",
+                        ],
+                        "{os:?}"
+                    );
+                    assert_eq!(env["CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"], "3");
+                }
+                Os::Windows => {
+                    assert_eq!(run.token, None, "nothing on a descriptor");
+                    assert_eq!(
+                        names,
+                        [
+                            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                            "CLAUDE_CODE_OAUTH_TOKEN",
+                            "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
+                            "CLAUDE_CONFIG_DIR",
+                            "DISABLE_AUTOUPDATER",
+                            "HOME",
+                            "LANG",
+                            "NO_COLOR",
+                            "PATH",
+                            "SystemRoot",
+                            "TEMP",
+                            "TERM",
+                            "TMP",
+                            "TMPDIR",
+                            "USERNAME",
+                            "USERPROFILE",
+                        ]
+                    );
+                    assert_eq!(env["CLAUDE_CODE_OAUTH_TOKEN"], "access-work");
+                    assert_eq!(env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"], "1");
+                    assert_eq!(env["USERPROFILE"], path("home"));
+                    assert_eq!((&env["TEMP"], &env["TMP"]), (&path("tmp"), &path("tmp")));
+                    assert_eq!(env["SystemRoot"], r"C:\Windows");
+                    assert_eq!(env["USERNAME"], "dana");
+                }
+            }
+        }
+    }
 
     fn ran(exit: i32, stdout: &str) -> Ran {
         Ran {

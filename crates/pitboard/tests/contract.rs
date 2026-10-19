@@ -352,11 +352,7 @@ fn warm() {
     let (value, code) = json(&env, &["warm", "range", "07:30", "23:00"]);
     contract!("warm_range", value, code);
     let (value, code) = json(&env, &["warm"]);
-    if os::warm_ups_run_here() {
-        contract!("warm", value, code);
-    } else {
-        contract!("warm_unavailable", value, code);
-    }
+    contract!("warm", value, code);
     let (value, code) = json(&env, &["warm", "range", "06:00", "06:00"]);
     contract!("warm_range_empty", value, code);
 }

@@ -4,15 +4,22 @@ sidebarTitle: "Warm up"
 description: "Have Pitboard start the five-hour period of the accounts you choose as soon as the last one resets."
 ---
 
-Pitboard warms up Claude Code accounts on macOS and Linux. On Windows, Pitboard warms up no account, because Claude Code there does not read the access token a warm-up hands it.
-
-A five-hour period starts with the account's first request after the last one reset, so one started early resets early. A warm-up has Claude Code send one short message with the account's login as soon as the last period resets. [When a period starts](/concepts/usage#when-a-period-starts) has the measurements.
+Pitboard warms up Claude Code accounts only. A five-hour period starts with the account's first request after the last one reset, so one started early resets early. A warm-up has Claude Code send one short message with the account's login as soon as the last period resets. [When a period starts](/concepts/usage#when-a-period-starts) has the measurements.
 
 Warm-up is off for every account until you turn it on for one. Pitboard warms up between hours you choose, 06:00 to 22:00 by default.
 
 ## Turn it on
 
-In the app, turn on each account to warm up in **Settings** > **Limits**, under **Warm up limits**, and set the hours with **From** and **To**. You can also choose **Warm Up Automatically** in an account's shortcut menu in the **Accounts** pane. The app warms up accounts only while it is open, and each account's row says when it warms up next.
+<Tabs>
+  <Tab title="macOS">
+    In **Settings** > **Limits**, under **Warm up limits**, turn on each account to warm up, and set the hours with **From** and **To**. You can also choose **Warm Up Automatically** in an account's shortcut menu in the **Accounts** pane.
+  </Tab>
+  <Tab title="Windows">
+    Right-click Pitboard's icon in the notification area and select **Settings**. Under **Limits**, expand **Warm up limits**, turn on each account to warm up, and set the hours with **From** and **To**. You can also right-click an account in **Accounts** and select **Warm up automatically**.
+  </Tab>
+</Tabs>
+
+The app warms up accounts only while it is open, and each account's row says when it warms up next.
 
 On the command line, turn it on for an account and set the hours:
 
@@ -33,7 +40,16 @@ The app, `pitboard watch` and `pitboard warm` share one setting. [`warm`](/refer
 
 ## Warm up an account now
 
-In the **Accounts** pane, choose **Warm Up Now** in the account's shortcut menu, or run:
+<Tabs>
+  <Tab title="macOS">
+    In the **Accounts** pane, choose **Warm Up Now** in the account's shortcut menu.
+  </Tab>
+  <Tab title="Windows">
+    In **Accounts**, right-click the account and select **Warm up now**.
+  </Tab>
+</Tabs>
+
+On the command line, run:
 
 ```sh
 pitboard warm now work
@@ -41,21 +57,13 @@ pitboard warm now work
 
 It ignores the hours. It starts nothing while the account's five-hour period is running.
 
-## On Windows
-
-The Windows app dims the hours and accounts under **Warm up limits** and says why, and its account menus have no warm-up items. `pitboard warm` saves what you turn on and prints why nothing warms up:
-
-```text
-Pitboard is not warming up accounts: warm-ups are not available on Windows, where Claude Code does not read the access token a warm-up hands it.
-```
-
-`pitboard warm now` refuses with `warm_up_unbuilt`. As read in the Windows builds of Claude Code 2.1.301, Claude Code reads a token handed to it through `/proc`, which Windows does not have.
-
 ## What a warm-up sends
 
 `claude -p` sends Anthropic one message on Claude Code's smallest model, with no tools, and fetches what Claude Code fetches as it starts, such as the account's profile and policy limits. Measured with Claude Code 2.1.296, the request costs about 3,100 tokens of the plan.
 
 Pitboard starts it from a folder of its own in the Pitboard directory, with `PATH`, your user name and any proxy variables from its own environment and nothing else. It hands Claude Code the account's access token on a pipe, never a refresh token, so the run cannot renew or spend a login. As read in 2.1.296, Claude Code keeps that token in no store.
+
+On Windows, Pitboard also passes on `SystemRoot`. As read in 2.1.303 on Windows, Claude Code reads no token from a pipe. It takes one in `CLAUDE_CODE_OAUTH_TOKEN` instead, as a login with no refresh token. Pitboard hands the access token in that variable, and `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` keeps it from the programs Claude Code starts. No warm-up on Windows has been measured against Anthropic, so whether Claude Code keeps the token in a store there is not known.
 
 [What leaves your machine](/security#what-leaves-your-machine) lists Pitboard's own requests.
 

@@ -1,14 +1,15 @@
 //! A tool's own headless run, which starts an account's period: the program, what it is
 //! given, how long it may take, and what it came to.
 //!
-//! The run is given the login's access token on file descriptor 3 and nothing else of it, so
-//! it can spend no refresh token a park or the tool itself still holds. Its environment is
-//! built from nothing: where programs are, who the person is, the proxy Pitboard was given,
-//! and a home of its own under Pitboard's directory, so no variable that signs the tool in
-//! some other way reaches it (`settings::OVERRIDING_ENV`), and nothing of the person's own
-//! configuration, history or sessions is read or written.
+//! The run is given the login's access token on file descriptor 3, or on Windows in a variable,
+//! and nothing else of it, so it can spend no refresh token a park or the tool itself still
+//! holds. Its environment is built from nothing: where programs are, who the person is, the
+//! proxy Pitboard was given, and a home of its own under Pitboard's directory, so no variable
+//! that signs the tool in some other way reaches it (`settings::OVERRIDING_ENV`), and nothing
+//! of the person's own configuration, history or sessions is read or written.
 
 use crate::context::Context;
+use crate::host::Os;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use std::ffi::OsString;
@@ -49,6 +50,7 @@ pub(crate) fn prepare(permit: Permit, home: &Path) -> std::io::Result<()> {
         home.join("home"),
         home.join("tmp"),
         home.join("work"),
+        home.join("config"),
     ] {
         crate::host::fs::create_private_dir(permit, &dir)?;
     }
@@ -83,8 +85,18 @@ pub(crate) fn command(
         .env("TERM", "dumb")
         .env("NO_COLOR", "1")
         .current_dir(home.join("work"));
+    if ctx.os == Os::Windows {
+        // Bun takes its home from `USERPROFILE` there, and Winsock its providers from `SystemRoot`.
+        command
+            .env("USERPROFILE", home.join("home"))
+            .env("TEMP", home.join("tmp"))
+            .env("TMP", home.join("tmp"));
+        if let Some(root) = &ctx.system_root {
+            command.env("SystemRoot", root);
+        }
+    }
     if let Some(user) = &ctx.user {
-        command.env("USER", user);
+        command.env(ctx.os.user_variable(), user);
     }
     for (name, value) in ctx.proxy.variables() {
         command.env(name, value);
@@ -157,8 +169,12 @@ mod tests {
         std::fs::write(home.join("home").join("left.json"), "{}").expect("written");
         prepare(Permit::for_a_test(), &home).expect("made again");
         assert!(!home.join("home").join("left.json").exists());
-        for sub in ["home", "tmp", "work"] {
+        for sub in ["home", "tmp", "work", "config"] {
             assert!(home.join(sub).is_dir(), "{sub}");
+            assert!(
+                crate::host::fs::testing::is_private(&home.join(sub)).expect("read"),
+                "{sub}"
+            );
         }
         clear(Permit::for_a_test(), &home);
         assert!(!home.exists());

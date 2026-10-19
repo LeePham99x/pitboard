@@ -263,10 +263,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
     holds `Overview`, each Claude Code account with where it stands, both by itself and for a
     warm-up asked for now (`Choice::now`), and `Halt`, why nothing is warmed up on this
-    machine: Windows, where Claude Code reads no token handed to it
-    (`windows_token_handover`), said whatever is turned on, a switch interrupted, a custom
-    OAuth endpoint, managed settings that sign every run of Claude Code in another way, or no
-    program. `decide.rs` is the rule, from the
+    machine: a switch interrupted, a custom OAuth endpoint, managed settings that sign every
+    run of Claude Code in another way, or no program. `decide.rs` is the rule, from the
     reading Anthropic gave, which login of the account is at hand (`Login`), the span and
     `warmed.json`, today's attempts (`Ledger`, by the clock's day): a period running, or one a
     warm-up the reading came before started, is `Running`; a limit of the account's own used
@@ -277,7 +275,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
     afresh for each run and removed after it, with an environment built from nothing but
     `PATH`, the person's name and the proxy, through `host::proc::run_within`: the access
     token on descriptor 3 through a pipe `dup2`ed in `pre_exec`, for at most 120 seconds, its
-    process group stopped past that, and whatever it left in the group stopped after it.
+    process group stopped past that, and whatever it left in the group stopped after it. On
+    Windows, which reads no descriptor (`windows_token_handover`), the token goes in
+    `CLAUDE_CODE_OAUTH_TOKEN` with `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` (`windows_token_env`),
+    `USERPROFILE`, `TEMP` and `TMP` are the private home's, and the run starts suspended in a
+    job that kills on close and lets nothing break away, ended whole by `TerminateJobObject`
+    once the run ends or passes its ceiling.
     `WarmScript` plays a run in a test or a fixture. `provider/claude/warm.rs` builds Claude
     Code's command and reads what it printed as a `Failure` or none. Codex has neither until
     when its period starts is measured.
@@ -1034,15 +1037,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
   the test's programs, what a program's file is called, how npm lays out a package's
-  program, whether Claude Desktop runs there (`os::claude_desktop_runs_here`), and whether a
-  warm-up does (`os::warm_ups_run_here`).
+  program, whether Claude Desktop runs there (`os::claude_desktop_runs_here`), and how a
+  warm-up hands Claude Code its token (`os::warm_up_token`).
 - The whole suite runs on macOS, Linux and Windows. A test put off on a system says why in
   its `ignore` reason, which libtest lists:
   - A test that cannot pass on Windows until a later pull request of the Windows work says
     which: `#[cfg_attr(windows, ignore = "W<id>: …")]`.
   - A test of something one system does not have or do names it, such as
-    `ignore = "a warm-up runs on macOS and Linux: …"` on Windows and
-    `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.
+    `ignore = "on Linux the file is Claude Code's only store, never behind a keychain"` on
+    Linux and `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.
   - A core test of Claude Desktop's folder calls, which Windows refuses, says
     `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`. It runs on macOS and
     Linux, against a scratch data folder.

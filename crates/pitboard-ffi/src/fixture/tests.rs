@@ -248,10 +248,6 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
 /// the app starts, through the core's own warm-up with the run played: its row then says when
 /// it warms up again, and the activity log has the warm-up.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
-)]
 fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
     let launched = made(World::WarmUp);
     let (model, told) = started(&launched);
@@ -2026,21 +2022,23 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     let again = titled(OS, "Sign In Again…", "Sign in again…");
     let now = titled(OS, "Warm Up Now", "Warm up now");
     let automatically = titled(OS, "Warm Up Automatically", "Warm up automatically");
-    // Windows warms up nothing, so a menu there leaves warm-ups out.
-    let warm: &[&str] = match OS {
-        Os::Windows => &[],
-        Os::MacOs | Os::Linux => &[&now, &automatically],
-    };
     assert_eq!(
         menus,
         [
             (
                 "work".into(),
-                titles(&[&[again.as_str(), "Rename…"], warm].concat())
+                titles(&[&again, "Rename…", &now, &automatically])
             ),
             (
                 "personal".into(),
-                titles(&[&["Use personal", &again, "Rename…"], warm, &["Forget…"]].concat())
+                titles(&[
+                    "Use personal",
+                    &again,
+                    "Rename…",
+                    &now,
+                    &automatically,
+                    "Forget…"
+                ])
             ),
         ]
     );

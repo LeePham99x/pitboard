@@ -192,9 +192,6 @@ pub fn not_watching(why: &crate::duty::autoswitch::Blind) -> String {
 pub fn not_warming(why: &crate::duty::warm::Halt) -> String {
     use crate::duty::warm::Halt;
     match why {
-        Halt::Unbuilt => "warm-ups are not available on Windows, where Claude Code does not \
-                          read the access token a warm-up hands it"
-            .into(),
         Halt::SwitchInterrupted => INTERRUPTED.into(),
         Halt::CustomOauth => CUSTOM_OAUTH.into(),
         Halt::Overridden(names) => format!(
@@ -1295,17 +1292,13 @@ mod tests {
     }
 
     #[test]
-    fn a_warm_up_is_said_to_be_unavailable_on_windows_and_why() {
-        use crate::duty::warm::Halt;
-        let why = "warm-ups are not available on Windows, where Claude Code does not read the \
-                   access token a warm-up hands it";
-        assert_eq!(not_warming(&Halt::Unbuilt), why);
+    fn a_halted_warm_up_says_why() {
         assert_eq!(
             crate::error::Error::WarmUpHalted {
-                halt: Halt::Unbuilt
+                halt: crate::duty::warm::Halt::ProgramMissing
             }
             .to_string(),
-            format!("Pitboard warms up no account now: {why}.")
+            "Pitboard warms up no account now: Claude Code is not installed where Pitboard looks."
         );
     }
 

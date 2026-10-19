@@ -59,11 +59,16 @@ pub(crate) fn claude_desktop_runs_here() -> bool {
     }
 }
 
-// Claude Code on Windows does not read the access token a warm-up hands it.
-pub(crate) fn warm_ups_run_here() -> bool {
+// Claude Code on Windows reads no descriptor (`windows_token_handover`, `windows_token_env`).
+pub(crate) enum Handed {
+    OnDescriptor,
+    InVariable,
+}
+
+pub(crate) fn warm_up_token() -> Handed {
     match OS {
-        Os::MacOs | Os::Linux => true,
-        Os::Windows => false,
+        Os::MacOs | Os::Linux => Handed::OnDescriptor,
+        Os::Windows => Handed::InVariable,
     }
 }
 

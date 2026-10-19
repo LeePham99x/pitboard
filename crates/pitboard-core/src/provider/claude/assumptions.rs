@@ -46,16 +46,14 @@ const fn everywhere(name: &'static str, build: &'static str) -> PerSystem {
     }
 }
 
-// Read on 12 October 2026 from 2.1.296's macOS and Linux builds, and measured on macOS.
+// Read on 12 October 2026 from 2.1.296's macOS and Linux builds, and measured on macOS; read as
+// bytes on 19 October 2026 from 2.1.303's win32-x64 and win32-arm64 builds.
 const fn warm_up(name: &'static str) -> PerSystem {
     PerSystem {
         name,
         macos: Read("2.1.296"),
         linux: Read("2.1.296"),
-        windows: NotRead(
-            "Pitboard warms up no account on Windows, where Claude Code reads no token handed to \
-             it: windows_token_handover",
-        ),
+        windows: Read("2.1.303"),
     }
 }
 
@@ -433,6 +431,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         windows: Read("2.1.301"),
     },
     PerSystem {
+        name: "windows_token_env",
+        macos: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
+        linux: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
+        windows: Read("2.1.303"),
+    },
+    PerSystem {
         name: "windows_statusline_shell",
         macos: NotRead(
             "off Windows a status line runs in the person's shell, which finds pitboard",
@@ -454,7 +458,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.301"),
         windows: Read("2.1.301"),
     },
-    warm_up("headless_token_descriptor"),
+    PerSystem {
+        name: "headless_token_descriptor",
+        macos: Read("2.1.296"),
+        linux: Read("2.1.296"),
+        windows: NotRead(
+            "Claude Code on Windows reads no token handed on a descriptor \
+             (windows_token_handover), so a warm-up there hands it as windows_token_env says",
+        ),
+    },
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
     of_the_service("request_starts_the_five_hour_period"),
@@ -1595,12 +1607,44 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     path is fixed when a build is made: the macOS build of 2.1.296 opens \
                     `/dev/fd/<n>`, which takes a pipe",
         verified_against: "2.1.301",
-        depends: "warm::unbuilt, which warms up no account on Windows, and doctor's warm_up check",
+        depends: "Claude Code's warm-up command, which on Windows hands a run the token as \
+                  windows_token_env says instead",
         probe: &[
             "descriptor_by_path",
             "file_after_socket",
             "file_after_failed_read",
             "/home/claude/.claude/remote",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_token_env",
+        fact: "on Windows Claude Code signs in with the access token `CLAUDE_CODE_OAUTH_TOKEN` \
+               holds wherever it is set: after `ANTHROPIC_AUTH_TOKEN` and before a descriptor or \
+               its well-known file, `apiKeyHelper`, a profile and the stored login. It takes it \
+               as an access token alone, with no refresh token and no expiry, so nothing renews \
+               it, scoped `user:inference` unless `CLAUDE_CODE_OAUTH_SCOPES` names others. Print \
+               mode sends its requests with `ANTHROPIC_API_KEY` instead wherever that is set. \
+               `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` set to 1 takes `ANTHROPIC_API_KEY`, \
+               `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` and the other credentials it \
+               names out of the environment of every program Claude Code starts. code.claude.com's \
+               page of environment variables documents both. Read, not measured: session \
+               reading M9 measures a warm-up made so, and that it writes nothing to its private \
+               home or that home's Credential Manager slot",
+        read_from: "the token source order and the login made of the variable, the API key's \
+                    source in print mode, and the variables the scrub takes out of a child's \
+                    environment and what turns it on, in the win32-x64 and win32-arm64 builds of \
+                    2.1.303, read as bytes on 2026-10-19",
+        verified_against: "2.1.303",
+        depends: "Claude Code's warm-up command on Windows, which hands a run the access token \
+                  alone in `CLAUDE_CODE_OAUTH_TOKEN`, with the scrub on and no other variable \
+                  that signs it in",
+        probe: &[
+            r#"{source:"ANTHROPIC_AUTH_TOKEN",hasToken:!0}"#,
+            r#"{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
+            ".CLAUDE_CODE_OAUTH_TOKEN,refreshToken:null,expiresAt:null",
+            r#""ANTHROPIC_API_KEY","CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CODE_ARTIFACTS_API_TOKEN""#,
+            "process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
         ],
         absent: &[],
     },
@@ -1934,9 +1978,12 @@ mod tests {
                 "credman_attributes",
                 "windows_browser_open",
                 "windows_token_handover",
+                "windows_token_env",
                 "windows_statusline_shell",
                 "windows_statusline_powershell",
                 "proxy_from_variables",
+                "headless_print_mode",
+                "headless_result",
                 "request_starts_the_five_hour_period",
                 "weekly_period_is_a_fixed_cycle",
                 "used_up_limit_refuses_every_request",
@@ -1952,8 +1999,6 @@ mod tests {
             "keychain_absence_codes",
             "no_keyring_off_macos",
             "headless_token_descriptor",
-            "headless_print_mode",
-            "headless_result",
         ] {
             let line = PER_SYSTEM.iter().find(|l| l.name == name).unwrap();
             assert!(matches!(line.on(Platform::Windows), NotRead(_)), "{name}");

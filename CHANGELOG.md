@@ -7,6 +7,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Pitboard warms up Claude Code accounts on Windows, from `pitboard warm`, `pitboard watch` and
+  the app.
+
+### Changed
+
+- **Breaking:** The public API of `pitboard-core` changes; [its
+  documentation](https://docs.rs/pitboard-core/0.16.0/pitboard_core/) shows the new one.
+
+### Removed
+
+- **Breaking:** On Windows, `pitboard doctor` has no `warm_up` check, and nothing refuses with
+  `warm_up_unbuilt`, since warm-ups run there. A script that looks for either can stop.
+
 ## [1.0.0-beta.3] - 2026-10-19
 
 ### Changed

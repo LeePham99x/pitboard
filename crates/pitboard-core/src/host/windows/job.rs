@@ -1,20 +1,23 @@
 //! A tool Pitboard starts on Windows, in a job of its own from its first instruction on.
 
 use super::proc::image;
-use std::io;
+use crate::host::Ran;
+use std::io::{self, Read};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::os::windows::process::CommandExt;
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Console::GetConsoleWindow;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT,
+    JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
-    SetInformationJobObject,
+    SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, OpenProcess, OpenThread, PROCESS_CREATION_FLAGS,
@@ -34,6 +37,9 @@ const CHAIN: [&str; 5] = [
 // How long one of them is given to end once it was told to.
 const ENDING_MS: u32 = 5_000;
 
+// How long what a run printed is waited for once all of it ended.
+const DRAINED: Duration = Duration::from_secs(5);
+
 pub(crate) struct Tool {
     child: Child,
     job: Job,
@@ -50,18 +56,104 @@ pub(crate) fn start(command: Command) -> io::Result<Tool> {
 
 fn start_with(mut command: Command, console: bool) -> io::Result<Tool> {
     command.creation_flags(flags(console));
-    let job = job()?;
-    let mut child = command.spawn()?;
-    if let Err(error) = assign(&job, &child).and_then(|()| resume(child.id())) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(error);
-    }
+    // No kill on close, and Codex starts its daemons breaking away (`codex_windows_app_server`).
+    let job = job(JOB_OBJECT_LIMIT_BREAKAWAY_OK)?;
+    let child = spawn_into(command, &job)?;
     Ok(Tool {
         child,
         job,
         ended: false,
     })
+}
+
+fn spawn_into(mut command: Command, job: &Job) -> io::Result<Child> {
+    let mut child = command.spawn()?;
+    if let Err(error) = assign(job, &child).and_then(|()| resume(child.id())) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    Ok(child)
+}
+
+// A warm-up's run. Nothing it starts breaks away, and all of it ends once it ended, past the
+// ceiling, or with Pitboard.
+pub(crate) fn run_within(
+    _: crate::service::Permit,
+    mut command: Command,
+    handed: Option<&[u8]>,
+    ceiling: Duration,
+) -> io::Result<Ran> {
+    if handed.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "a run on Windows is handed nothing on a descriptor",
+        ));
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(flags(false));
+    let job = job(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)?;
+    let mut child = spawn_into(command, &job)?;
+    let stdout = child.stdout.take();
+    let (said, printed) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(stdout) = stdout {
+            let _ = stdout.take(1 << 20).read_to_string(&mut text);
+        }
+        let _ = said.send(text);
+    });
+    let began = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if began.elapsed() >= ceiling {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    end_all(&job);
+    let timed_out = status.is_none();
+    let status = status.or_else(|| child.wait().ok());
+    Ok(Ran {
+        exit: status
+            .and_then(|status| status.code())
+            .filter(|_| !timed_out),
+        stdout: printed.recv_timeout(DRAINED).unwrap_or_default(),
+        timed_out,
+    })
+}
+
+// Every process of the job, waited for so the run's files can go. One leaves the job's list
+// before it closes its handles and ends, so each is waited on by a handle taken while listed.
+fn end_all(job: &Job) {
+    let asked = Instant::now();
+    loop {
+        let listed: Vec<OwnedHandle> = members(job)
+            .into_iter()
+            .filter_map(|pid| opened(pid, PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION))
+            .filter(|process| in_job(process, job))
+            .collect();
+        // SAFETY: the job this process made, with every right on it.
+        unsafe { TerminateJobObject(job.0.as_raw_handle(), 1) };
+        if listed.is_empty() {
+            return;
+        }
+        for process in listed {
+            let spent = u32::try_from(asked.elapsed().as_millis()).unwrap_or(u32::MAX);
+            // SAFETY: an open handle with SYNCHRONIZE.
+            unsafe {
+                WaitForSingleObject(process.as_raw_handle(), ENDING_MS.saturating_sub(spent))
+            };
+        }
+        if asked.elapsed() >= Duration::from_millis(ENDING_MS.into()) {
+            return;
+        }
+    }
 }
 
 // In a terminal the tool shares its console; with none, it would get a window of its own.
@@ -73,8 +165,7 @@ fn flags(console: bool) -> PROCESS_CREATION_FLAGS {
     }
 }
 
-// No kill on close, and Codex starts its daemons breaking away (`codex_windows_app_server`).
-fn job() -> io::Result<Job> {
+fn job(flags: JOB_OBJECT_LIMIT) -> io::Result<Job> {
     // SAFETY: no attributes and no name.
     let made = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if made.is_null() {
@@ -83,7 +174,7 @@ fn job() -> io::Result<Job> {
     // SAFETY: a valid job handle this process now owns, closed by `OwnedHandle`.
     let job = unsafe { OwnedHandle::from_raw_handle(made) };
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    limits.BasicLimitInformation.LimitFlags = flags;
     // SAFETY: the job just made, and limits of the size given.
     let set = unsafe {
         SetInformationJobObject(
@@ -292,7 +383,6 @@ mod tests {
     use super::*;
     use crate::helper::{self, Job};
     use std::path::{Path, PathBuf};
-    use std::process::Stdio;
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -396,10 +486,10 @@ mod tests {
         }
         for (browser, held) in kept {
             drop(held);
-            let gone = std::time::Instant::now();
+            let gone = Instant::now();
             while runs(browser) {
                 assert!(gone.elapsed().as_secs() < 20, "the browser stand-in ends");
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                std::thread::sleep(Duration::from_millis(20));
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
@@ -429,10 +519,10 @@ mod tests {
         running.stop();
         assert!(runs(daemon), "left alone");
         drop(daemon_held);
-        let gone = std::time::Instant::now();
+        let gone = Instant::now();
         while runs(daemon) {
             assert!(gone.elapsed().as_secs() < 20, "the daemon stand-in ends");
-            std::thread::sleep(std::time::Duration::from_millis(20));
+            std::thread::sleep(Duration::from_millis(20));
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -470,7 +560,7 @@ mod tests {
             let error = start(command).map(drop).expect_err("refused");
             assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{broken:?}");
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(500));
         assert!(!refused.exists(), "nothing started");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -518,7 +608,7 @@ mod tests {
                 .stderr(Stdio::null());
             let mut running = start(command).expect("started");
             let parent = running.child().id();
-            let asked = std::time::Instant::now();
+            let asked = Instant::now();
             let started = loop {
                 let found = super::super::proc::snapshot()
                     .expect("the process list")
@@ -539,6 +629,111 @@ mod tests {
             running.stop();
             assert!(!runs(started), "round {round}");
         }
+    }
+
+    fn tool_and_child(dir: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        (
+            copy_as(&dir.join("tool"), "claude.exe"),
+            copy_as(&dir.join("child"), "claude.exe"),
+            dir.join("tool.pid"),
+            dir.join("child.pid"),
+        )
+    }
+
+    #[test]
+    fn a_run_that_ended_says_what_it_printed_and_leaves_nothing_it_started() {
+        let dir = scratch("run-ended");
+        let (tool, child, started, opened) = tool_and_child(&dir);
+        let tool_held = helper::hold(&started);
+        let _child_held = helper::hold(&opened);
+        let command = helper::starting(&tool, false, &started, (&child, Job::Waits, &opened));
+        let watching = {
+            let (started, opened) = (started.clone(), opened.clone());
+            std::thread::spawn(move || {
+                let child = pid_in(&opened);
+                pid_in(&started);
+                drop(tool_held);
+                child
+            })
+        };
+        let ran = run_within(
+            crate::service::Permit::for_a_test(),
+            command,
+            None,
+            Duration::from_secs(60),
+        )
+        .expect("ran");
+        let child = watching.join().expect("both started");
+        assert_eq!((ran.exit, ran.timed_out), (Some(0), false));
+        assert!(ran.stdout.contains("pitboard-helper: "), "{}", ran.stdout);
+        assert!(!runs(child), "what the run started ended with it");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_run_past_its_ceiling_is_ended_whole() {
+        let dir = scratch("run-ceiling");
+        let (tool, child, started, opened) = tool_and_child(&dir);
+        let _held = (helper::hold(&started), helper::hold(&opened));
+        let command = helper::starting(&tool, false, &started, (&child, Job::Waits, &opened));
+        let watching = {
+            let (started, opened) = (started.clone(), opened.clone());
+            std::thread::spawn(move || (pid_in(&started), pid_in(&opened)))
+        };
+        let ran = run_within(
+            crate::service::Permit::for_a_test(),
+            command,
+            None,
+            Duration::from_secs(10),
+        )
+        .expect("ran");
+        let (tool, child) = watching.join().expect("both started");
+        assert_eq!((ran.exit, ran.timed_out), (None, true));
+        assert!(!runs(tool) && !runs(child));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nothing_a_run_starts_breaks_away() {
+        let dir = scratch("run-breakaway");
+        let (tool, child, started, opened) = tool_and_child(&dir);
+        let _held = (helper::hold(&started), helper::hold(&opened));
+        let command = helper::starting(&tool, true, &started, (&child, Job::Waits, &opened));
+        let ran = run_within(
+            crate::service::Permit::for_a_test(),
+            command,
+            None,
+            Duration::from_secs(60),
+        )
+        .expect("ran");
+        assert_eq!(ran.exit, Some(0));
+        let said = helper::written(&started);
+        assert!(said.starts_with("refused"), "{said}");
+        assert!(!opened.exists(), "nothing started");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_run_is_handed_nothing_on_a_descriptor() {
+        let dir = scratch("run-descriptor");
+        let said = dir.join("console");
+        let command = quietly(helper::command(
+            &std::env::current_exe().expect("this test"),
+            Job::SaysItsConsole,
+            &said,
+        ));
+        let refused = run_within(
+            crate::service::Permit::for_a_test(),
+            command,
+            Some(b"access".as_slice()),
+            Duration::from_secs(60),
+        )
+        .map(drop)
+        .expect_err("refused");
+        assert_eq!(refused.kind(), io::ErrorKind::Unsupported);
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(!said.exists(), "nothing started");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

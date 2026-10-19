@@ -571,6 +571,31 @@ mod tests {
         assert_eq!(moved, ["no_keyring_off_macos"]);
     }
 
+    // A warm-up on Windows rests on both (`windows_token_env`); macOS and Linux hand a descriptor.
+    #[test]
+    fn a_windows_build_that_drops_the_token_variable_or_the_scrub_has_moved() {
+        let windows = every_probe(ProviderId::Claude, Platform::Windows);
+        for gone in [
+            r#"{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
+            ".CLAUDE_CODE_OAUTH_TOKEN,refreshToken:null,expiresAt:null",
+            "process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
+        ] {
+            assert!(windows.contains(gone), "{gone}");
+            let build = windows.replace(gone, "");
+            let sorted = Sorted::of(ProviderId::Claude, Platform::Windows, &build);
+            let moved: Vec<&str> = sorted.moved().iter().map(|a| a.name).collect();
+            assert_eq!(moved, ["windows_token_env"], "{gone}");
+        }
+        for platform in [Platform::MacOs, Platform::Linux] {
+            let sorted = Sorted::of(ProviderId::Claude, platform, "");
+            assert!(
+                names(&sorted.not_read).contains(&"windows_token_env"),
+                "{}",
+                platform.code()
+            );
+        }
+    }
+
     /// The text lists every fact it does not read, a skipped one with the reason its line
     /// gives and a pending one with the pull requests it waits on and what they read, so
     /// nothing is left out without a word.

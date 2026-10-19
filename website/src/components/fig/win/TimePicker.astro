@@ -1,0 +1,15 @@
+---
+// WinUI's TimePicker on a 24-hour clock: 242 pixels wide, the hour and the minute either side of a divider.
+interface Props {
+  at: string;
+}
+const [hour, minute] = Astro.props.at.split(":");
+---
+
+<span
+  class="flex h-32 w-242 items-center rounded-u-4 bg-win-control text-u-14/20 tabular-nums shadow-win-control"
+>
+  <span class="flex-1 text-center">{hour}</span>
+  <span class="h-full w-1 bg-win-control-edge"></span>
+  <span class="flex-1 text-center">{minute}</span>
+</span>

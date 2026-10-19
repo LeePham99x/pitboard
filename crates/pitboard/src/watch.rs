@@ -13,7 +13,7 @@
 use crate::{Report, emit, followed, ui};
 use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
-use pitboard_core::duty::warm::{Halt, Overview, Standing};
+use pitboard_core::duty::warm::{Overview, Standing};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
@@ -240,9 +240,8 @@ fn warms(overview: &Overview) -> String {
     )
 }
 
-// Windows warms up nothing, whatever is turned on, and the first look says why.
 fn warms_any(overview: &Overview) -> bool {
-    overview.halted != Some(Halt::Unbuilt) && overview.accounts.iter().any(|choice| choice.on)
+    overview.accounts.iter().any(|choice| choice.on)
 }
 
 /// What `watch` has said of warming up: each reason it held an account back or could not warm
@@ -1080,32 +1079,33 @@ mod tests {
             );
         }
 
-        // Windows warms up nothing, and a `watch` that warms up nothing has nothing to say of it.
+        // A `watch` that warms up nothing has nothing to say of it.
         #[test]
         fn why_nothing_is_warmed_up_is_not_said_with_no_account_turned_on() {
             let mut told = WarmTold::default();
-            let mut off = overview(Some(Halt::Unbuilt), None);
+            let mut off = overview(Some(Halt::ProgramMissing), None);
             off.accounts[0].on = false;
             assert!(told.untold(stands(off)).is_empty());
             assert_eq!(
-                events(&told.untold(stands(overview(Some(Halt::Unbuilt), None)))),
+                events(&told.untold(stands(overview(Some(Halt::ProgramMissing), None)))),
                 ["\"warm_up_halted\""]
             );
         }
 
         #[test]
-        fn on_windows_watch_does_not_start_by_saying_what_it_warms_up() {
-            let windows = overview(Some(Halt::Unbuilt), None);
-            assert_eq!(warms(&windows), "");
+        fn watch_starts_by_saying_what_it_warms_up_where_an_account_is_turned_on() {
+            let mut off = overview(None, None);
+            off.accounts[0].on = false;
+            assert_eq!(warms(&off), "");
             assert_eq!(
-                watching_json(Threshold::DEFAULT, Some(&windows)).get("warm"),
+                watching_json(Threshold::DEFAULT, Some(&off)).get("warm"),
                 None
             );
-            let elsewhere = overview(Some(Halt::ProgramMissing), None);
-            let said = anstream::adapter::strip_str(&warms(&elsewhere)).to_string();
+            let on = overview(Some(Halt::ProgramMissing), None);
+            let said = anstream::adapter::strip_str(&warms(&on)).to_string();
             assert_eq!(said, ", and warms up work from 06:00 to 22:00");
             assert_eq!(
-                watching_json(Threshold::DEFAULT, Some(&elsewhere))["warm"]["accounts"],
+                watching_json(Threshold::DEFAULT, Some(&on))["warm"]["accounts"],
                 json!(["work"])
             );
         }

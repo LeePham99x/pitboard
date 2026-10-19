@@ -222,9 +222,8 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 | `warm_up_in_progress` | 1 | Another Pitboard is warming up an account. | Try again in a minute. |
 | `warm_setting_unreadable` | 1 | Pitboard could not read `warm.json`. | Make it readable to you again. |
 | `warm_setting_corrupt` | 1 | `warm.json` is not in a shape Pitboard reads. | Delete it, then turn warm-up on again for each account. |
-| `warm_up_unbuilt` | 1 | On Windows, `pitboard warm now` warms up nothing: Claude Code there does not read the access token a warm-up hands it. | Nothing. Pitboard warms up accounts on macOS and Linux. |
 
-`pitboard warm now` refuses an account with nothing to start with the code of the reason: `limit_used_up`, `no_reading`, `nothing_to_start`, `parked_login_expired` or `nothing_parked`, as [When it holds back](/guides/warm-up#when-it-holds-back) describes. Where nothing can be warmed up here, it refuses with that reason's code: `warm_up_unbuilt`, `switch_interrupted`, `custom_oauth_endpoint`, `warm_up_auth_overridden` or `claude_not_found`.
+`pitboard warm now` refuses an account with nothing to start with the code of the reason: `limit_used_up`, `no_reading`, `nothing_to_start`, `parked_login_expired` or `nothing_parked`, as [When it holds back](/guides/warm-up#when-it-holds-back) describes. Where nothing can be warmed up here, it refuses with that reason's code: `switch_interrupted`, `custom_oauth_endpoint`, `warm_up_auth_overridden` or `claude_not_found`.
 
 ## Root, sudo and administrator
 

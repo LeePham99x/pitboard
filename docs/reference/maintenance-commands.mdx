@@ -279,7 +279,7 @@ Digests differ from one report to the next. Both reports write a proxy's user na
 | `Codex` | Pitboard finds `codex`, Codex's directory, `~/.codex` or `CODEX_HOME`, exists, or a Codex account is enrolled |
 | `Claude Desktop` | A Claude Desktop account is enrolled, or a folder is set aside |
 
-When another tool's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5`, `claude_daemon`, `claude_version`, `warm_up`, `status_line` and `auth_source`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
+When another tool's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5`, `claude_daemon`, `claude_version`, `status_line` and `auth_source`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
 
 Some Codex levels depend on whether a Codex account is enrolled:
 
@@ -331,7 +331,6 @@ On macOS, Claude Desktop's checks read the folders in `~/.pitboard/parks`, open 
   | `schedule` | `renewal schedule` | Only when daily renewal is on for Pitboard's own directory. Fails when the program it runs is gone or is the app itself. Warns when it does not name a program. On Windows, warns when a setting of the task changed in Task Scheduler or its last run failed. |
   | `schedule_proxy` | `renewal schedule's proxy` | Only when the job's requests would go another way than this run's. Warns, but is `ok` in the app. See [The schedule uses another proxy](/troubleshooting/renewal#the-schedule-uses-another-proxy). |
   | `claude_version` | `Claude Code build` | The installed Claude Code version, and the one Pitboard was checked against. Always `ok`. |
-  | `warm_up` | `warm-up` | Windows only. Says Pitboard warms up no account there. Always `ok`. |
   | `status_line` | `status line` | Windows only. The shell Claude Code runs its status line in, Git Bash, PowerShell 7 or Windows PowerShell, and the `pitboard` it finds there. Warns when Claude Code's status line runs `pitboard` and that shell finds none. |
   | `auth_source` | `what a session authenticates with` | Warns when Claude Code uses something other than its stored login, such as `ANTHROPIC_API_KEY` or `apiKeyHelper`. |
   | `asking` | `asking Anthropic` | Warns while Pitboard waits to ask about usage, after a service asked for less traffic or could not be reached. The name lists the services asked. |

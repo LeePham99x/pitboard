@@ -96,7 +96,6 @@
             </toolkit:SettingsCard>
           </toolkit:SettingsExpander.Items>
         </toolkit:SettingsExpander>
-        <!-- Expandable while warm-ups are unavailable, its hours and accounts dimmed: the standing says why. -->
         <toolkit:SettingsExpander
             Header="Warm up limits"
             ItemsSource="{x:Bind ViewModel.WarmAccounts}"
