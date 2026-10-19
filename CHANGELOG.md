@@ -44,6 +44,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at the size the new scale asks for.
 - On Windows, a beta of the app checks for updates only once a full release of Pitboard for
   Windows is out, and dims **Check now** until then, instead of ending each check in an error.
+- Uninstalling the Windows app turns off daily renewal where its task runs the app's own
+  `pitboard.exe`, and leaves a task that runs another copy, such as Scoop's.
 
 ## [1.0.0-beta.3] - 2026-10-19
 

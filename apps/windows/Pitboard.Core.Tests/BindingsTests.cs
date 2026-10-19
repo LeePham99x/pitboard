@@ -71,6 +71,22 @@ public sealed class BindingsTests
         Assert.AreEqual("/elsewhere/./p/", PitboardFfiMethods.PitboardDirectory(environment));
     }
 
+    // The core's own tests take a task away on a scheduler in memory; this one reaches none.
+    [TestMethod]
+    public void ACopyWithNoCommandLineBesideItTakesNoRenewalTaskAway()
+    {
+        var home = Path.Combine(Path.GetTempPath(), $"pitboard-unschedule-{Guid.NewGuid():N}");
+        var environment = new Dictionary<string, string>
+        {
+            ["HOME"] = home,
+            ["USERPROFILE"] = home,
+            ["SHELL"] = "/nowhere/at/all/sh",
+        };
+
+        Assert.IsFalse(PitboardFfiMethods.UnscheduleApp(environment, Path.Combine(home, "Pitboard")));
+        Assert.IsFalse(Directory.Exists(home), "nothing is made");
+    }
+
     [TestMethod]
     public void TheWindowsAppKeysItsRecordsByItsDirectoryInAnyCase()
     {

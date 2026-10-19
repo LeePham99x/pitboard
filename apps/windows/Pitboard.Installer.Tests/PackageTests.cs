@@ -13,6 +13,7 @@ public sealed class PackageTests
 
     private const int Deferred = 0x400;
     private const int Rollback = 0x500;
+    private const int NoImpersonate = 0x800;
     private const int IgnoreExitCode = 0x40;
     private const int AsyncNoWait = 0xC0;
     private const int ExeFromInstalledFile = 18;
@@ -155,6 +156,7 @@ public sealed class PackageTests
         var type = int.Parse(unregister[0]!, CultureInfo.InvariantCulture);
         Assert.AreEqual(ExeFromInstalledFile, type & 0x3F);
         Assert.AreEqual(Deferred, type & Deferred);
+        Assert.AreEqual(0, type & NoImpersonate, "as the person, since the core's gate refuses SYSTEM");
         Assert.AreEqual(IgnoreExitCode, type & IgnoreExitCode);
         Assert.AreEqual("PitboardExe --unregister", string.Join(' ', unregister[1..]));
         Assert.AreEqual(FullUninstall, Condition(database, "Unregister"));

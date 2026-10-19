@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Windows.AppNotifications;
+using Pitboard.Core;
 
 namespace Pitboard.Windows.Tests;
 
@@ -15,12 +16,14 @@ public sealed class UnregisteringTests
     {
         var key = new StandInRunKey();
         key.Values["Pitboard"] = $"\"{Installed.ToUpperInvariant()}\" --sign-in";
+        var renewal = new StandInRenewalTask();
         var notifications = new StandInNotifications();
         var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Release, Installed, key, notifications, registration);
+        Unregistering.Run(Build.Release, Installed, key, renewal, notifications, registration);
 
         Assert.IsFalse(key.Values.ContainsKey("Pitboard"));
+        Assert.AreEqual($"remove for {Installed}", string.Join(", ", renewal.Asked));
         Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
         Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
@@ -31,7 +34,7 @@ public sealed class UnregisteringTests
         var key = new StandInRunKey();
         key.Values["Pitboard"] = @"""C:\Users\Dana Lee\AppData\Local\Programs\Other\Pitboard.exe"" --sign-in";
 
-        Unregistering.Run(Build.Release, Installed, key, new StandInNotifications(), new StandInRegistration(null));
+        Unregistering.Run(Build.Release, Installed, key, new StandInRenewalTask(), new StandInNotifications(), new StandInRegistration(null));
 
         Assert.AreEqual(@"""C:\Users\Dana Lee\AppData\Local\Programs\Other\Pitboard.exe"" --sign-in", key.Values["Pitboard"]);
         CollectionAssert.DoesNotContain(key.Asked, "remove Pitboard");
@@ -41,13 +44,29 @@ public sealed class UnregisteringTests
     [TestMethod]
     public void NotificationsThatNeverRegisteredAreNotAsked()
     {
+        var renewal = new StandInRenewalTask();
         var notifications = new StandInNotifications();
         var registration = new StandInRegistration(null);
 
-        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), notifications, registration);
+        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), renewal, notifications, registration);
 
+        Assert.AreEqual($"remove for {Installed}", string.Join(", ", renewal.Asked));
         Assert.IsEmpty(notifications.Asked);
         Assert.IsEmpty(registration.Asked);
+    }
+
+    [TestMethod]
+    public void ACoreThatPanicsOverTheRenewalTaskStillLetsTheNotificationsGo()
+    {
+        var renewal = new StandInRenewalTask { Fails = new PanicException("Rust panic") };
+        var notifications = new StandInNotifications();
+        var registration = new StandInRegistration(Activator);
+
+        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), renewal, notifications, registration);
+
+        Assert.AreEqual($"remove for {Installed}", string.Join(", ", renewal.Asked));
+        Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
+        Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
 
     // The session's PC kept HKCU\Software\Classes\AppUserModelId\Pitboard.Pitboard once the MSI had removed Pitboard
@@ -58,7 +77,7 @@ public sealed class UnregisteringTests
         var notifications = new StandInNotifications { Fails = Marshal.GetExceptionForHR(unchecked((int)0x80004005)) };
         var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), notifications, registration);
+        Unregistering.Run(Build.Release, Installed, new StandInRunKey(), new StandInRenewalTask(), notifications, registration);
 
         Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
         Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
@@ -68,11 +87,13 @@ public sealed class UnregisteringTests
     public void ARunKeyItCannotReadStillLetsTheNotificationsGo()
     {
         var key = new StandInRunKey { ReadRefuses = new UnauthorizedAccessException("Access is denied.") };
+        var renewal = new StandInRenewalTask();
         var notifications = new StandInNotifications();
         var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Release, Installed, key, notifications, registration);
+        Unregistering.Run(Build.Release, Installed, key, renewal, notifications, registration);
 
+        Assert.AreEqual($"remove for {Installed}", string.Join(", ", renewal.Asked));
         Assert.AreEqual("unregister all", string.Join(", ", notifications.Asked));
         Assert.AreEqual($"delete {Activator}", string.Join(", ", registration.Asked));
     }
@@ -82,12 +103,14 @@ public sealed class UnregisteringTests
     {
         var key = new StandInRunKey();
         key.Values["Pitboard"] = $"\"{Installed}\" --sign-in";
+        var renewal = new StandInRenewalTask();
         var notifications = new StandInNotifications();
         var registration = new StandInRegistration(Activator);
 
-        Unregistering.Run(Build.Debug, Installed, key, notifications, registration);
+        Unregistering.Run(Build.Debug, Installed, key, renewal, notifications, registration);
 
         Assert.IsEmpty(key.Asked);
+        Assert.IsEmpty(renewal.Asked);
         Assert.IsEmpty(notifications.Asked);
         Assert.IsEmpty(registration.Asked);
     }
@@ -115,6 +138,23 @@ public sealed class UnregisteringTests
         public void UnregisterAll()
         {
             Asked.Add("unregister all");
+            if (Fails is { } failed)
+            {
+                throw failed;
+            }
+        }
+    }
+
+    // In place of the core, which would ask Task Scheduler: tests never touch it.
+    private sealed class StandInRenewalTask : IRenewalTask
+    {
+        public List<string> Asked { get; } = [];
+
+        public Exception? Fails { get; init; }
+
+        public void Remove(string exe)
+        {
+            Asked.Add($"remove for {exe}");
             if (Fails is { } failed)
             {
                 throw failed;
