@@ -20,7 +20,7 @@ public sealed class PathTextTests
     [TestMethod]
     public void WhatIsNoPathIsShownAsItIs()
     {
-        foreach (var text in new[] { "Credential Manager  ·  Claude Code-credentials/claude-code-user", "Warm-ups are not available", "", "  " })
+        foreach (var text in new[] { "Credential Manager  ·  Claude Code-credentials/claude-code-user", "None outstanding", "", "  " })
         {
             Assert.AreEqual(text, PathText.Shown(text));
         }
