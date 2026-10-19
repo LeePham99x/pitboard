@@ -71,9 +71,10 @@ works.
 - Pitboard sends each login only to the service that issued it, verifies TLS, and has no
   telemetry.
 - `PITBOARD_API_BASE`, for tests, sends requests only to a loopback IP address.
-- Every release file is attested, and the install script and casks install only files
-  matching the release's checksums. See
+- Every release file is attested. See
   [Verify a download](https://docs.usepitboard.com/install/verify).
+- On macOS and Linux, the install script and casks install only files matching the release's
+  checksums.
 - On macOS, the app installs only an update signed with its update key or, in a Developer ID
   copy, by the same team. On Windows, it installs only an update whose installer is signed
   with its Windows update key.

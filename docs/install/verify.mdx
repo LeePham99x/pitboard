@@ -74,6 +74,8 @@ It prints the line of `SHA256SUMS` that holds the checksum of each installer and
 
 Homebrew and the install script check what they install against the checksums the release workflow took. Each refuses a download changed on the release page later.
 
+On Windows, nothing checks an installer or a zip you download against them, so check it as this section shows.
+
 ## Check the install script
 
 Piped to `sh`, the script runs unchecked. Its checksums cover the tarball it downloads, not the script. To check the script, download it and check its attestation:
