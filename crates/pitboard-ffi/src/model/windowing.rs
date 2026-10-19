@@ -1448,24 +1448,29 @@ fn an_open_window_offers_to_clear_its_ended_downloads() {
     let mut machine = machine();
     let mut model = started(&mut machine);
     let work = claude("w");
-    let window = open(&mut model, &mut machine, &work);
+    open(&mut model, &mut machine, &work);
+    let clear = |model: &Hand| {
+        model
+            .on_a_mac()
+            .account_windows
+            .open
+            .into_iter()
+            .find(|window| window.store == work)
+            .expect("the window open")
+            .clear_downloads
+    };
     assert_eq!(
-        window.clear_downloads,
-        Choice {
+        clear(&model),
+        Some(Choice {
             title: "Clear".into(),
             intent: Intent::ClearDownloads {
                 store: work.clone()
             },
             enabled: false,
-        },
+        }),
         "nothing in its list"
     );
-    let clears = |model: &Hand| {
-        open_window(model, &work)
-            .expect("the window open")
-            .clear_downloads
-            .enabled
-    };
+    let clears = |model: &Hand| clear(model).expect("a Clear").enabled;
     for (id, store) in [("1", work.to_uppercase()), ("2", chatgpt("m"))] {
         model.send(Intent::DownloadStarted {
             id: id.into(),
@@ -1490,6 +1495,30 @@ fn an_open_window_offers_to_clear_its_ended_downloads() {
         store: work.clone(),
     });
     assert!(!clears(&model), "cleared");
+}
+
+// The Windows app's list of a window's downloads is WebView2's own, which has no Clear of
+// Pitboard's to send.
+#[test]
+fn a_window_on_windows_offers_no_clear_of_its_downloads() {
+    let mut machine = machine();
+    let mut model = started(&mut machine);
+    let work = claude("w");
+    open(&mut model, &mut machine, &work);
+    model.send(Intent::DownloadStarted {
+        id: "1".into(),
+        store: work.clone(),
+        name: Some("1.txt".into()),
+    });
+    model.send(Intent::DownloadEnded {
+        id: "1".into(),
+        end: DownloadEnd::Cancelled,
+    });
+
+    let windows = model.on_windows().account_windows;
+
+    assert_eq!(windows.downloads.len(), 1, "its list still has it");
+    assert_eq!(windows.open[0].clear_downloads, None);
 }
 
 /// Quitting stops every download under way, so it asks first, as Safari does, saying how

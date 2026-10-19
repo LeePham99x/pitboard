@@ -4313,6 +4313,20 @@ Microsoft's documentation.
   Shift+F6 the same cycle reversed. So F6 and Shift+F6 move between the main window's two
   regions, its navigation pane and its page, and Ctrl+W closes it as its caption's close does
   (`LifecycleTests.F6MovesFocusBetweenThePaneAndThePage`, `CtrlWClosesTheWindowAndPitboardKeepsRunning`).
+- WinUI's WebView2 (microsoft-ui-xaml main at 1af995b, `controls/dev/WebView2/WebView2.cpp`)
+  handles no `AcceleratorKeyPressed`, so no XAML accelerator hears a key pressed in the page,
+  where WebView2's own browser keys serve Back, Forward and Reload. So an account window takes
+  Ctrl+W, and the browser keys for its Back, Forward and Reload, on its root, for its toolbar
+  and its note (`AccountWindowTests.TheWindowTakesTheKeysOfItsCommands`,
+  `TheToolbarTakesBackAndCtrlW`).
+- Microsoft's User Interface Text guidelines (updated 15 April 2025) title a top-level
+  document-centric window "document name - program name", the document first. So an account
+  window is titled with its page's `DocumentTitle`, a hyphen and the account's title, where
+  the macOS window shows the page as its subtitle
+  (`AccountWindowTests.ItsTitleIsItsPagesAndThenItsAccounts`). An account window's list of
+  downloads is WebView2's own, with no Clear of Pitboard's, so `OpenWindow.clear_downloads`
+  is `None` on Windows (`model::windowing`'s
+  `a_window_on_windows_offers_no_clear_of_its_downloads`).
 - Microsoft's ResourceDictionary page (updated 13 October 2026) has `XamlReader.Load` parse in
   a context that knows no other ResourceDictionary, not even `Application.Resources`, and take
   no ThemeResource, and has `XamlControlsResources` merged first. So the views' shared styles

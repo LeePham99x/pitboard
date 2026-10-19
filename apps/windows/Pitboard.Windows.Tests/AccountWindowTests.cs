@@ -147,7 +147,51 @@ public sealed partial class AccountWindowTests
             var note = Views.Element<InfoBar>(window.Content, "window.note");
             Assert.IsTrue(note.IsOpen);
             StringAssert.StartsWith(note.Message, "Sign in to chatgpt.com as main@example.com.");
-            Assert.AreEqual("main", window.Title);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // Microsoft's title bar text guidance names the document before the program, where macOS's subtitle names the page.
+    [UITestMethod]
+    public async Task ItsTitleIsItsPagesAndThenItsAccounts()
+    {
+        await using var webs = await Webs.Make();
+        var sent = new List<Intent>();
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        try
+        {
+            window.Follow(Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)));
+            await Views.Until(() => window.Title == "chatgpt.com stand-in - main", () => $"the window is titled {window.Title}", Webs.Patience);
+
+            await Page(window)!.Script("document.title = 'A chat'; 0");
+
+            await Views.Until(() => window.Title == "A chat - main", () => $"the window is titled {window.Title}", Webs.Patience);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // Microsoft's keyboard guidance gives Ctrl+W to Close. Back, Forward and Reload take the keys WebView2 gives them in
+    // the page, and the main window gives Refresh.
+    [UITestMethod]
+    public async Task TheWindowTakesTheKeysOfItsCommands()
+    {
+        var sent = new List<Intent>();
+        var web = WebEnvironment.Fixture(Path.GetTempPath());
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web, sent.Add), sent.Add));
+        try
+        {
+            var root = (UIElement)window.Content;
+
+            Assert.AreEqual(
+                "Control+W, Menu+Left, Menu+Right, None+F5, Control+R",
+                string.Join(", ", root.KeyboardAccelerators.Select(key => $"{key.Modifiers}+{key.Key}")));
         }
         finally
         {

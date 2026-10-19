@@ -403,8 +403,10 @@ public sealed class ModelTests
         Assert.AreEqual(Store, choose.Chosen);
         Assert.IsTrue(choose.Accounts[0].Open);
         Assert.IsInstanceOfType<DownloadState.Running>(snapshot.AccountWindows.Downloads[0].State);
-        Assert.IsInstanceOfType<Intent.ClearDownloads>(snapshot.AccountWindows.Open[0].ClearDownloads.Intent);
-        Assert.IsFalse(snapshot.AccountWindows.Open[0].ClearDownloads.Enabled);
+        var clear = snapshot.AccountWindows.Open[0].ClearDownloads;
+        Assert.IsNotNull(clear);
+        Assert.IsInstanceOfType<Intent.ClearDownloads>(clear.Intent);
+        Assert.IsFalse(clear.Enabled);
         var failed = Assert.IsInstanceOfType<WaitingShown.ReadFailed>(snapshot.AccountWindows.Waiting.Shown);
         Assert.AreEqual("Try Again", failed.Retry.Title);
         Assert.AreEqual("A download is in progress. Quit anyway?", PitboardFfiMethods.DownloadsQuitQuestion(1)?.Title);

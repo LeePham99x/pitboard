@@ -28,7 +28,7 @@ public sealed class AccountPickerTests
         Assert.IsTrue(launched.Enables("Open"), "Open was held back");
         Launched.Press(picker, "Open");
 
-        Launched.Loads(launched.Window("spare"), "A Pitboard fixture page at /c/shared", exact: false);
+        Launched.Loads(launched.AccountWindow("spare"), "A Pitboard fixture page at /c/shared", exact: false);
         Assert.IsTrue(Closed(picker), "the Open link window stayed");
     }
 

@@ -128,13 +128,21 @@ internal sealed class Launched : IDisposable
     public Window[] Windows(string title) =>
         FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation).Where(window => window.Title == title).ToArray();
 
-    public Window Window(string title)
+    public Window Window(string title) => Window(shown => shown == title, $"titled {title}");
+
+    // Its page's title comes first once it has one: "chatgpt.com stand-in - main".
+    public Window AccountWindow(string label) => Window(shown => OfAccount(shown, label), $"of {label}");
+
+    public static bool OfAccount(string title, string label) =>
+        title == label || title.EndsWith($" - {label}", StringComparison.Ordinal);
+
+    private Window Window(Func<string, bool> titled, string what)
     {
         var found = Retry.WhileNull(
             () => FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
-                .FirstOrDefault(window => window.Title == title),
+                .FirstOrDefault(window => titled(window.Title)),
             Patience, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        return found ?? throw new AssertFailedException($"Pitboard showed no window titled {title} within {Patience}: {State()}");
+        return found ?? throw new AssertFailedException($"Pitboard showed no window {what} within {Patience}: {State()}");
     }
 
     // A WinUI app that fails fast exits 0xC000027B and leaves only what it wrote to its standard error.

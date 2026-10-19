@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 using Pitboard.Windows;
@@ -119,7 +120,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        Title = open.Account.Title;
+        ShowTitle(open.Account);
         if (_session is { } session)
         {
             session.Update(open.Account);
@@ -187,7 +188,18 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         page.HistoryChanged += (_, _) => ShowHistory();
         page.NavigationStarting += (_, args) => ShowLoading(!args.Cancel);
         page.NavigationCompleted += (_, _) => ShowLoading(false);
+        page.DocumentTitleChanged += (_, _) =>
+        {
+            if (_session is { } session)
+            {
+                ShowTitle(session.Account);
+            }
+        };
     }
+
+    // Microsoft's title bar text guidance names the document before the program.
+    private void ShowTitle(WindowAccount account) =>
+        Title = Page?.DocumentTitle is { Length: > 0 } page ? $"{page} - {account.Title}" : account.Title;
 
     private void Wait(WindowWaiting waiting)
     {
@@ -296,6 +308,33 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private void OnReload(object sender, RoutedEventArgs args) => TryAgain();
 
     private void OnStop(object sender, RoutedEventArgs args) => Page?.Stop();
+
+    private void OnClose(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        Close();
+    }
+
+    private void OnBackKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(BackButton, () => Page?.GoBack());
+
+    private void OnForwardKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(ForwardButton, () => Page?.GoForward());
+
+    private void OnReloadKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+        args.Handled = Commanded(ReloadButton, TryAgain);
+
+    // What its button would do, while the button could be pressed.
+    private static bool Commanded(Control button, Action does)
+    {
+        if (!button.IsEnabled)
+        {
+            return false;
+        }
+
+        does();
+        return true;
+    }
 
     private void OnShowDownloads(object sender, RoutedEventArgs args) => Page?.OpenDefaultDownloadDialog();
 

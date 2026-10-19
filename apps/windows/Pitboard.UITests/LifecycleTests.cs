@@ -73,7 +73,7 @@ public sealed partial class LifecycleTests
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
         launched.OpenWindow();
         AccountWindowTests.OpenFromItsRow(launched, "codex/main");
-        var account = launched.Window("main");
+        var account = launched.AccountWindow("main");
         var picker = launched.Share("https://chatgpt.com/c/shared");
 
         foreach (var window in new[] { account, picker })

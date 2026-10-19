@@ -19,6 +19,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Windows app's window opens Pitboard's help with F1, and its **About** links to it.
 - The Windows app's menu shows each account's most used limit after its name, as in
   **work · Max 20x · 42%**, where the menu bar app shows the account's limits under it.
+- On Windows, an account's window closes with Ctrl+W, and its toolbar takes Alt+Left, Alt+Right
+  and F5 or Ctrl+R for **Back**, **Forward** and **Reload**, as its page does.
+
+### Changed
+
+- On Windows, an account's window shows its page's title before the account's label.
 
 ### Changed
 
