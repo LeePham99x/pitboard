@@ -108,6 +108,8 @@ public sealed class UnregisteringTests
 
         public void Show(AppNotification notification) => throw new AssertFailedException("Show was asked");
 
+        public AppNotificationSetting Setting() => throw new AssertFailedException("Setting was asked");
+
         public void Unregister() => throw new AssertFailedException("Unregister was asked");
 
         public void UnregisterAll()

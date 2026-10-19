@@ -61,9 +61,19 @@
         </toolkit:SettingsCard>
         <toolkit:SettingsCard
             Header="Notifications"
-            Description="{x:Bind ViewModel.NotificationsOff}"
-            Visibility="{x:Bind ViewModel.HasNotificationsOff}"
-            AutomationProperties.AutomationId="settings.notifications" />
+            Visibility="{x:Bind ViewModel.HasNotificationsOff, Mode=OneWay}"
+            AutomationProperties.AutomationId="settings.notifications">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.NotificationsOff, Mode=OneWay}" />
+              <HyperlinkButton
+                  Content="Open notification settings"
+                  Visibility="{x:Bind ViewModel.OffersNotificationSettings, Mode=OneWay}"
+                  AutomationProperties.AutomationId="settings.notificationSettings"
+                  Click="OnOpenNotificationSettings" />
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+        </toolkit:SettingsCard>
 
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Limits" />
         <toolkit:SettingsExpander Header="Switch Claude Code automatically" AutomationProperties.AutomationId="settings.autoSwitchGroup">

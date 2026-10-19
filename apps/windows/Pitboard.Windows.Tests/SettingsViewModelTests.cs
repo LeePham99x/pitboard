@@ -25,12 +25,13 @@ public sealed class SettingsViewModelTests
     }
 
     private static (SettingsViewModel Shown, StandInModel Model, AppModel App) Over(
-        Snapshot snapshot, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0", string? notificationsOff = null)
+        Snapshot snapshot, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0",
+        Func<NotificationsBlocked?>? notifications = null)
     {
         var model = new StandInModel(snapshot);
         var app = new AppModel(model);
         var shown = new SettingsViewModel(
-            app, start ?? new StartAtSignIn(new FixtureStartupItem()), updates ?? new NoUpdates(), version, notificationsOff);
+            app, start ?? new StartAtSignIn(new FixtureStartupItem()), updates ?? new NoUpdates(), version, notifications ?? (() => null));
         shown.Listen();
         return (shown, model, app);
     }
@@ -264,14 +265,30 @@ public sealed class SettingsViewModelTests
         Assert.AreEqual(sent, model.Sent.Count, string.Join(", ", model.Sent.Skip(sent)));
     }
 
+    // Read at each visit and as the window comes back, from Settings > System > Notifications among others.
     [TestMethod]
-    public void NotificationsAreSaidOnlyWhereARefusalTurnedThemOff()
+    public void NotificationsAreSaidOnlyWhileWindowsBlocksThem()
     {
-        Assert.IsFalse(Over(Snapshots.Read(1)).Shown.HasNotificationsOff);
+        var (on, _, _) = Over(Snapshots.Read(1));
+        on.Shown();
+        Assert.IsFalse(on.HasNotificationsOff);
 
-        var (off, _, _) = Over(Snapshots.Read(1), notificationsOff: "Windows offers this process no app notifications.");
+        NotificationsBlocked? blocked = new(WindowsNotifications.Unoffered, InSettings: false);
+        var (off, _, _) = Over(Snapshots.Read(1), notifications: () => blocked);
+        off.Shown();
 
         Assert.IsTrue(off.HasNotificationsOff);
-        Assert.AreEqual("Windows offers this process no app notifications.", off.NotificationsOff);
+        Assert.AreEqual(WindowsNotifications.Unoffered, off.NotificationsOff);
+        Assert.IsFalse(off.OffersNotificationSettings, "a link to a switch that is not the person's");
+
+        blocked = new(WindowsNotifications.OffForPitboard, InSettings: true);
+        off.ReadWindowsSettings();
+        Assert.AreEqual(WindowsNotifications.OffForPitboard, off.NotificationsOff);
+        Assert.IsTrue(off.OffersNotificationSettings);
+
+        blocked = null;
+        off.ReadWindowsSettings();
+        Assert.IsFalse(off.HasNotificationsOff);
+        Assert.IsFalse(off.OffersNotificationSettings);
     }
 }

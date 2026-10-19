@@ -167,6 +167,61 @@ public sealed class WindowsNotificationsTests
         Assert.AreEqual("Access is denied.", notifications.Refusal);
     }
 
+    // Settings > System > Notifications turns them off and on while Pitboard runs, so each settings visit reads again.
+    [TestMethod]
+    public void EachReadSaysWhatWindowsHoldsAndWhetherItsSettingsTurnThemOn()
+    {
+        var system = new StandInNotifications();
+        var notifications = new WindowsNotifications(Build.Release, () => system, Icon);
+        notifications.Start(_ => Assert.Fail("a click"));
+
+        Assert.IsNull(notifications.Read());
+
+        (AppNotificationSetting Setting, NotificationsBlocked Said)[] blocked =
+        [
+            (AppNotificationSetting.DisabledForApplication, new(WindowsNotifications.OffForPitboard, InSettings: true)),
+            (AppNotificationSetting.DisabledForUser, new(WindowsNotifications.OffForEveryApp, InSettings: true)),
+            (AppNotificationSetting.DisabledByGroupPolicy, new(WindowsNotifications.OffByPolicy, InSettings: false)),
+            (AppNotificationSetting.DisabledByManifest, new(WindowsNotifications.Unoffered, InSettings: false)),
+            (AppNotificationSetting.Unsupported, new(WindowsNotifications.Unoffered, InSettings: false)),
+        ];
+        foreach (var (setting, said) in blocked)
+        {
+            system.Turned = setting;
+            Assert.AreEqual(said, notifications.Read(), $"{setting}");
+        }
+
+        system.Turned = AppNotificationSetting.Enabled;
+        Assert.IsNull(notifications.Read(), "turned on again");
+
+        system.SettingRefuses = new InvalidOperationException("The RPC server is unavailable.");
+        Assert.IsNull(notifications.Read(), "a read that failed says nothing it does not know");
+    }
+
+    [TestMethod]
+    public void ADebugBuildOrOneNotStartedReadsNothing()
+    {
+        var debug = new WindowsNotifications(
+            Build.Debug, () => throw new AssertFailedException("Windows' app notifications were asked"), Icon);
+        debug.Start(_ => Assert.Fail("a click"));
+        var system = new StandInNotifications { Turned = AppNotificationSetting.DisabledForApplication };
+
+        Assert.IsNull(debug.Read());
+        Assert.IsNull(new WindowsNotifications(Build.Release, () => system, Icon).Read());
+        Assert.IsEmpty(system.Asked);
+    }
+
+    [TestMethod]
+    public void AFailedRegistrationIsReadAsItsReason()
+    {
+        var system = new StandInNotifications { Refuses = new UnauthorizedAccessException("Access is denied.") };
+        var notifications = new WindowsNotifications(Build.Release, () => system, Icon);
+        notifications.Start(_ => Assert.Fail("a click"));
+
+        Assert.AreEqual(new NotificationsBlocked("Access is denied.", InSettings: false), notifications.Read());
+        CollectionAssert.DoesNotContain(system.Asked, "setting");
+    }
+
     // ModelTests.ARunOutIsPostedThroughTheAppsNotifications, through to what Windows is asked to show.
     [TestMethod]
     public void AFixturesRunOutIsShownWithItsSwitchButton()
@@ -238,6 +293,10 @@ public sealed class WindowsNotificationsTests
 
         public IDictionary<string, string>? Launched { get; init; }
 
+        public AppNotificationSetting Turned { get; set; } = AppNotificationSetting.Enabled;
+
+        public Exception? SettingRefuses { get; set; }
+
         public void Click(IDictionary<string, string> arguments) => _invoked!(arguments);
 
         public bool IsSupported()
@@ -274,6 +333,12 @@ public sealed class WindowsNotificationsTests
         {
             Asked.Add($"show {notification.Tag}");
             Shown.Add(notification);
+        }
+
+        public AppNotificationSetting Setting()
+        {
+            Asked.Add("setting");
+            return SettingRefuses is { } refused ? throw refused : Turned;
         }
 
         public void Unregister() => Asked.Add("unregister");

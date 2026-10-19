@@ -21,6 +21,6 @@ public sealed record PaneContext(AppModel Model, DialogHost Dialogs, StartAtSign
         Clipboard.SetContent(copied);
     };
 
-    // Why a Release build posts no notifications, which the settings say.
-    public string? NotificationsOff { get; init; }
+    // Why Windows shows none of a Release build's notifications, which the settings read at each visit.
+    public Func<NotificationsBlocked?> Notifications { get; init; } = () => null;
 }

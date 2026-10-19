@@ -1,3 +1,4 @@
+using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -18,12 +19,12 @@ public sealed class MainWindowTests
     private static readonly Pane?[] Panes = [Pane.Accounts, Pane.Activity, Pane.Machine, null];
 
     // A window over its own placement file, which goes with it.
-    internal static MainWindow Made(Snapshot snapshot, StartAtSignIn? start = null)
+    internal static MainWindow Made(Snapshot snapshot, StartAtSignIn? start = null, Func<NotificationsBlocked?>? notifications = null)
     {
         var placement = Path.Combine(Path.GetTempPath(), $"pitboard-placement-{Guid.NewGuid()}.json");
         var window = new MainWindow(
             new AppModel(new StandInModel(snapshot)), start ?? new StartAtSignIn(new FixtureStartupItem()), new NoUpdates(), "0.0.0",
-            _ => { }, new WindowPlacement(placement));
+            _ => { }, new WindowPlacement(placement), notifications);
         window.Closed += (_, _) => File.Delete(placement);
         return window;
     }
@@ -200,24 +201,31 @@ public sealed class MainWindowTests
 
     // As the macOS settings read the login item again once the app is active, back from System Settings.
     [UITestMethod]
-    public async Task BackFromWindowsSettingsTheSettingsReadWhatItKeepsAgain()
+    public async Task BackFromWindowsSettingsTheSettingsReadWhatWindowsKeepsAgain()
     {
         var key = new StandInRunKey();
         var item = new RunValue(Build.Release, @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe", key);
         item.Write(starts: true);
-        var window = await Views.Activated(Made(Snapshots.Read(1), new StartAtSignIn(item)));
+        NotificationsBlocked? blocked = null;
+        var window = await Views.Activated(Made(Snapshots.Read(1), new StartAtSignIn(item), () => blocked));
         try
         {
             var page = await Showing(window, null);
             var toggle = Views.Element<ToggleSwitch>(page, "settings.startAtSignIn");
+            var notifications = Views.Element<SettingsCard>(page, "settings.notifications");
             Assert.IsTrue(toggle.IsOn);
+            Assert.AreEqual(Visibility.Collapsed, notifications.Visibility);
 
             key.Approvals["Pitboard"] = [0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            blocked = new(WindowsNotifications.OffForPitboard, InSettings: true);
             UnitTestApp.Window!.Activate();
             window.Activate();
 
-            await Views.Until(() => !toggle.IsOn && !toggle.IsEnabled, "the switch still shows on once the window came back");
+            await Views.Until(
+                () => !toggle.IsOn && !toggle.IsEnabled && notifications.Visibility == Visibility.Visible,
+                "the settings still show what Windows held before the window came back");
             Assert.AreEqual(Visibility.Visible, Views.Element<HyperlinkButton>(page, "settings.startupSettings").Visibility);
+            Assert.AreEqual(Visibility.Visible, Views.Element<HyperlinkButton>(page, "settings.notificationSettings").Visibility);
         }
         finally
         {

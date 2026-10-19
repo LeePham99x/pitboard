@@ -689,7 +689,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     posts the model's notifications through `IAppNotifications`, which
     `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
     Release build registers, and a click comes back as the intent the Switch button or the
-    notification itself asks for. `WindowsApps` is the model's `AppControl`: through
+    notification itself asks for. Its `Read` is why Windows shows none of them, from the
+    manager's `Setting` at each settings visit, as a `NotificationsBlocked`. `WindowsApps` is the model's `AppControl`: through
     `PackagedApps` it finds the process of a Store app's package that owns a top-level
     window, asks Restart Manager to end it, never forced, through `IRestartManager`, which
     `SystemRestartManager` sends to Restart Manager and tests replace, and opens the app by
@@ -4512,6 +4513,19 @@ Microsoft's documentation.
   a click, which has no arguments to hand over, `Pitboard.ico` ships beside `Pitboard.exe`,
   and `Pitboard.Probe` calls `UnregisterAll` only after a `Register`.
   `WindowsNotificationsTests` and `LaunchingTests` hold them.
+- `AppNotificationManager.Setting` answers `Unsupported` where `IsSupported` refuses, and
+  otherwise `ToastNotifications_QuerySettings` for the AppUserModelID its constructor took,
+  registered or not (`dev/AppNotifications/AppNotificationManager.cpp` at v2.5.1, commit
+  13160d54). `AppNotificationSetting` holds `Enabled`, `DisabledForApplication`,
+  `DisabledForUser`, `DisabledByGroupPolicy`, `DisabledByManifest` and `Unsupported`
+  (Microsoft.WindowsAppSDK.Foundation 2.3.12's metadata, which WindowsAppSDK 2.5.1 pulls
+  in); Microsoft's reference calls the second an app setting of the person's and the third a
+  global one. "Launch the Windows Settings app" (updated 26 September 2026) lists
+  `ms-settings:notifications` and `ms-settings:startupapps`. So `WindowsNotifications.Read`
+  asks for `Setting` only once it has registered, says each value but `Enabled`, and the
+  settings link to Settings for the person's own two. Which value Windows gives an
+  unpackaged Pitboard turned off in Settings is not measured. `WindowsNotificationsTests`
+  holds it.
 - The app notifications quickstart (updated 10 September 2026) listens, registers and then
   calls `GetActivatedEventArgs`, and says a cold start reports `Launch` with its arguments
   in `NotificationInvoked`, where the source above reports `AppNotification`; the app takes

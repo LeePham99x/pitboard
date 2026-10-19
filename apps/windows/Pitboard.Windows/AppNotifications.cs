@@ -18,6 +18,9 @@ public interface IAppNotifications
 
     void Show(AppNotification notification);
 
+    // Whether Windows shows this process's notifications, which Settings > System > Notifications changes at any time.
+    AppNotificationSetting Setting();
+
     void Unregister();
 
     void UnregisterAll();
@@ -49,6 +52,8 @@ public sealed class SystemAppNotifications : IAppNotifications
             : null;
 
     public void Show(AppNotification notification) => Manager.Show(notification);
+
+    public AppNotificationSetting Setting() => Manager.Setting;
 
     public void Unregister() => Manager.Unregister();
 

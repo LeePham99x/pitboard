@@ -223,7 +223,7 @@ public partial class App : Application, IIconTargets
         {
             var window = new MainWindow(
                 _model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account),
-                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")), _notifications?.Refusal);
+                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")), () => _notifications?.Read());
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

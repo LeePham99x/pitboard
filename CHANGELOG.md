@@ -14,6 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Where Windows' Startup settings turned Pitboard off, the Windows app's **Start when you sign in
   to Windows** offers **Open Startup settings**, and reads the setting again as you come back to
   the window.
+- The Windows app's **Settings** says when Windows turned Pitboard's notifications off, or every
+  app's, and offers **Open notification settings**.
 
 ### Changed
 

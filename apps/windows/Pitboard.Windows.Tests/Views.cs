@@ -50,7 +50,8 @@ internal static class Views
     // What the main window navigates its pages with, over a model the test made.
     public static PaneContext Context(
         AppModel model, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0",
-        Action<Uri>? open = null, TimeProvider? time = null, Action<string>? copy = null, string? notificationsOff = null) =>
+        Action<Uri>? open = null, TimeProvider? time = null, Action<string>? copy = null,
+        Func<NotificationsBlocked?>? notifications = null) =>
         new(
             model, new DialogHost(() => UnitTestApp.Window?.Content?.XamlRoot), start ?? new StartAtSignIn(new FixtureStartupItem()),
             updates ?? new NoUpdates(), version)
@@ -58,7 +59,7 @@ internal static class Views
             Open = open ?? (_ => { }),
             Time = time ?? TimeProvider.System,
             Copy = copy ?? (_ => { }),
-            NotificationsOff = notificationsOff,
+            Notifications = notifications ?? (() => null),
         };
 
     public static IEnumerable<DependencyObject> Descendants(DependencyObject root)

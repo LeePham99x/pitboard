@@ -21,7 +21,7 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(
         AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow,
-        WindowPlacement placement, string? notificationsOff = null)
+        WindowPlacement placement, Func<NotificationsBlocked?>? notifications = null)
     {
         _model = model;
         InitializeComponent();
@@ -48,7 +48,7 @@ public sealed partial class MainWindow : Window
         _context = new PaneContext(model, _dialogs, startAtSignIn, updates, version)
         {
             OpenWindow = openWindow,
-            NotificationsOff = notificationsOff,
+            Notifications = notifications ?? (() => null),
         };
         // A dialog needs the window's XamlRoot, which its content has once loaded.
         Navigation.Loaded += (_, _) =>

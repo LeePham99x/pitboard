@@ -34,8 +34,8 @@ public sealed class SettingsPageTests
 
     private static Task<SettingsPage> Shown(
         AppModel model, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0", Action<Uri>? open = null,
-        Action<string>? copy = null, string? notificationsOff = null) =>
-        Views.Navigated<SettingsPage>(Views.Context(model, start, updates, version, open, copy: copy, notificationsOff: notificationsOff));
+        Action<string>? copy = null, Func<NotificationsBlocked?>? notifications = null) =>
+        Views.Navigated<SettingsPage>(Views.Context(model, start, updates, version, open, copy: copy, notifications: notifications));
 
     private static bool Shows(SettingsPage page, string automationId) =>
         Views.Visible<TextBlock>(page).Any(text => AutomationProperties.GetAutomationId(text) == automationId);
@@ -570,14 +570,38 @@ public sealed class SettingsPageTests
     [UITestMethod]
     public async Task AReleaseBuildWhoseNotificationsAreOffSaysWhy()
     {
-        const string why = "Windows offers this process no app notifications.";
-        var off = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), notificationsOff: why);
+        const string why = WindowsNotifications.Unoffered;
+        var off = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), notifications: () => new(why, InSettings: false));
 
         Assert.AreSame(Card(Said(off, why)), Views.Element<SettingsCard>(off, "settings.notifications"));
+        Assert.IsFalse(
+            Views.Visible<HyperlinkButton>(off).Any(link => AutomationProperties.GetAutomationId(link) == "settings.notificationSettings"),
+            "a link to a switch that is not the person's");
 
         var on = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))));
 
         Assert.IsFalse(Views.Visible<SettingsCard>(on).Any(card => AutomationProperties.GetAutomationId(card) == "settings.notifications"));
+    }
+
+    // docs/reference/windows-app.mdx promised that Settings says why Windows shows none; only a failed registration was said.
+    [UITestMethod]
+    public async Task NotificationsTurnedOffInWindowsSettingsLinkThere()
+    {
+        var opened = new List<Uri>();
+        NotificationsBlocked? blocked = new(WindowsNotifications.OffForPitboard, InSettings: true);
+        var page = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), open: opened.Add, notifications: () => blocked);
+        var card = Views.Element<SettingsCard>(page, "settings.notifications");
+        var link = Views.Element<HyperlinkButton>(page, "settings.notificationSettings");
+
+        Assert.AreSame(card, Card(Said(page, WindowsNotifications.OffForPitboard)));
+        Assert.AreSame(card, Card(link));
+        new HyperlinkButtonAutomationPeer(link).Invoke();
+        Assert.AreEqual(new Uri("ms-settings:notifications"), opened.Single());
+
+        blocked = null;
+        page.ViewModel!.ReadWindowsSettings();
+
+        Assert.AreEqual(Visibility.Collapsed, card.Visibility);
     }
 
     private sealed class Refusing : IStartupItem

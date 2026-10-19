@@ -14,8 +14,10 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 
     public const string TurnedOffNote = "Turned off in Settings > Apps > Startup, where you can turn it on again.";
 
-    // Settings > Apps > Startup, by the URI Microsoft's "Launch the Windows Settings app" lists.
+    // Settings > Apps > Startup and System > Notifications, by the URIs Microsoft's "Launch the Windows Settings app" lists.
     public const string StartupSettings = "ms-settings:startupapps";
+
+    public const string NotificationSettings = "ms-settings:notifications";
 
     public const string BetaNote = "A beta updates itself to 1.0.0 once that is out. Install a later beta by hand.";
 
@@ -42,14 +44,17 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
     private readonly AppModel _model;
     private readonly StartAtSignIn _start;
     private readonly IUpdates _updates;
+    private readonly Func<NotificationsBlocked?> _notifications;
+    private NotificationsBlocked? _blocked;
 
-    public SettingsViewModel(AppModel model, StartAtSignIn start, IUpdates updates, string version, string? notificationsOff)
+    public SettingsViewModel(
+        AppModel model, StartAtSignIn start, IUpdates updates, string version, Func<NotificationsBlocked?> notifications)
     {
         _model = model;
         _start = start;
         _updates = updates;
+        _notifications = notifications;
         Version = version;
-        NotificationsOff = notificationsOff ?? "";
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -74,10 +79,12 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 
     public bool OffersStartupSettings => _start.TurnedOff;
 
-    // Why a Release build posts no notifications; empty where it posts them.
-    public string NotificationsOff { get; }
+    // Why Windows shows none of a Release build's notifications; empty where it shows them.
+    public string NotificationsOff => _blocked?.Why ?? "";
 
-    public bool HasNotificationsOff => NotificationsOff.Length > 0;
+    public bool HasNotificationsOff => _blocked is not null;
+
+    public bool OffersNotificationSettings => _blocked?.InSettings == true;
 
     public bool AutoSwitch => Auto.On;
 
@@ -205,8 +212,13 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
         _updates.LookForFeed();
     }
 
-    // Also as the window comes back, as from Settings > Apps > Startup, where the macOS settings read again too.
-    public void ReadWindowsSettings() => _start.Read();
+    // Also as the window comes back, as from Settings > Apps > Startup or System > Notifications, as the macOS settings do.
+    public void ReadWindowsSettings()
+    {
+        _blocked = _notifications();
+        Tell();
+        _start.Read();
+    }
 
     public void SetStartsAtSignIn(bool on)
     {
