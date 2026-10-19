@@ -4468,11 +4468,12 @@ Microsoft's documentation.
   dialog opens; a dialog made in code, outside the live tree, is put whole in its popup.
   `KeyboardInputProcessor.cpp` raises `PreviewKeyDown` and `KeyDown` with one event
   argument, so a `PreviewKeyDown` handled on the dialog keeps Esc from its close button.
-  `InfoBar.cpp` announces an InfoBar as it opens only through an automation peer it has
-  already. So `AccountSheet` cancels each button's click and leaves closing to the model,
-  dims its close button through `CloseButtonStyle` while nothing may close it, keeps Esc
-  from a sign-in that waits on its app, and keeps its failure's InfoBar in the tree while it
-  is closed. `AccountSheetTests` holds what runs without a person on the runners.
+  `InfoBar.cpp` announces an InfoBar as it opens, by its severity, title and message, only
+  through an automation peer it has already. So `AccountSheet` cancels each button's click
+  and leaves closing to the model, dims its close button through `CloseButtonStyle` while
+  nothing may close it, keeps Esc from a sign-in that waits on its app, and keeps its
+  failure's InfoBar in the tree while it is closed. `AccountSheetTests` holds what runs
+  without a person on the runners.
 - Microsoft's InfoBar page raises no notification for a bar changed while open, and has it
   closed and opened again for a screen reader to hear the new content
   ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
@@ -409,13 +410,16 @@ public sealed partial class AccountWindowTests
             await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
             var note = Views.Element<InfoBar>(window.Content, "window.note");
             Assert.IsTrue(note.IsOpen);
-            var opened = new List<bool>();
-            note.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) => opened.Add(note.IsOpen));
+            // InfoBar.cpp announces its title and message as it opens, through a peer it has already.
+            Assert.IsInstanceOfType<InfoBarAutomationPeer>(FrameworkElementAutomationPeer.CreatePeerForElement(note));
+            var opened = new List<string>();
+            note.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) => opened.Add(note.IsOpen ? $"opened: {note.Message}" : "closed"));
 
             await Page(window)!.Script("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'; 0");
 
-            await Views.Until(() => note.Message.StartsWith("Google does not allow", StringComparison.Ordinal), "Google's refusal was not said", Webs.Patience);
-            Assert.AreEqual("closed, opened", string.Join(", ", opened.Select(open => open ? "opened" : "closed")));
+            await Views.Until(() => opened.Count == 2, () => $"the bar went {string.Join(", ", opened)}", Webs.Patience);
+            Assert.AreEqual("closed", opened[0]);
+            StringAssert.StartsWith(opened[1], "opened: Google does not allow");
         }
         finally
         {
