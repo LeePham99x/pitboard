@@ -133,9 +133,12 @@ the zip with cargo-binstall from crates.io, with `compile` disabled, so a `pkg-u
 From major version 1, each release also has the app for Windows, an MSI for x64 and one for
 ARM64, `Pitboard-v<version>-windows-<arch>.msi`, each with a bill of materials. `app-windows-build`
 builds the app on each machine, `windows-sign` signs Pitboard's own programs in it with the zips,
-and `app-windows-package` builds the MSI from them with the signed zip's `pitboard.exe` in `bin`,
-so the zip and the MSI carry one build. CI builds and checks an MSI the same way on every pull
-request. `windows-sign-msi` signs both MSIs, and `windows-msi` checks each on its own machine.
+and `app-windows-package` builds the MSI from them with the signed zip's `pitboard.exe` in `bin`
+and its completions, so the zip and the MSI carry one build. It fails where a key path has
+another component GUID than in the newest earlier release's MSIs, or a GUID another key path:
+an upgrade removes the old product after the new one's files are in, and would take that file
+away. CI builds and checks an MSI the same way on every pull request. `windows-sign-msi` signs
+both MSIs, and `windows-msi` checks each on its own machine.
 The latest full release also has `appcast-windows.xml`, the feed the Windows app updates from,
 which `windows-update-sign` signs with [the Windows update key](#the-windows-update-key). The
 `windows-install` job downloads each MSI, checks it against `SHA256SUMS`, its attestation and its

@@ -1,5 +1,6 @@
 # Tests check-windows-app.ps1 against copies of CI's Release folder, one thing changed in each, and check-windows-msi.ps1,
-# validate-windows-msi.ps1 and verify-windows-signatures.ps1 against its MSI and package. It runs none of them.
+# validate-windows-msi.ps1, check-msi-components.ps1 and verify-windows-signatures.ps1 against its MSI and package. It
+# runs none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -27,6 +28,7 @@ $pack = Join-Path $PSScriptRoot 'pack-windows-share.ps1'
 $verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
 $checkMsi = Join-Path $PSScriptRoot 'check-windows-msi.ps1'
 $validate = Join-Path $PSScriptRoot 'validate-windows-msi.ps1'
+$components = Join-Path $PSScriptRoot 'check-msi-components.ps1'
 $signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
 $msiPath = (Resolve-Path -LiteralPath $Msi).Path
 $root = (Resolve-Path -LiteralPath $Folder).Path
@@ -152,6 +154,17 @@ try {
     Assert-Thrown 'an MSI with a row its build did not write' $verify `
         @{ Path = $retitled; Mode = 'unsigned'; Built = $built } 'holds other tables than it was built with: Property$'
 
+    & $components -Msi $msiPath -Previous $msiPath
+    $dropped = Edit-Msi 'dropped' "DELETE FROM ``Component`` WHERE ``KeyPath`` = 'CommandLineExe'"
+    & $components -Msi $dropped -Previous $msiPath | Out-Null
+    & $components -Msi $msiPath -Previous $dropped, $msiPath | Out-Null
+    Write-Output 'ok: a component that goes or comes leaves every other GUID where it was'
+    $regenerated = Edit-Msi 'regenerated' "UPDATE ``Component`` SET ``ComponentId`` = '{00000000-0000-0000-0000-000000000001}' WHERE ``KeyPath`` = 'CommandLineExe'"
+    Assert-Thrown 'a key path with another GUID than the last release gave it' $components @{ Msi = $regenerated; Previous = $msiPath } `
+        'file ProgramFiles64Folder\\Pitboard\\bin\\pitboard\.exe has the component \{00000000-0000-0000-0000-000000000001\}, and had \{'
+    Assert-Thrown 'a GUID with another key path than the last release gave it' $components @{ Msi = $renamed; Previous = $msiPath } `
+        'has the key path file ProgramFiles64Folder\\Pitboard\\bin\\other\.exe, and had file ProgramFiles64Folder\\Pitboard\\bin\\pitboard\.exe in '
+
     & $validate -Msi $msiPath
     $broken = Edit-Msi 'ice03' "UPDATE ``Registry`` SET ``Root`` = 7 WHERE ``Name`` = 'CommandLineOnPath'"
     Assert-Thrown 'a row of Pitboard''s own that ICE03 refuses' $validate @{ Msi = $broken } 'fails ICE03 in rows besides WinUI''s own files'
@@ -181,5 +194,5 @@ try {
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1, check-windows-msi.ps1, validate-windows-msi.ps1 and verify-windows-signatures.ps1 refused what they should.'
+Write-Output 'check-windows-app.ps1, check-windows-msi.ps1, validate-windows-msi.ps1, check-msi-components.ps1 and verify-windows-signatures.ps1 refused what they should.'
 exit 0

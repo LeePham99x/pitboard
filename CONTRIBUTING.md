@@ -462,9 +462,12 @@ the signed one holds, `check-windows-msi.ps1` each one's version, layout, comman
 completions and share target, the UI tests of the release gate start the signed one's
 `Pitboard.exe`, which refuses at 0.x and at 1.x takes back what it registered with
 `--unregister`, and `Pitboard.Installer.Tests` reads each one's tables and asks its
-`pitboard_ffi.dll` whether it opens. `test-windows-app.ps1` tests `check-windows-msi.ps1` and `validate-windows-msi.ps1` too,
-and runs the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of
-it with a row changed and on the package the job signed. The MSI takes its version from
+`pitboard_ffi.dll` whether it opens. `check-msi-components.ps1` fails each one where a key path
+has another component GUID than in both MSIs of the newest release that shipped one, or a GUID
+another key path, as the release checks its own. `test-windows-app.ps1` tests
+`check-windows-msi.ps1`, `validate-windows-msi.ps1` and `check-msi-components.ps1` too, and runs
+the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of it with a row
+changed and on the package the job signed. The MSI takes its version from
 `windows-versions.sh`, which `test-release.py` tests.
 
 The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the

@@ -577,8 +577,9 @@ jobs:
           ./.github/scripts/verify-windows-signatures.ps1 -Path $ours -Mode $mode -Subject $env:SUBJECT
       # Every Release build, betas included, reads the feed of full releases with the key it carries,
       # and WinSparkle takes an update only when that key verifies it: there is no second route. So the
-      # key is compared with the newest earlier release that shipped an MSI, betas included.
-      - name: The update key the last MSI shipped
+      # key is compared with the newest earlier release that shipped an MSI, betas included. Both of
+      # that release's MSIs come down, for the components' check.
+      - name: The last release's MSIs, and the update key this machine's shipped
         id: key
         shell: pwsh
         env:
@@ -601,10 +602,11 @@ jobs:
           if (-not $previous) { exit 0 }
           $name = "Pitboard-$previous-windows-$env:INSTALLER.msi"
           $dir = Join-Path $env:RUNNER_TEMP 'previous'
-          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern $name --dir $dir
+          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern "Pitboard-$previous-windows-*.msi" --dir $dir
           if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
           $folder = & ./.github/scripts/extract-msi.ps1 -Msi (Join-Path $dir $name) -Destination (Join-Path $env:RUNNER_TEMP 'previous-image')
           "previous=$previous" >> $env:GITHUB_OUTPUT
+          "previous-folder=$dir" >> $env:GITHUB_OUTPUT
           "was=$(& $read -Assembly (Join-Path $folder 'Pitboard.dll') -Metadata WindowsUpdatePublicKey)" >> $env:GITHUB_OUTPUT
       - name: The update key this release ships
         shell: bash
@@ -615,6 +617,17 @@ jobs:
           WAS: ${{ steps.key.outputs.was }}
           ROTATION: ${{ vars.WINDOWS_UPDATE_KEY_ROTATION }}
         run: sh .github/scripts/windows-update-key.sh "$VERSION" "$NOW" "$PREVIOUS" "$WAS" "$ROTATION"
+      # The new product goes in before the old one is removed, and either machine's MSI replaces the
+      # other's (Package.wxs).
+      - name: Each component keeps the GUID the last release's MSIs gave its key path
+        if: steps.key.outputs.previous != ''
+        shell: pwsh
+        env:
+          MSI: ${{ steps.msi.outputs.msi }}
+          PREVIOUS: ${{ steps.key.outputs.previous-folder }}
+        run: |
+          $last = @(Get-ChildItem -LiteralPath $env:PREVIOUS -File -Filter '*.msi' | ForEach-Object FullName)
+          ./.github/scripts/check-msi-components.ps1 -Msi $env:MSI -Previous $last
       # Not dist-: the MSI reaches publish only through windows-sign-msi and windows-msi.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

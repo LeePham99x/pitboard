@@ -758,6 +758,35 @@ jobs:
           ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi-unsigned/Pitboard.msi -Folder $env:UNSIGNED_IMAGE `
             -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS
           exit $LASTEXITCODE
+      # As release.yml's app-windows-package checks a release's, against both MSIs of the newest
+      # release that shipped one, read and never extracted.
+      - name: The MSIs keep each component's GUID the last release's MSIs gave its key path
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ matrix.installer }}
+        run: |
+          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | [.tag_name, .assets[].name] | join(" ")'
+          if ($LASTEXITCODE -ne 0) { throw "gh api exited $LASTEXITCODE" }
+          $previous = $null
+          foreach ($release in $releases) {
+            $tag, $assets = $release -split ' '
+            if ($assets -contains "Pitboard-$tag-windows-$env:INSTALLER.msi") {
+              $previous = $tag
+              break
+            }
+          }
+          if (-not $previous) {
+            Write-Output 'No release has shipped an MSI for this machine.'
+            exit 0
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'previous-msi'
+          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern "Pitboard-$previous-windows-*.msi" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $last = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.msi' | ForEach-Object FullName)
+          foreach ($msi in 'msi', 'msi-unsigned') {
+            ./.github/scripts/check-msi-components.ps1 -Msi "target/windows-app/$msi/Pitboard.msi" -Previous $last
+          }
       # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
       # carries one, both read by the release's signature check.
       - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key, feed, version or MSI, and the signature check reads the MSI and the package"

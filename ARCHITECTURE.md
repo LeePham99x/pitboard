@@ -801,7 +801,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     final and `X.Y.Z.N` for beta N, as `windows-versions.sh` gives it, and Windows Installer
     compares three fields. It removes the old product once the new one's files are in place
     (`afterInstallExecute`), so `bin\pitboard.exe` is never missing in an upgrade, which needs
-    each component to keep the GUID WiX makes from its key path; `REINSTALLMODE` `emus`
+    each component to keep the GUID WiX makes from its key path, as `check-msi-components.ps1`
+    holds it to the last release's; `REINSTALLMODE` `emus`
     replaces a file of an equal version too, as the other architecture's MSI of one version
     has. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
     `Pitboard.exe --unregister` and removes `%LOCALAPPDATA%\Pitboard App` through WiX's
@@ -919,8 +920,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     app's Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package
     beside it, `test-certificate.ps1` makes the throwaway certificate it and the runner facts
     sign with, `extract-msi.ps1` extracts an MSI's administrative image and
-    `check-windows-msi.ps1` checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with
-    the WiX that built it, `read-assembly.ps1` reads a value from a .NET assembly's metadata,
+    `check-windows-msi.ps1` checks one, `check-msi-components.ps1` holds its components'
+    GUIDs and key paths to the last release's MSIs, `validate-windows-msi.ps1` runs ICE03 on an
+    MSI with the WiX that built it, `read-assembly.ps1` reads a value from a .NET assembly's metadata,
     and `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
     package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
@@ -2853,6 +2855,14 @@ with no warning, ICE57 passing. `msiexec /a`, run by the job's user, lays out ea
 own MSI in `PFiles64\Pitboard`: the Release publish's 284 programs and libraries on
 windows-2025 and 283 on windows-11-arm, no `.pdb`, and `bin\pitboard.exe`. The fresh
 standard user opens the MSI read only through `msi.dll`, as `Pitboard.Installer.Tests` does.
+
+The Component, Directory, File and Registry tables of the published MSIs of 1.0.0-beta.2 and
+1.0.0-beta.3, read as bytes on 20 October 2026: from one beta to the next each machine's MSI
+kept the GUID of every key path, 534 on x64 and 530 on ARM64, and beta.3's two MSIs give the 528
+key paths they share the same GUIDs. A standard folder's Directory row goes by its property,
+`ProgramFiles64Folder` under `TARGETDIR`, and each folder under `Pitboard` by an id WiX makes
+up, such as `dGNBjMVUkheIrP_lIJTI5NBZzo_c` for `af-ZA`. So `check-msi-components.ps1` names a
+key path by the standard folder and the long names below it.
 
 The images:
 
