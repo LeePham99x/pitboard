@@ -601,7 +601,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the fourteen on the real core: a home in the fixture's own folder in the
+    makes each of the fifteen on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `claudeDesktop` and `claudeDesktopOpen` hold Claude Desktop only where
@@ -4844,6 +4844,10 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   `.credentials.json` behind Claude Code's store. Its read warns `fallback_login` with the
   notice's Put Away…, the read of what is known says nothing of it, and Put Away keeps the
   login for personal and deletes the file.
+- loginReplaced, which the Swift fixture never had, is oneTool after personal signed in
+  with Claude Code itself over work's only login, recorded by a terminal's read ten minutes
+  before. Every read, the one of what is known too, warns `login_replaced`, work's row reads
+  `login_replaced`, and the app's first read posts it.
 - stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
   from the core's own read: a read says an interrupted switch is waiting wherever the next
   change would be refused over it, as a warning with the refusal's code,
