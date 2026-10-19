@@ -320,7 +320,9 @@ public sealed partial class AccountWindowTests
 
             windows.Follow(model.Snapshot().AccountWindows with
             {
-                Accounts = [], Open = [], Deleting = [new StoreDeletion(account.Store, 1)],
+                Accounts = [],
+                Open = [],
+                Deleting = [new StoreDeletion(account.Store, 1)],
             });
 
             await Views.Until(() => closed, "the window outlived its store", Webs.Patience);
