@@ -156,7 +156,7 @@ public sealed class WindowsNotificationsTests
     [TestMethod]
     public void ANotificationWindowsRefusesIsRefusedByItsTypeAndHresultAlone()
     {
-        var gone = new COMException($"{Icon} could not be read", unchecked((int)0x80070490));
+        var gone = Marshal.GetExceptionForHR(unchecked((int)0x80070490));
         var system = new StandInNotifications { RefusesToShow = gone };
         var notifications = new WindowsNotifications(Build.Release, () => system, Icon);
         notifications.Start(_ => Assert.Fail("a click"));
