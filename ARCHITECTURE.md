@@ -1354,9 +1354,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - A login replaced outside Pitboard, which every read says until it is put right
   (`login_replaced`), is posted once for each account while the reads that ask say it, and
   again only once one has stopped saying it and a later one says it, or after the app is
-  opened again. A failed read or a refused change whose warnings name one posts it the same
-  way. Neither counts as a read that stopped saying one, since neither says whether a login
-  it leaves out was put right. What was posted is kept by the account the warning is about
+  opened again. The core says it only beside a read that answers. A failed read or a refused
+  change whose warnings named one would post it the same way, which nothing sends today.
+  Neither counts as a read that stopped saying one, since neither says whether a login it
+  leaves out was put right. What was posted is kept by the account the warning is about
   (`Warning`'s `account`), since its words name whose login is stored now, which every
   switch changes, and not across launches.
 - A notification the app's system refused is kept with its title, the system's reason and

@@ -350,6 +350,7 @@ fn bodies(machine: &Machine) -> Vec<&str> {
         .collect()
 }
 
+// The core names a replaced login only beside a read that answers; this guards a failed one.
 #[test]
 fn a_login_replaced_a_failed_read_says_is_posted_once_while_it_stands() {
     let replaced = replaced("work", "home");
@@ -387,6 +388,7 @@ fn a_login_replaced_a_failed_read_says_is_posted_once_while_it_stands() {
     );
 }
 
+// No refusal the core makes names a replaced login today; one that did is posted.
 #[test]
 fn a_login_replaced_a_refused_switch_says_is_posted() {
     let replaced = replaced("work", "home");
