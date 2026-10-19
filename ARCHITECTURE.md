@@ -880,6 +880,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     system, against their registers.
   - `workflows/sparkle.yml` opens an issue when Sparkle has a release newer than the one
     `apps/macos/project.yml` pins, because Dependabot cannot read that pin.
+    `workflows/winsparkle.yml` does the same for WinSparkle and the Windows App SDK, against
+    `apps/windows/Directory.Packages.props`, since Dependabot raises no NuGet package.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
