@@ -897,7 +897,7 @@ fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
     else {
         return Some(Vec::new());
     };
-    crate::holder::find(ctx, program, holders)
+    crate::holder::find(ctx, ProviderId::Codex, program, holders)
 }
 
 /// The check that fails where this process runs as root or under sudo, or elevated on
@@ -7714,7 +7714,11 @@ mod tests {
         };
         let holders = crate::provider::codex::holders::HOLDERS;
         let mut codex = with_codex();
-        codex.running = Some(classify(&[at(4321, "codex"), at(99, "codex")], holders));
+        codex.running = Some(classify(
+            &[at(4321, "codex"), at(99, "codex")],
+            holders,
+            "codex",
+        ));
         let checks = codex_checks(&codex);
         let running = check(&checks, "codex_running");
         assert_eq!(running.level, Level::Ok);
@@ -7736,7 +7740,7 @@ mod tests {
         );
 
         let many: Vec<Process> = (1..=23).map(|pid| at(pid, "codex")).collect();
-        codex.running = Some(classify(&many, holders));
+        codex.running = Some(classify(&many, holders, "codex"));
         let detail = check(&codex_checks(&codex), "codex_running").detail.clone();
         assert!(detail.starts_with("23 `codex` sessions"), "{detail}");
         assert!(detail.contains("1, 2, 3 and 20 more"), "{detail}");
@@ -7748,6 +7752,7 @@ mod tests {
                  Contents/MacOS/codex",
             )],
             holders,
+            "codex",
         ));
         let checks = codex_checks(&codex);
         let app = check(&checks, "codex_running");

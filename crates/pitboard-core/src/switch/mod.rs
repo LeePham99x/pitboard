@@ -1323,6 +1323,7 @@ pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
                 folder::Open::Yes(listed) => StillHolding::These(vec![holder::Holding {
                     holder: *app.holder(),
                     pids: listed.iter().map(|one| one.pid).collect(),
+                    program: which.program(),
                 }]),
                 folder::Open::Unknown(_) => StillHolding::Unknown,
             };
@@ -1331,7 +1332,7 @@ pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
     let provider::Adoption::RestartRequired { program, holders } = tool.adoption(None) else {
         return StillHolding::Nothing;
     };
-    match holder::find(ctx, program, holders) {
+    match holder::find(ctx, which, program, holders) {
         None => StillHolding::Unknown,
         Some(holding) if holding.is_empty() => StillHolding::Nothing,
         Some(holding) => StillHolding::These(holding),
