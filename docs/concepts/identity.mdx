@@ -50,6 +50,6 @@ Pitboard renews a login a tool may be using in three cases only:
 
 - A change or a read renews Claude Code's login in use where it must identify it, as [A lapsed login in use](#a-lapsed-login-in-use) describes.
 - [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token.
-- A warm-up of the account in use renews its login where the access token would lapse within 5 minutes. Pitboard warms up no account on Windows.
+- A warm-up of the account in use renews its login where the access token would lapse within 5 minutes.
 
 Each holds [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile, so no session spends the same refresh token. Pitboard never renews Codex's login in use.

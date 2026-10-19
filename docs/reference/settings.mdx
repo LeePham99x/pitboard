@@ -90,9 +90,7 @@ While the setting is on, a line says what the app last decided:
 
 ### Warm up limits
 
-While the app is open on macOS, it warms up each Claude Code account turned on here, between **From** and **To** each day, as [Warm up accounts](/guides/warm-up) describes. `pitboard warm` changes the same setting, and `pitboard watch` reads it.
-
-On Windows, Pitboard warms up no account. The section shows the accounts and hours dimmed, under **Pitboard is not warming up accounts: warm-ups are not available on Windows, where Claude Code does not read the access token a warm-up hands it.**
+While the app is open, it warms up each Claude Code account turned on here, between **From** and **To** each day, as [Warm up accounts](/guides/warm-up) describes. `pitboard warm` changes the same setting, and `pitboard watch` reads it.
 
 **To** at 00:00 is the end of the day. A **From** later than **To** runs past midnight.
 
@@ -105,6 +103,8 @@ Each account's row shows where its warm-up stands while it is on. A line under t
 | **The last warm-up came to nothing:**, then the error | A warm-up the app made by itself failed. It shows until the next one starts a period or finds nothing due. |
 | Why the setting cannot be read, such as **Which accounts Pitboard warms up, at …, cannot be read** | `warm.json` cannot be read. |
 | **Pitboard is not warming up accounts:**, then the reason | Nothing can be warmed up here, for a reason in the second table of [When it holds back](/guides/warm-up#when-it-holds-back). |
+
+On Windows, the line sits under **Warm up limits** and its hours, and shows while the section is closed.
 
 ## Renewal
 
