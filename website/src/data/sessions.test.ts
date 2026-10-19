@@ -152,7 +152,7 @@ test("pitboard lists Claude Desktop on macOS alone, where Pitboard supports it",
 
 test("pitboard watch on Windows starts with no warm-up, as no account is turned on there", () => {
   const source = joined(repo("crates/pitboard/src/watch.rs"));
-  assert.ok(source.includes("overview.halted != Some(Halt::Unbuilt)"));
+  assert.ok(source.includes("overview.accounts.iter().any(|choice| choice.on)"));
   const [start, watching] = text(printed(sessions.watch, "windows"));
   assert.match(
     start,

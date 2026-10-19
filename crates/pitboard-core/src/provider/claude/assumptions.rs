@@ -1607,7 +1607,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     path is fixed when a build is made: the macOS build of 2.1.296 opens \
                     `/dev/fd/<n>`, which takes a pipe",
         verified_against: "2.1.301",
-        depends: "warm::unbuilt, which warms up no account on Windows, and doctor's warm_up check",
+        depends: "Claude Code's warm-up command, which on Windows hands a run the token as \
+                  windows_token_env says instead",
         probe: &[
             "descriptor_by_path",
             "file_after_socket",

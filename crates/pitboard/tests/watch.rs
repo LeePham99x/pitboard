@@ -294,10 +294,6 @@ fn a_share_outside_fifty_to_ninety_nine_is_refused() {
 /// With an account turned on, `watch` says so as it starts, and warms the account up once its
 /// five-hour period is not running: the run's answer and the reading after it say it started.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
-)]
 fn watch_warms_up_an_account_turned_on_once_its_period_is_not_running() {
     let mut env = two_accounts("watch-warm");
     env.an_hour_on();

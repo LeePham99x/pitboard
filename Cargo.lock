@@ -1347,7 +1347,7 @@ dependencies = [
 
 [[package]]
 name = "pitboard-core"
-version = "0.15.3"
+version = "0.16.0"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",

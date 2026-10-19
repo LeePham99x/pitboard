@@ -81,23 +81,6 @@ const STOW: &str = if cfg!(windows) {
     "Put away the login Claude Code left in a file behind the keychain, then delete the file"
 };
 
-// Pitboard warms up no account on Windows (`duty::warm::unbuilt`).
-const WARM: &str = if cfg!(windows) {
-    "Warm-ups, which are not available on Windows, where Claude Code does not read the access \
-     token a warm-up hands it"
-} else {
-    "Start the five-hour period of the accounts you choose as soon as the last one resets, \
-     while the app or `pitboard watch` runs"
-};
-
-const WATCH: &str = if cfg!(windows) {
-    "Switch Claude Code to another of your accounts before the one in use runs out, for as long \
-     as this runs"
-} else {
-    "Switch Claude Code to another of your accounts before the one in use runs out, and warm up \
-     the accounts `pitboard warm on` turned on, for as long as this runs"
-};
-
 // The default folder, by the name a person knows it by on each system.
 const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
     "Renew as the daily renewal schedule does: %LOCALAPPDATA%\\Pitboard, whatever \
@@ -193,12 +176,14 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
-    #[command(about = WARM)]
+    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
+    /// while the app or `pitboard watch` runs
     Warm {
         #[command(subcommand)]
         what: Option<warm::WarmCommand>,
     },
-    #[command(about = WATCH)]
+    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
+    /// up the accounts `pitboard warm on` turned on, for as long as this runs
     Watch {
         /// Switch once a limit of the account in use reaches this share, from 50 to 99
         #[arg(
@@ -2060,58 +2045,25 @@ mod tests {
         insta::assert_snapshot!("help", every_help());
     }
 
-    // Pitboard warms up no account on Windows, and Claude Code's login file there sits behind
-    // Credential Manager.
+    // Claude Code's login file on Windows sits behind Credential Manager.
     #[test]
     #[cfg(windows)]
-    fn the_windows_help_promises_no_warm_up_and_names_no_keychain() {
+    fn the_windows_help_promises_warm_ups_and_names_no_keychain() {
         let every = every_help();
         assert!(!every.contains("keychain"), "{every}");
         let read = every.split_whitespace().collect::<Vec<_>>().join(" ");
         for said in [
-            "warm Warm-ups, which are not available on Windows, where Claude Code does not read \
-             the access token a warm-up hands it",
+            "warm Start the five-hour period of the accounts you choose as soon as the last one \
+             resets, while the app or `pitboard watch` runs",
             "watch Switch Claude Code to another of your accounts before the one in use runs out, \
-             for as long as this runs",
+             and warm up the accounts `pitboard warm on` turned on, for as long as this runs",
+            "now Start an account's five-hour period now, whatever the span, through one short \
+             request Claude Code makes with that account's login",
             "stow Put away the login Claude Code left in a file behind Credential Manager, then \
              delete the file",
         ] {
             assert!(read.contains(said), "{said}: {every}");
         }
-    }
-
-    // On Windows, `warm now` refuses with `warm_up_unbuilt`, and `warm on` and `warm range` only
-    // keep the setting.
-    #[test]
-    #[cfg(windows)]
-    fn the_windows_help_of_each_warm_command_promises_no_warm_up() {
-        let cli = Cli::command();
-        let warm = cli.find_subcommand("warm").expect("warm");
-        let said: Vec<(String, String)> = warm
-            .get_subcommands()
-            .map(|sub| {
-                let about = sub.get_about().map(ToString::to_string);
-                (sub.get_name().to_string(), about.unwrap_or_default())
-            })
-            .collect();
-        let expected = [
-            (
-                "now",
-                "Start an account's five-hour period now, which is not available on Windows",
-            ),
-            (
-                "on",
-                "Turn warm-ups on for an account; they are not available on Windows",
-            ),
-            ("off", "Turn warm-ups off for an account"),
-            (
-                "range",
-                "Set the times of each day warm-ups may run between, in this computer's time \
-                 zone; they are not available on Windows",
-            ),
-        ]
-        .map(|(name, about)| (name.to_string(), about.to_string()));
-        assert_eq!(said, expected);
     }
 
     // Pitboard switches Claude Desktop on macOS alone; Linux's help keeps the words it had.

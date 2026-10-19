@@ -26,7 +26,6 @@ pub use decide::{Hold, Standing};
 
 use crate::context::Context;
 use crate::error::{Error, Result};
-use crate::host::Os;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::state::State;
@@ -226,8 +225,6 @@ impl Setting {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Halt {
-    /// Pitboard warms up nothing on Windows, where Claude Code reads no token handed to it.
-    Unbuilt,
     /// A switch was interrupted, and the change that finishes it is somebody's to make.
     SwitchInterrupted,
     /// Claude Code keeps its login under another name, which Pitboard does not act on.
@@ -243,7 +240,6 @@ impl Halt {
     /// A stable code, for `--json` and for telling one apart from another.
     pub fn code(&self) -> &'static str {
         match self {
-            Halt::Unbuilt => "warm_up_unbuilt",
             Halt::SwitchInterrupted => "switch_interrupted",
             Halt::CustomOauth => "custom_oauth_endpoint",
             Halt::Overridden(_) => "warm_up_auth_overridden",
@@ -252,20 +248,9 @@ impl Halt {
     }
 }
 
-// Claude Code on Windows reads a handed pipe through `/proc` alone (`windows_token_handover`).
-pub(crate) fn unbuilt(os: Os) -> Option<Halt> {
-    match os {
-        Os::Windows => Some(Halt::Unbuilt),
-        Os::MacOs | Os::Linux => None,
-    }
-}
-
 /// Why nothing is warmed up here now, where something says so, asked in the order a change
 /// would refuse over it.
 pub(crate) fn halted(ctx: &Context) -> Option<Halt> {
-    if let Some(halt) = unbuilt(ctx.os) {
-        return Some(halt);
-    }
     if crate::switch::unfinished(ctx) == Some(crate::switch::Unfinished::Interrupted) {
         return Some(Halt::SwitchInterrupted);
     }
@@ -353,7 +338,7 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
     let ledger = decide::Ledger::load(ctx);
     Overview {
         range: setting.range,
-        halted: unbuilt(ctx.os).or_else(|| setting.any().then(|| halted(ctx)).flatten()),
+        halted: setting.any().then(|| halted(ctx)).flatten(),
         accounts: state
             .accounts
             .iter()

@@ -3,6 +3,7 @@
 
 mod common;
 
+use common::os::{self, Handed};
 use common::two_accounts;
 
 fn json(text: &str) -> serde_json::Value {
@@ -10,14 +11,10 @@ fn json(text: &str) -> serde_json::Value {
 }
 
 /// Asked to warm up a parked account now, Pitboard starts Claude Code's print mode with that
-/// account's access token on descriptor 3 alone, in a home of its own, and records what the
-/// next reading says: its five-hour period running.
+/// account's access token alone, on descriptor 3 or on Windows in `CLAUDE_CODE_OAUTH_TOKEN`, in
+/// a home of its own, and records what the next reading says: its five-hour period running.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
-)]
-fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
+fn warming_up_now_runs_claude_code_with_the_access_token_alone() {
     let mut env = two_accounts("warm-now");
     let (started, handed) = env.install_fake_claude_print();
     env.claude_usage(None);
@@ -57,7 +54,6 @@ fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
         ])
     );
     let variables = &started["variables"];
-    assert_eq!(variables["CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"], "3");
     assert_eq!(variables["ANTHROPIC_API_KEY"], serde_json::Value::Null);
     assert_eq!(variables["PITBOARD_HOME"], serde_json::Value::Null);
     let config = variables["CLAUDE_CONFIG_DIR"]
@@ -67,10 +63,40 @@ fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
         std::path::Path::new(config).ends_with("pitboard/warm/claude/config"),
         "{config}"
     );
+    let names: Vec<&str> = started["names"]
+        .as_array()
+        .expect("the names it was given")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    for absent in [
+        "ANTHROPIC_API_KEY",
+        "PITBOARD_HOME",
+        "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+    ] {
+        assert!(!names.contains(&absent), "{absent}: {names:?}");
+    }
 
     let handed = json(&std::fs::read_to_string(&handed).unwrap());
-    assert_eq!(handed["descriptor"], "access-refresh-b");
     assert_eq!(handed["input"], "", "nothing on standard input");
+    match os::warm_up_token() {
+        Handed::OnDescriptor => {
+            assert_eq!(variables["CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"], "3");
+            assert_eq!(handed["descriptor"], "access-refresh-b");
+            assert!(!names.contains(&"CLAUDE_CODE_OAUTH_TOKEN"), "{names:?}");
+        }
+        Handed::InVariable => {
+            assert_eq!(
+                variables["CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"],
+                serde_json::Value::Null
+            );
+            assert_eq!(variables["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"], "1");
+            assert_eq!(handed["descriptor"], serde_json::Value::Null);
+            for given in ["CLAUDE_CODE_OAUTH_TOKEN", "USERPROFILE", "SystemRoot"] {
+                assert!(names.contains(&given), "{given}: {names:?}");
+            }
+        }
+    }
 
     let (log, _, _) = env.run(&["log", "--json"]);
     let entries = json(&log);
@@ -86,10 +112,6 @@ fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
 
 /// An account whose period runs already is not warmed up again; it says until when.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
-)]
 fn warming_up_now_an_account_whose_period_runs_starts_nothing() {
     let mut env = two_accounts("warm-running");
     let (started, _) = env.install_fake_claude_print();

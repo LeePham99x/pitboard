@@ -75,8 +75,8 @@ pub enum Step {
     /// moved into place, so a test reading it as it is written never finds it half there.
     WritesItsPid(PathBuf),
     /// Adds a line to the file at `at` saying how it was started, as one JSON object: the
-    /// program as it was named, its arguments, and the value of each variable of
-    /// `variables`, null for one it was not given.
+    /// program as it was named, its arguments, the value of each variable of `variables`, null
+    /// for one it was not given, and the name of every variable it was given, sorted.
     Records { at: PathBuf, variables: Vec<String> },
     /// Writes `contents` to the file `name` in the directory the variable `under` names, then
     /// makes it private to its owner, as Claude Code and Codex leave a login in a file:
@@ -185,11 +185,21 @@ pub fn main() -> ExitCode {
         reason = "the stand-in reads what its own environment says, as the tool it plays does"
     )]
     let variable = |name: &str| std::env::var_os(name);
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the stand-in lists its own environment's names, and never a value"
+    )]
+    let names = || {
+        std::env::vars_os()
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect()
+    };
     let (stdin, stdout, stderr) = (io::stdin(), io::stdout(), io::stderr());
     let mut run = Run {
         me: &me,
         program,
         variable: &variable,
+        names: &names,
         input: &mut stdin.lock(),
         output: &mut stdout.lock(),
         errors: &mut stderr.lock(),
@@ -369,6 +379,7 @@ struct Run<'a> {
     /// The program as it was named, as a shell's `$0` has it.
     program: String,
     variable: &'a dyn Fn(&str) -> Option<OsString>,
+    names: &'a dyn Fn() -> Vec<String>,
     input: &'a mut dyn BufRead,
     output: &'a mut dyn Write,
     errors: &'a mut dyn Write,
@@ -580,10 +591,13 @@ impl Run<'_> {
                 (name.clone(), value.unwrap_or(serde_json::Value::Null))
             })
             .collect();
+        let mut names = (self.names)();
+        names.sort();
         let line = serde_json::json!({
             "program": self.program,
             "args": args,
             "variables": given,
+            "names": names,
         });
         let mut file = std::fs::File::options()
             .create(true)
@@ -662,12 +676,14 @@ mod tests {
             .map(|(name, value)| ((*name).to_owned(), value.as_os_str().to_owned()))
             .collect();
         let variable = |name: &str| variables.get(name).cloned();
+        let names = || variables.keys().cloned().collect();
         let (mut output, mut errors) = (Vec::new(), Vec::new());
         let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
         let code = Run {
             me: Path::new("/nowhere/stand-in"),
             program: "/somewhere/claude".into(),
             variable: &variable,
+            names: &names,
             input: &mut io::Cursor::new(typed.as_bytes().to_vec()),
             output: &mut output,
             errors: &mut errors,
@@ -911,7 +927,16 @@ mod tests {
         );
         for _ in 0..2 {
             assert_eq!(
-                play(&script, &["login"], "", &[("CODEX_HOME", Path::new("/x"))]).code,
+                play(
+                    &script,
+                    &["login"],
+                    "",
+                    &[
+                        ("CODEX_HOME", Path::new("/x")),
+                        ("CLAUDE_CODE_OAUTH_TOKEN", Path::new("never-written")),
+                    ]
+                )
+                .code,
                 1
             );
         }
@@ -927,8 +952,10 @@ mod tests {
                 "program": "/somewhere/claude",
                 "args": ["login"],
                 "variables": {"CODEX_HOME": "/x", "ABSENT": null},
+                "names": ["CLAUDE_CODE_OAUTH_TOKEN", "CODEX_HOME"],
             })
         );
+        assert!(!recorded.contains("never-written"), "{recorded}");
     }
 
     /// An interpreter plays the script in the file it is given, after that file's `#!` line,
@@ -972,6 +999,7 @@ mod tests {
             me: Path::new("/nowhere/stand-in"),
             program: String::new(),
             variable: &|_| None,
+            names: &Vec::new,
             input: &mut io::Cursor::new(Vec::new()),
             output: &mut output,
             errors: &mut errors,

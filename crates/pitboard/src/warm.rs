@@ -11,51 +11,25 @@ use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::words;
 use serde_json::{Value, json};
 
-// Pitboard warms up no account on Windows (`duty::warm::unbuilt`).
-const NOW: &str = if cfg!(windows) {
-    "Start an account's five-hour period now, which is not available on Windows"
-} else {
-    "Start an account's five-hour period now, whatever the span, through one short request \
-     Claude Code makes with that account's login"
-};
-
-const ON: &str = if cfg!(windows) {
-    "Turn warm-ups on for an account; they are not available on Windows"
-} else {
-    "Warm up an account from now on, within the span `range` sets"
-};
-
-const OFF: &str = if cfg!(windows) {
-    "Turn warm-ups off for an account"
-} else {
-    "Stop warming up an account"
-};
-
-const RANGE: &str = if cfg!(windows) {
-    "Set the times of each day warm-ups may run between, in this computer's time zone; they are \
-     not available on Windows"
-} else {
-    "Warm up accounts only between these times of each day, in this computer's time zone"
-};
-
 #[derive(Subcommand)]
 pub(crate) enum WarmCommand {
-    #[command(about = NOW)]
+    /// Start an account's five-hour period now, whatever the span, through one short request
+    /// Claude Code makes with that account's login
     Now {
         /// The label the account was enrolled under, such as `work`
         label: String,
     },
-    #[command(about = ON)]
+    /// Warm up an account from now on, within the span `range` sets
     On {
         /// The label the account was enrolled under, such as `work`
         label: String,
     },
-    #[command(about = OFF)]
+    /// Stop warming up an account
     Off {
         /// The label the account was enrolled under
         label: String,
     },
-    #[command(about = RANGE)]
+    /// Warm up accounts only between these times of each day, in this computer's time zone
     Range {
         /// When to start, such as 06:00
         #[arg(value_name = "FROM")]
@@ -153,9 +127,6 @@ fn standing_json(standing: &Standing) -> Value {
 /// The span, and each Claude Code account with whether it is warmed up and where it stands,
 /// as a person reads it.
 fn said(overview: &Overview) -> String {
-    if let Some(halt @ Halt::Unbuilt) = &overview.halted {
-        return format!("{}\n", halted_line(halt));
-    }
     if overview.accounts.is_empty() {
         return "No Claude Code account is enrolled, so there is nothing to warm up.\n".into();
     }
@@ -213,29 +184,16 @@ fn now(pitboard: &Pitboard, label: &str) -> Report {
     })
 }
 
-// The setting is kept where nothing is warmed up, so the app's toggle and `--json` stay as
-// they are, and only what is said changes.
-fn unbuilt(pitboard: &Pitboard) -> Option<Halt> {
-    pitboard
-        .warm_overview()
-        .ok()?
-        .halted
-        .filter(|halt| *halt == Halt::Unbuilt)
-}
-
 fn turn(pitboard: &Pitboard, label: &str, on: bool) -> Report {
     changed("warm", pitboard.warm_turn(label, on), |changed| {
         (
             json!({ "label": label, "on": on, "changed": changed }),
-            turned(label, on, changed, unbuilt(pitboard).as_ref()),
+            turned(label, on, changed),
         )
     })
 }
 
-fn turned(label: &str, on: bool, changed: bool, halted: Option<&Halt>) -> String {
-    if let (true, Some(halt @ Halt::Unbuilt)) = (on, halted) {
-        return format!("{}\n", halted_line(halt));
-    }
+fn turned(label: &str, on: bool, changed: bool) -> String {
     match (on, changed) {
         (true, true) => format!(
             "Pitboard warms up {} from now on, within the span `pitboard warm` shows.\n",
@@ -251,16 +209,9 @@ fn range_set(pitboard: &Pitboard, range: Range) -> Report {
     changed("warm", pitboard.warm_range(range), |range| {
         (
             json!({ "range": range_json(range) }),
-            ranged(range, unbuilt(pitboard).as_ref()),
+            format!("Pitboard warms up accounts from {range}.\n"),
         )
     })
-}
-
-fn ranged(range: Range, halted: Option<&Halt>) -> String {
-    match halted {
-        Some(halt @ Halt::Unbuilt) => format!("{}\n", halted_line(halt)),
-        _ => format!("Pitboard warms up accounts from {range}.\n"),
-    }
 }
 
 #[cfg(test)]
@@ -282,47 +233,41 @@ mod tests {
         }
     }
 
-    // Windows warms up nothing, so neither the span nor `warm on` is worth saying there.
     #[test]
-    fn on_windows_it_says_why_nothing_is_warmed_up_and_nothing_else() {
-        let plain = |overview: &Overview| anstream::adapter::strip_str(&said(overview)).to_string();
-        for on in [false, true] {
-            assert_eq!(
-                plain(&overview(Some(Halt::Unbuilt), on)),
-                "Pitboard is not warming up accounts: warm-ups are not available on Windows, \
-                 where Claude Code does not read the access token a warm-up hands it.\n"
-            );
-        }
-        let elsewhere = plain(&overview(Some(Halt::ProgramMissing), true));
+    fn a_halt_is_said_under_the_accounts_on_every_system() {
+        let said = anstream::adapter::strip_str(&said(&overview(Some(Halt::ProgramMissing), true)))
+            .to_string();
         assert!(
-            elsewhere.starts_with("Pitboard warms up these accounts from 06:00 to 22:00"),
-            "{elsewhere}"
+            said.starts_with("Pitboard warms up these accounts from 06:00 to 22:00"),
+            "{said}"
+        );
+        assert!(
+            said.ends_with(
+                "\nPitboard is not warming up accounts: Claude Code is not installed where \
+                 Pitboard looks.\n"
+            ),
+            "{said}"
         );
     }
 
     #[test]
-    fn on_windows_warm_on_and_warm_range_say_why_nothing_is_warmed_up() {
+    fn warm_on_and_off_say_what_they_changed() {
         let plain = |said: String| anstream::adapter::strip_str(&said).to_string();
-        let windows = "Pitboard is not warming up accounts: warm-ups are not available on \
-                       Windows, where Claude Code does not read the access token a warm-up hands \
-                       it.\n";
-        let unbuilt = Some(&Halt::Unbuilt);
-        assert_eq!(plain(turned("work", true, true, unbuilt)), windows);
-        assert_eq!(plain(turned("work", true, false, unbuilt)), windows);
         assert_eq!(
-            plain(turned("work", false, true, unbuilt)),
-            "Pitboard no longer warms up work.\n"
-        );
-        assert_eq!(plain(ranged(Range::DEFAULT, unbuilt)), windows);
-
-        let missing = Some(&Halt::ProgramMissing);
-        assert_eq!(
-            plain(turned("work", true, true, missing)),
+            plain(turned("work", true, true)),
             "Pitboard warms up work from now on, within the span `pitboard warm` shows.\n"
         );
         assert_eq!(
-            plain(ranged(Range::DEFAULT, missing)),
-            "Pitboard warms up accounts from 06:00 to 22:00.\n"
+            plain(turned("work", true, false)),
+            "work was warmed up already.\n"
+        );
+        assert_eq!(
+            plain(turned("work", false, true)),
+            "Pitboard no longer warms up work.\n"
+        );
+        assert_eq!(
+            plain(turned("work", false, false)),
+            "work was not warmed up.\n"
         );
     }
 }
