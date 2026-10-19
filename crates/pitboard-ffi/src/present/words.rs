@@ -359,9 +359,20 @@ pub(crate) fn named_with_tool(label: &str, tool: &str) -> String {
     format!("{label} ({tool})")
 }
 
-/// An account as the menu names it, with the plan its login says: "work · Team 5x".
-pub(crate) fn named_with_plan(title: &str, plan: &str) -> String {
-    format!("{title} · {plan}")
+/// An account as the menu names it: "work · Team 5x", and on Windows "work · Team 5x · 64%".
+pub(crate) fn named_in_menu(
+    os: Os,
+    title: &str,
+    plan: Option<&str>,
+    figure: Option<&str>,
+) -> String {
+    let mut said = vec![title];
+    said.extend(plan);
+    // A Windows menu item has one line, where macOS puts the account's limits on a second.
+    if matches!(os, Os::Windows) {
+        said.extend(figure);
+    }
+    said.join(" · ")
 }
 
 /// The line in a menu when the numbers were read, as a time rather than an age: a menu can

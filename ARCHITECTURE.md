@@ -4421,6 +4421,12 @@ Microsoft's documentation.
   and leaves About to the settings page, and the Windows app writes all its text in sentence
   case: its own, and the model's buttons, menu items and headings, which `words::titled`
   words for each system, title case on macOS as Apple's guidelines have it.
+- WinUI 2.3.9's `Themes/generic.xaml` draws a `RadioMenuFlyoutItem`'s text in one
+  TextBlock that trims, where the macOS menu puts an account's limits on a line under its
+  name. So on Windows `AccountItem.menu_title` ends with the figure the menu bar would show
+  of the account, `headline`'s, where that line says its limits, and the line is the item's
+  tooltip and help text (`present::accounts`'
+  `a_windows_menu_item_ends_with_the_figure_the_bar_would_show`).
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
   flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
   foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes

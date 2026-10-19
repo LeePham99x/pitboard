@@ -17,6 +17,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Windows app's **Settings** says when Windows turned Pitboard's notifications off, or every
   app's, and offers **Open notification settings**.
 - The Windows app's window opens Pitboard's help with F1, and its **About** links to it.
+- The Windows app's menu shows each account's most used limit after its name, as in
+  **work · Max 20x · 42%**, where the menu bar app shows the account's limits under it.
 
 ### Changed
 
