@@ -304,7 +304,7 @@ folder, the app's data folder, a link scheme, a notification registration, a sta
 sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a release is
 built, with no cfg, and checks that a 0.x build refuses and changes nothing, and that a 1.x
 build answers with no argument as a fresh standard user, as winget's validation runs a program.
-It runs the opened build that way too. One test reads the app execution aliases in the job
+It holds the opened build to the same. One test reads the app execution aliases in the job
 user's own profile, since a fresh standard user's has none.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
@@ -450,20 +450,24 @@ which the session machine runs to measure the app's notifications, and checks th
 an account without `pitboard-probe`'s throwaway marker.
 
 The job also builds two MSIs of `apps/windows/Pitboard.Installer` with WiX v7, from the
-Release build and the `pitboard.exe` a release builds: one with `PitboardShare.exe` and its
-package, as a signed release carries them, and one without, as a release with no signer ships.
+Release build, the `pitboard.exe` a release builds and the PowerShell completions its zip
+holds: one with `PitboardShare.exe` and its package, as a signed release carries them, and one
+without, as a release with no signer ships.
 WiX runs ICE validation as it builds, with ICE03 off, and
 `.github/scripts/validate-windows-msi.ps1` runs ICE03 after it and refuses any row but WinUI's
 own files. That script first holds the WiX SDK to nuget.org's hash, so raising
 `WixToolset.Sdk` in `global.json` needs its hash there too. CI never installs an MSI:
 `extract-msi.ps1` extracts each with `msiexec /a`, `check-windows-app.ps1` checks the files
-the signed one holds, `check-windows-msi.ps1` each one's version, layout, command line in `bin`
-and share target, the UI tests of the release gate start the signed one's `Pitboard.exe`,
-which refuses at 0.x and at 1.x takes back what it registered with `--unregister`, and
-`Pitboard.Installer.Tests` reads each one's tables and asks its
-`pitboard_ffi.dll` whether it opens. `test-windows-app.ps1` tests `check-windows-msi.ps1` and `validate-windows-msi.ps1` too,
-and runs the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of
-it with a row changed and on the package the job signed. The MSI takes its version from
+the signed one holds, `check-windows-msi.ps1` each one's version, layout, command line in `bin`,
+completions and share target, the UI tests of the release gate start the signed one's
+`Pitboard.exe`, which refuses at 0.x and at 1.x takes back what it registered with
+`--unregister`, and `Pitboard.Installer.Tests` reads each one's tables and asks its
+`pitboard_ffi.dll` whether it opens. `check-msi-components.ps1` fails each one where a key path
+has another component GUID than in both MSIs of the newest release that shipped one, or a GUID
+another key path, as the release checks its own. `test-windows-app.ps1` tests
+`check-windows-msi.ps1`, `validate-windows-msi.ps1` and `check-msi-components.ps1` too, and runs
+the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of it with a row
+changed and on the package the job signed. The MSI takes its version from
 `windows-versions.sh`, which `test-release.py` tests.
 
 The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the

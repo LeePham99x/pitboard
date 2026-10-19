@@ -1,5 +1,6 @@
 # Tests check-windows-app.ps1 against copies of CI's Release folder, one thing changed in each, and check-windows-msi.ps1,
-# validate-windows-msi.ps1 and verify-windows-signatures.ps1 against its MSI and package. It runs none of them.
+# validate-windows-msi.ps1, check-msi-components.ps1 and verify-windows-signatures.ps1 against its MSI and package. It
+# runs none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -12,11 +13,13 @@ param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $FileVersion,
     # The MSI the job built from that folder, unsigned, the folder of its administrative image that
-    # holds Pitboard.exe, the ProductVersion windows-versions.sh gives it and the pitboard.exe in it.
+    # holds Pitboard.exe, the ProductVersion windows-versions.sh gives it, and the pitboard.exe and
+    # completions\pitboard.ps1 in it.
     [Parameter(Mandatory)] [string] $Msi,
     [Parameter(Mandatory)] [string] $MsiImage,
     [Parameter(Mandatory)] [string] $MsiVersion,
-    [Parameter(Mandatory)] [string] $CommandLine
+    [Parameter(Mandatory)] [string] $CommandLine,
+    [Parameter(Mandatory)] [string] $Completions
 )
 $ErrorActionPreference = 'Stop'
 
@@ -25,6 +28,7 @@ $pack = Join-Path $PSScriptRoot 'pack-windows-share.ps1'
 $verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
 $checkMsi = Join-Path $PSScriptRoot 'check-windows-msi.ps1'
 $validate = Join-Path $PSScriptRoot 'validate-windows-msi.ps1'
+$components = Join-Path $PSScriptRoot 'check-msi-components.ps1'
 $signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
 $msiPath = (Resolve-Path -LiteralPath $Msi).Path
 $root = (Resolve-Path -LiteralPath $Folder).Path
@@ -91,6 +95,23 @@ function Edit-Msi([string] $Case, [string] $Query) {
     $copy
 }
 
+# The File table's key of the one file the MSI lays out under a name, as WiX harvested it.
+function Get-FileKey([string] $Name) {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @([string] $msiPath, 0))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @('SELECT `File`, `FileName` FROM `File`'))
+    [void] $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+    $keys = @(while (($record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null))) {
+        $long = ($record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(2)) -split '\|')[-1]
+        if ($long -ceq $Name) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1)) }
+    })
+    [void] $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)
+    if ($keys.Count -ne 1) { throw "the MSI lays out $($keys.Count) files named $Name" }
+    $keys[0]
+}
+
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $whole = @('PitboardShare.exe', 'PitboardShare.msix')
@@ -142,7 +163,14 @@ try {
     New-Item -ItemType Directory -Path $built | Out-Null
     Copy-Item -LiteralPath $msiPath -Destination $built
     & $verify -Path $msiPath -Mode unsigned -Built $built
-    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files and tables it was built with'
+    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, the others as their makers sign them, and it holds the files and tables it was built with'
+    # A harvested file renamed in the File table, whose name msiexec /a lays it out under.
+    $stranger = Edit-Msi 'stranger' "UPDATE ``File`` SET ``FileName`` = 'Stranger.dll' WHERE ``File`` = '$(Get-FileKey 'WinSparkle.dll')'"
+    Assert-Thrown 'an unsigned program that is neither Pitboard''s nor WinSparkle.dll' $verify @{ Path = $stranger; Mode = 'unsigned' } `
+        'Pitboard\.msi/PFiles64/Pitboard/Stranger\.dll is NotSigned, not Valid as Microsoft Corporation signs it'
+    $impostor = Edit-Msi 'impostor' "UPDATE ``File`` SET ``FileName`` = 'Microsoft.Impostor.dll' WHERE ``File`` = '$(Get-FileKey 'CommunityToolkit.Common.dll')'"
+    Assert-Thrown 'a program the .NET Foundation signed where Microsoft signs' $verify @{ Path = $impostor; Mode = 'unsigned' } `
+        "Pitboard\.msi/PFiles64/Pitboard/Microsoft\.Impostor\.dll is signed by '.*\(\.NET Foundation\).*', not by Microsoft Corporation"
     $renamed = Edit-Msi 'renamed' "UPDATE ``File`` SET ``FileName`` = 'other.exe' WHERE ``File`` = 'CommandLineExe'"
     Assert-Thrown 'an MSI that lays out a file under another name than it was built with' $verify `
         @{ Path = $renamed; Mode = 'unsigned'; Built = $built } 'holds other files than it was built with'
@@ -150,16 +178,29 @@ try {
     Assert-Thrown 'an MSI with a row its build did not write' $verify `
         @{ Path = $retitled; Mode = 'unsigned'; Built = $built } 'holds other tables than it was built with: Property$'
 
+    & $components -Msi $msiPath -Previous $msiPath
+    $dropped = Edit-Msi 'dropped' "DELETE FROM ``Component`` WHERE ``KeyPath`` = 'CommandLineExe'"
+    & $components -Msi $dropped -Previous $msiPath | Out-Null
+    & $components -Msi $msiPath -Previous $dropped, $msiPath | Out-Null
+    Write-Output 'ok: a component that goes or comes leaves every other GUID where it was'
+    $regenerated = Edit-Msi 'regenerated' "UPDATE ``Component`` SET ``ComponentId`` = '{00000000-0000-0000-0000-000000000001}' WHERE ``KeyPath`` = 'CommandLineExe'"
+    Assert-Thrown 'a key path with another GUID than the last release gave it' $components @{ Msi = $regenerated; Previous = $msiPath } `
+        'file ProgramFiles64Folder\\Pitboard\\bin\\pitboard\.exe has the component \{00000000-0000-0000-0000-000000000001\}, and had \{'
+    Assert-Thrown 'a GUID with another key path than the last release gave it' $components @{ Msi = $renamed; Previous = $msiPath } `
+        'has the key path file ProgramFiles64Folder\\Pitboard\\bin\\other\.exe, and had file ProgramFiles64Folder\\Pitboard\\bin\\pitboard\.exe in '
+
     & $validate -Msi $msiPath
     $broken = Edit-Msi 'ice03' "UPDATE ``Registry`` SET ``Root`` = 7 WHERE ``Name`` = 'CommandLineOnPath'"
     Assert-Thrown 'a row of Pitboard''s own that ICE03 refuses' $validate @{ Msi = $broken } 'fails ICE03 in rows besides WinUI''s own files'
     Assert-Thrown 'an unsigned MSI in a signed release' $verify @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
         'Pitboard\.msi is NotSigned, and every program of a signed release is Valid'
 
-    $msiGiven = @{ Msi = $msiPath; Folder = $MsiImage; MsiVersion = $MsiVersion; CommandLine = $CommandLine; Share = $true }
+    $msiGiven = @{ Msi = $msiPath; Folder = $MsiImage; MsiVersion = $MsiVersion; CommandLine = $CommandLine; Completions = $Completions; Share = $true }
     Assert-Thrown 'an MSI of another version' $checkMsi $msiGiven "ProductVersion is '.+', not 9\.9\.9" @{ MsiVersion = '9.9.9' }
     Assert-Thrown 'an MSI with another command line than the zip''s' $checkMsi $msiGiven 'bin\\pitboard\.exe is not the zip''s' `
         @{ CommandLine = (Join-Path $root 'Pitboard.exe') }
+    Assert-Thrown 'an MSI with other completions than the zip''s' $checkMsi $msiGiven 'completions\\pitboard\.ps1 is not the zip''s' `
+        @{ Completions = (Join-Path $root 'Pitboard.dll') }
     Assert-Thrown 'a share target in an MSI without a signed package' $checkMsi $msiGiven 'this release has no signed package' @{ Share = $false }
     $otherPackage = Join-Path $work 'other.msix'
     Copy-Item -LiteralPath (Join-Path $root 'PitboardShare.msix') -Destination $otherPackage
@@ -177,5 +218,5 @@ try {
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1, check-windows-msi.ps1, validate-windows-msi.ps1 and verify-windows-signatures.ps1 refused what they should.'
+Write-Output 'check-windows-app.ps1, check-windows-msi.ps1, validate-windows-msi.ps1, check-msi-components.ps1 and verify-windows-signatures.ps1 refused what they should.'
 exit 0

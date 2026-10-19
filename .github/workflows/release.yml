@@ -218,7 +218,8 @@ jobs:
   # once a signer is set, PitboardShare.exe and its sparse package. An unsigned build ships no
   # sparse package, since only a signature the machine trusts registers one. Pitboard's own
   # programs and the package go to the signer; the .NET runtime's and the Windows App SDK's go on
-  # as Microsoft signed them, and WinSparkle.dll unsigned, as NuGet's WinSparkle 0.9.4 holds it.
+  # as Microsoft signed them, the Windows Community Toolkit's as the .NET Foundation did, and
+  # WinSparkle.dll unsigned, as NuGet's WinSparkle 0.9.4 holds it.
   # No cache here, as in build-windows.
   app-windows-build:
     needs: guard
@@ -519,9 +520,11 @@ jobs:
           $top = "pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE"
           Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP "cli\$top.zip") -DestinationPath (Join-Path $env:RUNNER_TEMP 'zip')
           $commandLine = Join-Path $env:RUNNER_TEMP "zip\$top\pitboard.exe"
+          $completions = Join-Path $env:RUNNER_TEMP "zip\$top\completions\pitboard.ps1"
           $out = Join-Path $env:RUNNER_TEMP 'msi'
           dotnet build Pitboard.Installer -c Release -o $out "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$app" `
-            "-p:PitboardCommandLine=$commandLine" "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$env:SIGNED"
+            "-p:PitboardCommandLine=$commandLine" "-p:PitboardCompletions=$completions" "-p:PitboardMsiVersion=$env:MSI_VERSION" `
+            "-p:PitboardShareSigned=$env:SIGNED"
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $dist = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'dist')
           $msi = Join-Path $dist "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
@@ -532,6 +535,7 @@ jobs:
           "msi=$msi" >> $env:GITHUB_OUTPUT
           "folder=$folder" >> $env:GITHUB_OUTPUT
           "command-line=$commandLine" >> $env:GITHUB_OUTPUT
+          "completions=$completions" >> $env:GITHUB_OUTPUT
       - name: "The MSI's files: the checks of the Release build"
         shell: pwsh
         env:
@@ -545,16 +549,17 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary (Join-Path $env:RUNNER_TEMP 'app\pitboard_ffi.dll') -Signer $env:SUBJECT -UpdateKey $env:KEY
           -Version $env:BASE -FileVersion $env:FILE_VERSION
-      - name: "The MSI: its version, its layout, the zip's command line and the signed package"
+      - name: "The MSI: its version, its layout, the zip's command line and completions, and the signed package"
         shell: pwsh
         env:
           MSI: ${{ steps.msi.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.folder }}
           MSI_VERSION: ${{ steps.numbers.outputs.msi }}
           COMMAND_LINE: ${{ steps.msi.outputs.command-line }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
           SIGNED: ${{ needs.guard.outputs.signed }}
         run: |
-          $given = @{ Msi = $env:MSI; Folder = $env:IMAGE; MsiVersion = $env:MSI_VERSION; CommandLine = $env:COMMAND_LINE }
+          $given = @{ Msi = $env:MSI; Folder = $env:IMAGE; MsiVersion = $env:MSI_VERSION; CommandLine = $env:COMMAND_LINE; Completions = $env:COMPLETIONS }
           if ($env:SIGNED -eq 'true') {
             $given.Share = $true
             $given.Package = Join-Path $env:RUNNER_TEMP 'signed-app\PitboardShare.msix'
@@ -573,8 +578,9 @@ jobs:
           ./.github/scripts/verify-windows-signatures.ps1 -Path $ours -Mode $mode -Subject $env:SUBJECT
       # Every Release build, betas included, reads the feed of full releases with the key it carries,
       # and WinSparkle takes an update only when that key verifies it: there is no second route. So the
-      # key is compared with the newest earlier release that shipped an MSI, betas included.
-      - name: The update key the last MSI shipped
+      # key is compared with the newest earlier release that shipped an MSI, betas included. Both of
+      # that release's MSIs come down, for the components' check.
+      - name: The last release's MSIs, and the update key this machine's shipped
         id: key
         shell: pwsh
         env:
@@ -597,10 +603,11 @@ jobs:
           if (-not $previous) { exit 0 }
           $name = "Pitboard-$previous-windows-$env:INSTALLER.msi"
           $dir = Join-Path $env:RUNNER_TEMP 'previous'
-          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern $name --dir $dir
+          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern "Pitboard-$previous-windows-*.msi" --dir $dir
           if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
           $folder = & ./.github/scripts/extract-msi.ps1 -Msi (Join-Path $dir $name) -Destination (Join-Path $env:RUNNER_TEMP 'previous-image')
           "previous=$previous" >> $env:GITHUB_OUTPUT
+          "previous-folder=$dir" >> $env:GITHUB_OUTPUT
           "was=$(& $read -Assembly (Join-Path $folder 'Pitboard.dll') -Metadata WindowsUpdatePublicKey)" >> $env:GITHUB_OUTPUT
       - name: The update key this release ships
         shell: bash
@@ -611,6 +618,17 @@ jobs:
           WAS: ${{ steps.key.outputs.was }}
           ROTATION: ${{ vars.WINDOWS_UPDATE_KEY_ROTATION }}
         run: sh .github/scripts/windows-update-key.sh "$VERSION" "$NOW" "$PREVIOUS" "$WAS" "$ROTATION"
+      # The new product goes in before the old one is removed, and either machine's MSI replaces the
+      # other's (Package.wxs).
+      - name: Each component keeps the GUID the last release's MSIs gave its key path
+        if: steps.key.outputs.previous != ''
+        shell: pwsh
+        env:
+          MSI: ${{ steps.msi.outputs.msi }}
+          PREVIOUS: ${{ steps.key.outputs.previous-folder }}
+        run: |
+          $last = @(Get-ChildItem -LiteralPath $env:PREVIOUS -File -Filter '*.msi' | ForEach-Object FullName)
+          ./.github/scripts/check-msi-components.ps1 -Msi $env:MSI -Previous $last
       # Not dist-: the MSI reaches publish only through windows-sign-msi and windows-msi.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -672,8 +690,8 @@ jobs:
 
   # Every MSI reaches publish through here, checked on its own machine, since msiexec /a extracts an
   # MSI only where it could install it: its signature and each program of Pitboard's in it signed by
-  # the signer's subject when the guard says signed and none signed when it does not, and the same
-  # files and tables the MSI was built with.
+  # the signer's subject when the guard says signed and none signed when it does not, every other
+  # program as its maker signs it, and the same files and tables the MSI was built with.
   windows-msi:
     needs: [guard, windows-sign-msi]
     if: needs.guard.outputs.windows == 'true'

@@ -364,6 +364,17 @@ pub(crate) fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
     Ok(true)
 }
 
+// The MSI's full uninstall deletes the app's command line; a task running Scoop's copy stays.
+pub(crate) fn uninstall_for_app(ctx: &Context, permit: Permit) -> Result<bool> {
+    let runs_the_apps = ctx.schedule_program().is_some_and(|named| {
+        installed_program(ctx).is_some_and(|program| ctx.os.same_path(&program, named))
+    });
+    if !runs_the_apps {
+        return Ok(false);
+    }
+    uninstall(ctx, permit)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::disallowed_methods,
@@ -507,6 +518,7 @@ mod tests {
             "schedule_unsupported"
         );
         assert!(!repair(&ctx, Permit::for_a_test()).expect("nothing to do"));
+        assert!(!uninstall_for_app(&ctx, Permit::for_a_test()).expect("nothing to do"));
     }
 
     #[test]
@@ -843,6 +855,69 @@ mod tests {
             !repair(&the_app, Permit::for_a_test()).expect("nothing to do"),
             "the app's own, which is there"
         );
+    }
+
+    #[test]
+    fn removing_the_app_takes_away_only_a_task_that_runs_its_command_line() {
+        let home = Scratch(
+            tempfile::tempdir().expect("a scratch home"),
+            MemoryHost::scheduling_tasks("S-1-5-21-1"),
+        );
+        let proxied = home.read(&[("HTTPS_PROXY", "http://proxy.example.com:3128")]);
+        let scoop = home
+            .path()
+            .join(r"scoop\apps\pitboard\current\pitboard.exe");
+        let bundled = home.path().join(r"Programs\Pitboard\bin\pitboard.exe");
+        a_program_at(&scoop);
+        a_program_at(&bundled);
+        let the_app = home.read(&[]).with_schedule_program(bundled.clone());
+
+        assert!(
+            !uninstall_for_app(&the_app, Permit::for_a_test()).expect("nothing to do"),
+            "nothing installed"
+        );
+        install(
+            &proxied.clone().with_schedule_program(scoop.clone()),
+            Permit::for_a_test(),
+        )
+        .expect("installed from Scoop's pitboard");
+        assert!(
+            !uninstall_for_app(&the_app, Permit::for_a_test()).expect("nothing to do"),
+            "Scoop's"
+        );
+        assert_eq!(installed_program(&proxied), Some(scoop));
+
+        install(
+            &proxied.clone().with_schedule_program(bundled.clone()),
+            Permit::for_a_test(),
+        )
+        .expect("installed from the app");
+        assert!(
+            !uninstall_for_app(&home.read(&[]), Permit::for_a_test()).expect("nothing to do"),
+            "no command line named"
+        );
+        let kept = path(&proxied).expect("the task's file");
+        let written = std::fs::read_to_string(&kept).expect("the task");
+        std::fs::write(
+            &kept,
+            written.replace("<Hidden>", "<Enabled>false</Enabled><Hidden>"),
+        )
+        .expect("turned off in Task Scheduler");
+        assert!(uninstall_for_app(&the_app, Permit::for_a_test()).expect("taken away"));
+        assert_eq!(status(&proxied), Installed::No);
+        assert!(
+            !crate::host::task::environment_file(&proxied).exists(),
+            "nor its proxy"
+        );
+        let logged = crate::audit::read(&proxied, 1);
+        assert_eq!(
+            logged
+                .iter()
+                .map(|e| (e.verb.as_str(), e.subject.as_str(), e.outcome.as_str()))
+                .collect::<Vec<_>>(),
+            [("schedule", "uninstall", "ok")]
+        );
+        assert!(!uninstall_for_app(&the_app, Permit::for_a_test()).expect("nothing there"));
     }
 
     /// Only what `install` writes is read, and only the way it writes it.

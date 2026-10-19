@@ -298,6 +298,7 @@ jobs:
           $top = "pitboard-v$env:VERSION-$env:TRIPLE"
           Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP "dist\$top.zip") -DestinationPath (Join-Path $env:RUNNER_TEMP 'zip')
           $commandLine = Join-Path $env:RUNNER_TEMP "zip\$top\pitboard.exe"
+          $completions = Join-Path $env:RUNNER_TEMP "zip\$top\completions\pitboard.ps1"
           $folder = (New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP 'session\msi')).FullName
           $msis = [ordered]@{ a = $env:MSI_VERSION }
           if ($env:INSTALLER -eq 'arm64') { $msis.b = $env:MSI_VERSION_B }
@@ -305,7 +306,8 @@ jobs:
             # An intermediate folder each, so neither build takes the other's output for its own.
             $out = Join-Path $env:RUNNER_TEMP "msi-$kind"
             dotnet build Pitboard.Installer -c Release -o $out "-p:IntermediateOutputPath=obj\$kind\" "-p:InstallerPlatform=$env:INSTALLER" `
-              "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardMsiVersion=$($msis[$kind])" '-p:PitboardShareSigned=false'
+              "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardCompletions=$completions" `
+              "-p:PitboardMsiVersion=$($msis[$kind])" '-p:PitboardShareSigned=false'
             if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
             $suffix = if ($kind -eq 'b') { '-b' } else { '' }
             $msi = Join-Path $folder "Pitboard-v$env:VERSION-windows-$env:INSTALLER$suffix.msi"
@@ -315,7 +317,8 @@ jobs:
             & (Join-Path $scripts 'check-windows-app.ps1') -Folder $image -Triple $env:TRIPLE `
               -GatedLibrary (Join-Path $env:GITHUB_WORKSPACE 'target\release\pitboard_ffi.dll') -UpdateKey $env:UPDATE_TEST_KEY `
               -Version $env:VERSION -FileVersion $env:FILE_VERSION
-            & (Join-Path $scripts 'check-windows-msi.ps1') -Msi $msi -Folder $image -MsiVersion $msis[$kind] -CommandLine $commandLine
+            & (Join-Path $scripts 'check-windows-msi.ps1') -Msi $msi -Folder $image -MsiVersion $msis[$kind] -CommandLine $commandLine `
+              -Completions $completions
             $ours = @(Get-ChildItem -LiteralPath $image -Recurse -File |
               Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll', '.msix' } | ForEach-Object FullName)
             & (Join-Path $scripts 'verify-windows-signatures.ps1') -Path $ours -Mode unsigned

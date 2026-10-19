@@ -18,7 +18,7 @@ updates:
     cooldown:
       default-days: 7
   # The SDK in global.json. MSTest.Sdk and WixToolset.Sdk beside it are raised by hand:
-  # Dependabot does not read msbuild-sdks.
+  # Dependabot does not read msbuild-sdks. No nuget entry: workflows/winsparkle.yml says why.
   - package-ecosystem: dotnet-sdk
     directory: /apps/windows
     schedule:

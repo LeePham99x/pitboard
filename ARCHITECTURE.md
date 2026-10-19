@@ -494,11 +494,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `launch_refusal`, what the gate every change passes refuses once it has named the app's
     version to the release gate, the release gate first, then an elevated process, a
     Windows build below 26100 and a home that is not a full path, which it shows in place
-    of a model; and `windows_records_key`, its records' key. The snapshot carries what an
-    app shows of the tools, a sign-in, the command line a terminal runs, a limit and its
-    pace, a parked login, a renewal run and doctor's checks, made by `present/` and the
-    model's lanes, so no free function says it again. The helpers `present/` makes it with
-    here, `tools`, `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
+    of a model; and `windows_records_key`, its records' key. `Pitboard.exe --unregister`
+    calls `unschedule_app`, which takes the renewal task away where it runs the command line
+    beside the app. The snapshot carries what an app shows of the tools, a sign-in, the
+    command line a terminal runs, a limit and its pace, a parked login, a renewal run and
+    doctor's checks, made by `present/` and the model's lanes, so no free function says it
+    again. The helpers `present/` makes it with here, `tools`, `usage_level`, `renewal_note`
+    and `doctor_summary`, are the crate's own.
   - `launch.rs` is the core the model's lanes call, `AppCore`, which nothing exports. It is
     made from the `AppLaunch` the app was started with, read as `AppContext::discover`
     reads it, the first time a lane needs it, and made once more a while after a login
@@ -750,11 +752,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
-    the `Run` value naming this `Pitboard.exe` and the notifications' registration: it asks
-    `UnregisterAll`, then deletes the `AppUserModelId` key and the class it names by name,
-    which `UnregisterAll` left on the session machine. It exits with no window and no
-    single-instance key. On `--unregister-share`, which the MSI's full removal and rollback
-    run, `SharePackage` removes `PitboardShare`'s package
+    the `Run` value naming this `Pitboard.exe`, asks the core's `unschedule_app` to take away
+    the renewal task where it runs the `bin\pitboard.exe` beside it, and deletes the
+    notifications' registration: it asks `UnregisterAll`, then deletes the `AppUserModelId`
+    key and the class it names by name, which `UnregisterAll` left on the session machine. It
+    exits with no window and no single-instance key. On `--unregister-share`, which the MSI's
+    full removal and rollback run, `SharePackage` removes `PitboardShare`'s package
     registered for this folder, the same way. `App` is the composition root: it makes
     the model, over this PC or in a Debug build started with `PITBOARD_FIXTURE` a fixture's,
     the icon, the notifications, the updater, `AccountWindows`, `IconCommands` and
@@ -783,20 +786,23 @@ window loads its site, and whatever the site's pages load, as a browser would.
     removes the package registered for its folder, since removing a package ends the
     package's own processes. It loads `pitboard_share_ffi.dll` and none of the core.
   - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
-    Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
-    otherwise, as single package authoring has it, and its launch condition refuses a
-    per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
-    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and
-    the command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the
-    user `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
-    `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and `pitboard://`.
+    Release publish, `pitboard.exe` and the PowerShell completions the zip holds beside it.
+    A dual-purpose package, per user unless told otherwise, as single package authoring has
+    it, and its launch condition refuses a per-machine install, so per user
+    `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and HKMU is HKCU: `Pitboard\` with
+    `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, the command line in `Pitboard\bin\`,
+    never beside `Pitboard.exe`, and the completions in `Pitboard\completions\`; `bin`
+    appended to the user `PATH` and taken off on uninstall; the Start menu shortcut with the
+    AppUserModelID `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and
+    `pitboard://`.
     `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so
     either replaces the other. Settings offers no Modify, since there is one feature and no
     UI. `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a
     final and `X.Y.Z.N` for beta N, as `windows-versions.sh` gives it, and Windows Installer
     compares three fields. It removes the old product once the new one's files are in place
     (`afterInstallExecute`), so `bin\pitboard.exe` is never missing in an upgrade, which needs
-    each component to keep the GUID WiX makes from its key path; `REINSTALLMODE` `emus`
+    each component to keep the GUID WiX makes from its key path, as `check-msi-components.ps1`
+    holds it to the last release's; `REINSTALLMODE` `emus`
     replaces a file of an equal version too, as the other architecture's MSI of one version
     has. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
     `Pitboard.exe --unregister` and removes `%LOCALAPPDATA%\Pitboard App` through WiX's
@@ -877,6 +883,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     system, against their registers.
   - `workflows/sparkle.yml` opens an issue when Sparkle has a release newer than the one
     `apps/macos/project.yml` pins, because Dependabot cannot read that pin.
+    `workflows/winsparkle.yml` does the same for WinSparkle and the Windows App SDK, against
+    `apps/windows/Directory.Packages.props`, since Dependabot raises no NuGet package.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
@@ -906,16 +914,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
-    hands on, in a zip or an MSI, and of a sparse package, `pack-session-bundle.ps1` sums,
-    zips and encrypts the session bundle, and `test-windows-release.ps1` tests the first three
-    on zips and the fourth with a stand-in for age. `check-windows-app.ps1` checks the Windows
-    app's Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package
-    beside it, `test-certificate.ps1` makes the throwaway certificate it and the runner facts
-    sign with, `extract-msi.ps1` extracts an MSI's administrative image and
-    `check-windows-msi.ps1` checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with
-    the WiX that built it, `read-assembly.ps1` reads a value from a .NET assembly's metadata,
-    and `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
-    package.
+    hands on, in a zip or an MSI, an MSI's other programs against their makers, and of a sparse
+    package, `pack-session-bundle.ps1` sums, zips and encrypts the session bundle, and
+    `test-windows-release.ps1` tests the first three on zips and the fourth with a stand-in for
+    age. `check-windows-app.ps1` checks the Windows app's Release build,
+    `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `test-certificate.ps1` makes the throwaway certificate it and the runner facts sign with,
+    `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1` checks
+    one, `check-msi-components.ps1` holds its components' GUIDs and key paths to the last
+    release's MSIs, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
+    `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests the checks and the signature check on the MSI and the package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -1178,10 +1187,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   is a warning whose fix is turning daily renewal off and on again, which writes the task as
   Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. The
   app's start-up repair (`schedule::repair`) points a task at the command line inside the app
-  only where the Pitboard it runs is gone and its settings are as Pitboard wrote them. A
-  read Task Scheduler answers with an error, not with no such task, stops an install and an
-  uninstall before either changes anything, so an uninstall never leaves the task running;
-  the status and doctor take it for no task.
+  only where the Pitboard it runs is gone and its settings are as Pitboard wrote them. The
+  MSI's full uninstall, through `Pitboard.exe --unregister`, takes the task away
+  (`schedule::uninstall_for_app`) only where it runs the `bin\pitboard.exe` beside that
+  `Pitboard.exe`, whatever its settings, since the removal deletes that program. A task that
+  runs Scoop's, WinGet's or another copy stays, and so do the parked logins and the Pitboard
+  directory. A read Task Scheduler answers with an error, not with no such task, stops an
+  install and an uninstall before either changes anything, so an uninstall never leaves the
+  task running; the status and doctor take it for no task.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
@@ -1211,7 +1224,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and, without `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its
   profile folder; `windows_records_key`, which reads only what it is given;
   `launch_refusal`, which asks the system whether this process is elevated and which build
-  it runs on; and `fixture_names` and `fixture_page`, which read only what they are given.
+  it runs on; `unschedule_app`, which asks the same, then Task Scheduler, and may take the
+  renewal task away; and `fixture_names` and `fixture_page`, which read only what they are
+  given.
   `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world in its
   folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
@@ -1506,7 +1521,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and a refused launch shows the core's sentence and exits with nothing written
   (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister` and
   `--unregister-share`, which the MSI runs, are read first, and they ask neither the core nor
-  a running copy.
+  a running copy. `Unregistering` then asks the core only to take away the renewal task,
+  which the gate every change passes refuses as it refuses any change.
 - The Windows app's own data folder is never in Pitboard's directory. It is `Pitboard App`,
   or `Pitboard App Debug` for a Debug build, beside `Pitboard` in the known folder Local
   AppData, which `Shell.LocalAppData` asks `SHGetKnownFolderPath` for. So neither
@@ -2840,6 +2856,24 @@ own MSI in `PFiles64\Pitboard`: the Release publish's 284 programs and libraries
 windows-2025 and 283 on windows-11-arm, no `.pdb`, and `bin\pitboard.exe`. The fresh
 standard user opens the MSI read only through `msi.dll`, as `Pitboard.Installer.Tests` does.
 
+The Component, Directory, File and Registry tables of the published MSIs of 1.0.0-beta.2 and
+1.0.0-beta.3, read as bytes on 20 October 2026: from one beta to the next each machine's MSI
+kept the GUID of every key path, 534 on x64 and 530 on ARM64, and beta.3's two MSIs give the 528
+key paths they share the same GUIDs. A standard folder's Directory row goes by its property,
+`ProgramFiles64Folder` under `TARGETDIR`, and each folder under `Pitboard` by an id WiX makes
+up, such as `dGNBjMVUkheIrP_lIJTI5NBZzo_c` for `af-ZA`. So `check-msi-components.ps1` names a
+key path by the standard folder and the long names below it.
+
+The Authenticode certificate tables of the app folders 1.0.0-beta.3's MSIs carry, the artifacts
+`app-windows-x64` and `app-windows-arm64` of release run 39205401692, read as bytes with
+LibreSSL's `pkcs7 -print_certs` on 20 October 2026. Of the 512 programs on x64 and 511 on ARM64,
+284 and 283 DLLs, three executables, 172 `.mui` and 53 `.winmd` files, seven are not signed:
+Pitboard's six and `WinSparkle.dll`. The Windows Community Toolkit's five are signed by the .NET
+Foundation, as `Community Toolkit (.NET Foundation)` or `Windows Community Toolkit (.NET
+Foundation)`, and every other one by a certificate whose organisation is Microsoft Corporation,
+issued by Microsoft's own code signing CAs. So `verify-windows-signatures.ps1` holds each to its
+maker by its name, Microsoft for a name it does not list.
+
 The images:
 
 - Defender's real-time protection is off on windows-2025 and on, with behaviour monitoring
@@ -2919,7 +2953,8 @@ The MSI, `Pitboard.exe` and the notification area:
   open. Removing Pitboard in Settings then took the install folder, the shortcut, the link
   scheme, the `PATH` entry, the `Run` value and `%LOCALAPPDATA%\Pitboard App`. It left the
   `AppUserModelId` key, which `--unregister` now deletes, and `StartupApproved\Run`'s value,
-  Windows' own. Nothing in the MSI removes the renewal task.
+  Windows' own. Nothing in the MSI removed the renewal task, which `--unregister` now takes
+  away where it runs this install's `bin\pitboard.exe`.
 - The x64 MSI installed under emulation: `Pitboard.exe` and `bin\pitboard.exe` are machine
   0x8664, and both ran.
 
@@ -2997,6 +3032,7 @@ on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
 | `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
 | An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | The session of 18 October 2026 measured all but a terminal open before the install, which it could not read. |
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
+| A deferred custom action without `msidbCustomActionTypeNoImpersonate` runs as the person running the install or removal, so a per-user removal's `Pitboard.exe --unregister` passes the core's gate and reaches that person's renewal task | [Custom action in-script execution options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-in-script-execution-options) | The session of 18 October 2026 saw `--unregister` delete the person's `Run` value, and read no token. No runner installs an MSI; the next session removes Pitboard and reads whether the task went. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
 | A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process with no desktop app policy set starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The probe's identity process, started by path, gave its `CreateProcessW` children none, and one handed a link as its only argument got it whole (runs 38928930271, 39291962999 and 39301311398, CF8 under [Windows](#windows)). No runner activates a share target, whose activation may set a policy that keeps children in the package: P2 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real share started, and P1, with no copy running, whether it keeps running once `PitboardShare.exe` has returned. |

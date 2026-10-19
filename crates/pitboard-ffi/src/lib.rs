@@ -8,12 +8,13 @@
 //! `check_name` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
 //! and `fixture_page`, and three free functions the macOS app asks of its bundle and its
 //! environment, `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
-//! `windows_records_key` and `launch_refusal`. The snapshot carries what an app shows of the
-//! accounts and the machine, such as a limit's names or how long an account lasts, made by
-//! `present` and the model, so no free function says it again. The free functions answer at
-//! once from what they are given, apart from `can_run`, which asks the file system about one
-//! path, `launch_refusal`, which asks the system how this process runs, and
-//! `download_destination`, which asks the file system whether each name it tries is taken.
+//! `windows_records_key`, `launch_refusal` and `unschedule_app`. The snapshot carries what an
+//! app shows of the accounts and the machine, such as a limit's names or how long an account
+//! lasts, made by `present` and the model, so no free function says it again. The free
+//! functions answer at once from what they are given, apart from `can_run`, which asks the
+//! file system about one path, `launch_refusal`, which asks the system how this process runs,
+//! `download_destination`, which asks the file system whether each name it tries is taken, and
+//! `unschedule_app`, which asks the system's scheduler and may take the renewal task away.
 //! Timestamps are epoch seconds.
 //!
 //! The model and what it presents came from the macOS app's Swift. Where a comment here
@@ -182,6 +183,17 @@ pub fn launch_refusal(environment: HashMap<String, String>) -> Option<ReadFailur
     let environment: Environment = environment.into_iter().collect();
     // The gate writes nothing, so the command line's caller name never reaches the audit log.
     launch::refusal(Context::for_command_line(&environment))
+}
+
+// `Pitboard.exe --unregister`, as the MSI's full uninstall runs it; a refusal takes nothing away.
+#[uniffi::export]
+pub fn unschedule_app(environment: HashMap<String, String>, app: String) -> bool {
+    pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
+    let environment: Environment = environment.into_iter().collect();
+    let found = pitboard_core::app::AppContext::discover(&environment, Some(Path::new(&app)));
+    pitboard_core::service::Pitboard::new(found.context)
+        .schedule_uninstall_for_app()
+        .unwrap_or(false)
 }
 
 // `WindowsLaunch::key` in the Windows app: the Pitboard directory as Windows compares paths.
@@ -532,6 +544,25 @@ mod tests {
             relative.message.starts_with("PITBOARD_HOME"),
             "{relative:?}"
         );
+        assert!(!scratch.exists(), "nothing is made");
+    }
+
+    // The core's own tests take a task away on a scheduler in memory; this one reaches none.
+    #[test]
+    fn a_removal_with_no_command_line_beside_the_app_takes_nothing_away() {
+        let scratch = std::env::temp_dir().join(format!(
+            "pitboard-unschedule-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let home = scratch.to_string_lossy().into_owned();
+        let environment = HashMap::from([
+            ("HOME".into(), home.clone()),
+            ("USERPROFILE".into(), home),
+            ("SHELL".into(), "/nowhere/at/all/sh".into()),
+        ]);
+        let app = scratch.join("Pitboard").to_string_lossy().into_owned();
+        assert!(!unschedule_app(environment, app));
         assert!(!scratch.exists(), "nothing is made");
     }
 

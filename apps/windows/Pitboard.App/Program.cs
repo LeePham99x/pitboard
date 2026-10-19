@@ -67,6 +67,7 @@ public static class Program
                     Running.Build,
                     Exe,
                     new RegistryRunKey(),
+                    new CoreRenewalTask(environment),
                     new SystemAppNotifications(),
                     new RegistryNotificationRegistration(Running.Aumid));
                 return 0;

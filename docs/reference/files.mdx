@@ -200,7 +200,7 @@ Pitboard reads the list of processes to tell whether Claude is open:
 
 ## Renewal schedule
 
-`pitboard schedule install`, or turning on **Renew parked logins daily** in the app's **Renewal** settings, writes these. `pitboard schedule uninstall`, or turning it off, removes them. So does `pitboard uninstall` while Pitboard's directory is its default one.
+`pitboard schedule install`, or turning on **Renew parked logins daily** in the app's **Renewal** settings, writes these. `pitboard schedule uninstall`, or turning it off, removes them. So does `pitboard uninstall` while Pitboard's directory is its default one. On Windows, [uninstalling the app](/install/remove#remove-pitboard-itself) removes the task where it runs the app's own `pitboard.exe`.
 
 | Item | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -245,6 +245,7 @@ The environment holds the proxy variables as they were set at install, and on ma
     | --- | --- |
     | `Pitboard.exe` in that folder | The app |
     | `bin\pitboard.exe` in that folder | The command line, which the installer adds to the end of your `PATH` |
+    | `completions\pitboard.ps1` in that folder | PowerShell completions |
     | **Pitboard** in the Start menu | A shortcut to the app |
     | `HKEY_CURRENT_USER\Software\Classes\pitboard` | The [Pitboard link](/reference/account-windows#pitboard-links) scheme |
     | The value `Pitboard` in `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` | **Start when you sign in to Windows**, while it is on: the app's path and `--sign-in` |

@@ -54,6 +54,14 @@ Turned off the daily renewal schedule.
 ~/.pitboard is gone. Remove Pitboard itself the way you installed it.
 ```
 
+On Windows, the last line names the directory in full:
+
+```text
+Removed 2 parked login(s). The login each tool is signed in with is untouched.
+Turned off the daily renewal schedule.
+C:\Users\me\AppData\Local\Pitboard is gone. Remove Pitboard itself the way you installed it.
+```
+
 Deleting the directory by hand leaves daily renewal on, which `pitboard schedule uninstall` turns off. On Linux and Windows, the parked logins are files in the directory and go with it.
 
 On macOS, deleting `~/.pitboard` by hand leaves the parked logins of Claude Code and OpenAI's Codex CLI in the keychain, still valid. Nothing else names them, so `pitboard uninstall` cannot find them. If you already deleted it, delete the `pitboard-park-` items in Keychain Access.
@@ -97,7 +105,16 @@ If you clicked **Install Command Line Tool** in **Settings** > **Command Line**,
 sudo rm /usr/local/bin/pitboard
 ```
 
-On Windows, uninstalling the app removes `%LOCALAPPDATA%\Programs\Pitboard`, its Start shortcut, its `PATH` entry, its `pitboard://` links, its start at sign-in and `%LOCALAPPDATA%\Pitboard App`, where the account windows keep their sign-ins. It leaves the parked logins, the Pitboard directory and daily renewal, so run `pitboard uninstall` first.
+On Windows, uninstalling the app removes `%LOCALAPPDATA%\Programs\Pitboard`, its Start shortcut, its `PATH` entry, its `pitboard://` links, its start at sign-in and `%LOCALAPPDATA%\Pitboard App`, where the account windows keep their sign-ins. It turns off daily renewal where the task runs the app's own `pitboard.exe`. It leaves the parked logins and the Pitboard directory, so run `pitboard uninstall` first.
+
+If you added the app's completions to your PowerShell profile, delete that line from the file `$PROFILE` names.
+
+A task that runs another copy, such as Scoop's, stays. If you removed every `pitboard.exe` while daily renewal was on, the task runs nothing each day. Remove it in PowerShell:
+
+```powershell
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+Unregister-ScheduledTask -TaskPath '\Pitboard\' -TaskName "Renew $sid" -Confirm:$false
+```
 
 ## Remove files Pitboard made as root
 

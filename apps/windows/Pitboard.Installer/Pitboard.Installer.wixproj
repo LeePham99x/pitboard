@@ -1,12 +1,12 @@
 <Project Sdk="WixToolset.Sdk">
-  <!-- Pitboard.msi for one architecture, from Pitboard.App's Release publish and pitboard.exe. Builds on Windows only. -->
+  <!-- Pitboard.msi for one architecture, from Pitboard.App's Release publish, pitboard.exe and its PowerShell completions. Builds on Windows only. -->
   <PropertyGroup>
     <OutputName>Pitboard</OutputName>
     <!-- The owner accepted WiX v7's Open Source Maintenance Fee EULA on 2026-10-15. -->
     <AcceptEula>wix7</AcceptEula>
     <!-- PitboardShare.exe and its package go in only when the package is signed, since only a signed one registers. -->
     <PitboardShareSigned Condition="'$(PitboardShareSigned)' != 'true'">false</PitboardShareSigned>
-    <DefineConstants>ProductVersion=$(PitboardMsiVersion);App=$(PitboardApp);CommandLine=$(PitboardCommandLine);ShareSigned=$(PitboardShareSigned)</DefineConstants>
+    <DefineConstants>ProductVersion=$(PitboardMsiVersion);App=$(PitboardApp);CommandLine=$(PitboardCommandLine);Completions=$(PitboardCompletions);ShareSigned=$(PitboardShareSigned)</DefineConstants>
     <!--
       ICE61 warns that MajorUpgrade replaces the same version, which AllowSameVersionUpgrades asks for: a beta and
       its final share three fields. ICE33 warns of pitboard://'s verb in the Registry table, warnings Microsoft calls
@@ -22,7 +22,7 @@
     <PackageReference Include="WixToolset.Util.wixext" />
   </ItemGroup>
   <Target Name="CheckPitboardMsiInputs" BeforeTargets="CoreCompile">
-    <Error Condition="'$(PitboardApp)' == '' or '$(PitboardCommandLine)' == ''" Text="Pass the Release publish of Pitboard.App as PitboardApp and its pitboard.exe as PitboardCommandLine." />
+    <Error Condition="'$(PitboardApp)' == '' or '$(PitboardCommandLine)' == '' or '$(PitboardCompletions)' == ''" Text="Pass the Release publish of Pitboard.App as PitboardApp, its pitboard.exe as PitboardCommandLine and the completions\pitboard.ps1 of the zip that holds that pitboard.exe as PitboardCompletions." />
     <Error Condition="'$(PitboardMsiVersion)' == ''" Text="Pass the msi line .github/scripts/windows-versions.sh prints for Cargo.toml's version as PitboardMsiVersion." />
   </Target>
 </Project>

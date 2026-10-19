@@ -1,13 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Security;
+using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// What the MSI's full uninstall asks of Pitboard.exe --unregister: the two registrations Pitboard made itself, which no
-// table of the MSI removes. Each is tried whatever became of the other.
+// What the MSI's full uninstall asks of Pitboard.exe --unregister: what Pitboard made itself, which no table of the MSI
+// removes. Each is tried whatever became of the others.
 public static class Unregistering
 {
-    public static void Run(Build build, string exe, IRunKey run, IAppNotifications notifications, INotificationRegistration registration)
+    public static void Run(
+        Build build, string exe, IRunKey run, IRenewalTask renewal, IAppNotifications notifications, INotificationRegistration registration)
     {
         if (build is Build.Debug)
         {
@@ -22,6 +24,14 @@ public static class Unregistering
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or SecurityException)
+        {
+        }
+
+        try
+        {
+            renewal.Remove(exe);
+        }
+        catch (Exception error) when (error is UniffiException or TypeInitializationException or DllNotFoundException)
         {
         }
 

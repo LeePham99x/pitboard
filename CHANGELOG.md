@@ -21,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **work · Max 20x · 42%**, where the menu bar app shows the account's limits under it.
 - On Windows, an account's window closes with Ctrl+W, and its toolbar takes Alt+Left, Alt+Right
   and F5 or Ctrl+R for **Back**, **Forward** and **Reload**, as its page does.
+- The Windows app installs the PowerShell completions, as `completions\pitboard.ps1` in its
+  folder.
 
 ### Changed
 
@@ -44,6 +46,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at the size the new scale asks for.
 - On Windows, a beta of the app checks for updates only once a full release of Pitboard for
   Windows is out, and dims **Check now** until then, instead of ending each check in an error.
+- Uninstalling the Windows app turns off daily renewal where its task runs the app's own
+  `pitboard.exe`, and leaves a task that runs another copy, such as Scoop's.
 
 ## [1.0.0-beta.3] - 2026-10-19
 

@@ -16,5 +16,9 @@
             "extract_dir": "pitboard-v@VERSION@-aarch64-pc-windows-msvc"
         }
     },
-    "bin": "pitboard.exe"
+    "bin": "pitboard.exe",
+    "notes": [
+        "To load the PowerShell completions, add this line to the file $PROFILE names:",
+        ". \"$dir\\completions\\pitboard.ps1\""
+    ]
 }

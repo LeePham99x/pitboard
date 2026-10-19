@@ -1,0 +1,59 @@
+name: WinSparkle
+
+# WinSparkle installs updates on someone else's Windows machine, and the Windows App SDK is most
+# of what the MSI ships, so a move of either has to be noticed. apps/windows/Directory.Packages.props
+# pins both, and Dependabot's nuget updates are left off: they raise one package at a time, as its
+# cargo updates raised uniffi apart from its C# generator in #39.
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  behind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          props=apps/windows/Directory.Packages.props
+          restore="Then run \`dotnet restore --force-evaluate\` on apps/windows/Pitboard.slnx and Pitboard.Windows.slnx, with \`-p:EnableWindowsTargeting=true\` off Windows, and commit the lock files. CI's windows-app job is the first build."
+          # nuget.org's search, from its service index, answers the newest listed version that is no prerelease.
+          search=$(curl -fsS --retry 5 https://api.nuget.org/v3/index.json |
+            jq -r '[.resources[] | select(."@type" == "SearchQueryService/3.5.0")][0]."@id"')
+          for package in WinSparkle Microsoft.WindowsAppSDK; do
+            pinned=$(python3 -c "import sys,xml.etree.ElementTree as E;print([p.get('Version') for p in E.parse(sys.argv[1]).iter('PackageVersion') if p.get('Include')==sys.argv[2]][0])" "$props" "$package")
+            latest=$(curl -fsS --retry 5 "$search?q=packageid:$package&prerelease=false&semVerLevel=2.0.0&take=1" | jq -r '.data[0].version // empty')
+            echo "$package: pinned $pinned, latest $latest"
+            if [ -z "$latest" ]; then
+              echo "nuget.org lists no $package" >&2
+              exit 1
+            fi
+            [ "$pinned" = "$latest" ] && continue
+            title="$package $latest is out (we pin $pinned)"
+            if [ -n "$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number')" ]; then
+              echo "already open"
+              continue
+            fi
+            case $package in
+              WinSparkle)
+                also="verify-windows-signatures.ps1 takes WinSparkle.dll only unsigned, so a signed one needs its signer named there. Read the release's notes for a change to how WinSparkle checks an update's EdDSA signature, which release.yml's windows-update-sign writes with Sparkle's sign_update."
+                ;;
+              *)
+                also="validate-windows-msi.ps1 lets through ICE03's rows for the SDK's own files by their names, and verify-windows-signatures.ps1 wants each of its programs signed by Microsoft."
+                ;;
+            esac
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body \
+              "$props pins $package $pinned; nuget.org lists $latest. Raise its \`PackageVersion\` there to $latest. $restore $also"
+          done

@@ -237,15 +237,14 @@ jobs:
           cargo nextest run --locked --workspace --no-capture
           -E 'binary_id(pitboard-core) & test(=host::windows::proc::tests::an_app_execution_alias_runs_from_windows_apps)'
       # winget's validation installs as a standard user, runs the program with no argument and
-      # wants 0. Until Windows is released the opened build only has to run to its own exit, and
-      # the step says what it gave.
+      # wants 0, and the opened build is held to it as the gated 1.x build is.
       - name: The opened build with no argument, as a standard user
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/check-windows-build.ps1 -Exe target/debug/pitboard.exe -Triple $env:TRIPLE
-          -Opened -Probe target/debug/pitboard-probe.exe
+          -Opened -Strict -Probe target/debug/pitboard-probe.exe
 
   # The zips release.yml ships from 1.0.0, built by the same action on each image. Nothing is
   # uploaded, so no runnable build of a pull request leaves the runner.
@@ -696,10 +695,17 @@ jobs:
         env:
           INSTALLER: ${{ matrix.installer }}
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:GITHUB_WORKSPACE 'target\windows-app'
           $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
+          # The PowerShell completions the release's zip holds beside that pitboard.exe.
+          $zip = & "$env:GITHUB_WORKSPACE/.github/scripts/package-windows.ps1" -Exe $commandLine -Version $env:VERSION -Triple $env:TRIPLE `
+            -Out (Join-Path $out 'zip')
+          $completions = Join-Path ($zip -replace '\.zip$', '') 'completions\pitboard.ps1'
+          "completions=$completions" >> $env:GITHUB_OUTPUT
           $unsigned = Join-Path $out 'release-unsigned'
           Copy-Item -LiteralPath (Join-Path $out 'release') -Destination $unsigned -Recurse
           $share = @(Get-ChildItem -LiteralPath $unsigned -File -Filter 'PitboardShare.*') +
@@ -712,7 +718,7 @@ jobs:
           foreach ($kind in @{ Name = 'msi'; App = 'release'; Signed = 'true' }, @{ Name = 'msi-unsigned'; App = 'release-unsigned'; Signed = 'false' }) {
             dotnet build Pitboard.Installer -c Release -o (Join-Path $out $kind.Name) "-p:IntermediateOutputPath=obj\$($kind.Name)\" `
               "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$(Join-Path $out $kind.App)" "-p:PitboardCommandLine=$commandLine" `
-              "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$($kind.Signed)"
+              "-p:PitboardCompletions=$completions" "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$($kind.Signed)"
             if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
             $msi = Join-Path $out "$($kind.Name)\Pitboard.msi"
             & "$env:GITHUB_WORKSPACE/.github/scripts/validate-windows-msi.ps1" -Msi $msi
@@ -737,20 +743,50 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:UNSIGNED_IMAGE -Triple $env:TRIPLE `
             -GatedLibrary target/gated/release/pitboard_ffi.dll -UpdateKey $env:UPDATE_TEST_KEY `
             -Version $env:VERSION -FileVersion $env:FILE_VERSION
-      - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and the signed package"
+      - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and completions, and the signed package"
         shell: pwsh
         env:
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.msi-folder }}
           UNSIGNED_IMAGE: ${{ steps.msi.outputs.msi-unsigned-folder }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
         run: |
           ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi/Pitboard.msi -Folder $env:IMAGE `
-            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe `
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS `
             -Share -Package target/windows-app/release/PitboardShare.msix
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi-unsigned/Pitboard.msi -Folder $env:UNSIGNED_IMAGE `
-            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS
           exit $LASTEXITCODE
+      # As release.yml's app-windows-package checks a release's, against both MSIs of the newest
+      # release that shipped one, read and never extracted.
+      - name: The MSIs keep each component's GUID the last release's MSIs gave its key path
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ matrix.installer }}
+        run: |
+          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | [.tag_name, .assets[].name] | join(" ")'
+          if ($LASTEXITCODE -ne 0) { throw "gh api exited $LASTEXITCODE" }
+          $previous = $null
+          foreach ($release in $releases) {
+            $tag, $assets = $release -split ' '
+            if ($assets -contains "Pitboard-$tag-windows-$env:INSTALLER.msi") {
+              $previous = $tag
+              break
+            }
+          }
+          if (-not $previous) {
+            Write-Output 'No release has shipped an MSI for this machine.'
+            exit 0
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'previous-msi'
+          gh release download $previous --repo $env:GITHUB_REPOSITORY --pattern "Pitboard-$previous-windows-*.msi" --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $last = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.msi' | ForEach-Object FullName)
+          foreach ($msi in 'msi', 'msi-unsigned') {
+            ./.github/scripts/check-msi-components.ps1 -Msi "target/windows-app/$msi/Pitboard.msi" -Previous $last
+          }
       # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
       # carries one, both read by the release's signature check.
       - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key, feed, version or MSI, and the signature check reads the MSI and the package"
@@ -763,11 +799,12 @@ jobs:
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.msi-folder }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi -MsiImage $env:IMAGE
-          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS
       - name: The UI tests over the MSI's Pitboard.exe, and each MSI's own tests
         working-directory: apps/windows
         env:

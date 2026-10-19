@@ -1123,6 +1123,16 @@ class FillTemplate(unittest.TestCase):
                     },
                 )
 
+    # Scoop 0.6.0 prints notes after the install with $dir as the app's current folder
+    # (lib/install.ps1 show_notes and link_current), which an update keeps.
+    def test_the_scoop_manifest_says_how_to_load_the_powershell_completions(self):
+        out = self.dir / "pitboard.json"
+        done = fill(SCOOP, out, self.sums)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        notes = json.loads(out.read_text())["notes"]
+        self.assertIn('. "$dir\\completions\\pitboard.ps1"', notes)
+        self.assertIn("$PROFILE", notes[0])
+
     def test_the_scoop_manifest_needs_both_zips(self):
         for target in WINDOWS_TARGETS.values():
             missing = f"pitboard-v{VERSION}-{target}.zip"
