@@ -1,5 +1,6 @@
 # Checks the Authenticode signature of every program a Windows release hands on, and runs none of them. Of an MSI it
-# checks the programs named for Pitboard, and with -Built, that signing changed none of its files or tables.
+# checks Pitboard's programs, the others as their makers sign them, and with -Built, that signing changed none of its
+# files or tables.
 param(
     [Parameter(Mandatory)] [string[]] $Path,
     # signed: each signature is Valid, by -Subject, with a timestamp. unsigned: none is signed.
@@ -13,6 +14,14 @@ $ErrorActionPreference = 'Stop'
 
 if ($Mode -ne 'unsigned' -and -not $Subject) { throw 'a signed release names the subject its signer signs as' }
 $extract = Join-Path $PSScriptRoot 'extract-msi.ps1'
+# Who signs each program in an MSI that is not Pitboard's, by its name, the first match taking it: the Windows
+# Community Toolkit's are the .NET Foundation's, WinSparkle.dll ships unsigned, as NuGet's WinSparkle 0.9.4 holds it,
+# and the rest are the .NET runtime's and the Windows App SDK's, Microsoft's.
+$makers = [ordered]@{
+    'CommunityToolkit.*.dll' = @('Community Toolkit (.NET Foundation)', 'Windows Community Toolkit (.NET Foundation)')
+    'WinSparkle.dll' = @()
+    '*' = @('Microsoft Corporation')
+}
 
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.ZipFile
 $work = Join-Path ([IO.Path]::GetTempPath()) "verify-windows-signatures-$([guid]::NewGuid().ToString('N'))"
@@ -54,6 +63,23 @@ function Assert-Signature([string] $File, [string] $Name) {
     }
     if (-not $signature.TimeStamperCertificate) { throw "$Name's signature has no timestamp" }
     Write-Output "ok: $Name is Valid, signed by '$signer', timestamped by '$($signature.TimeStamperCertificate.Subject)'"
+}
+
+# A program another maker ships, Valid and signed by an organisation its row names, or by none where the row names none.
+function Assert-Maker([string] $File, [string] $Name, [Collections.Specialized.OrderedDictionary] $Makers) {
+    $leafName = Split-Path -Leaf $File
+    $organisations = @($Makers[@($Makers.Keys | Where-Object { $leafName -like $_ })[0]])
+    $signature = Get-AuthenticodeSignature -LiteralPath $File
+    $status = $signature.Status
+    if ($organisations.Count -eq 0) {
+        if ($status -ne 'NotSigned') { throw "$Name is $status, and only NotSigned is listed for it: name its signer in verify-windows-signatures.ps1" }
+        return 'not signed'
+    }
+    if ($status -ne 'Valid') { throw "$Name is $status, not Valid as $($organisations -join ' or ') signs it" }
+    $subject = $signature.SignerCertificate.Subject
+    $organisation = if ($subject -match '(?:^|,\s*)O=(?:"(?<o>[^"]*)"|(?<o>[^,]*))') { $Matches.o.Trim() } else { '' }
+    if ($organisation -notin $organisations) { throw "$Name is signed by '$subject', not by $($organisations -join ' or ')" }
+    return "signed by $organisation"
 }
 
 # Each file of an administrative image, by its path in the image.
@@ -159,15 +185,22 @@ try {
                 if ($tables) { throw "$leaf holds other tables than it was built with: $($tables -join ', ')" }
             }
             $programs = 0
+            $others = @{}
             foreach ($inside in $files) {
                 $full = Join-Path $image $inside
+                if (-not (Test-Program $full)) { continue }
+                $name = "$leaf/$($inside.Replace('\', '/'))"
                 # Pitboard's own programs are the ones named for it, and only those are its signer's.
-                if ((Split-Path -Leaf $inside) -like 'pitboard*' -and (Test-Program $full)) {
-                    Assert-Signature $full "$leaf/$($inside.Replace('\', '/'))"
+                if ((Split-Path -Leaf $inside) -like 'pitboard*') {
+                    Assert-Signature $full $name
                     $programs++
+                } else {
+                    $maker = Assert-Maker $full $name $makers
+                    $others[$maker] = 1 + [int] $others[$maker]
                 }
             }
             if ($programs -eq 0) { throw "$leaf holds no program of Pitboard's" }
+            foreach ($maker in @($others.Keys | Sort-Object)) { Write-Output "ok: of the other programs in $leaf, $($others[$maker]) are $maker" }
         } elseif ($leaf -like '*.msix') {
             Assert-Signature $file $leaf
         } elseif (Test-Program $file) {

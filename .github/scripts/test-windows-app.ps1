@@ -95,6 +95,23 @@ function Edit-Msi([string] $Case, [string] $Query) {
     $copy
 }
 
+# The File table's key of the one file the MSI lays out under a name, as WiX harvested it.
+function Get-FileKey([string] $Name) {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @([string] $msiPath, 0))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @('SELECT `File`, `FileName` FROM `File`'))
+    [void] $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+    $keys = @(while (($record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null))) {
+        $long = ($record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(2)) -split '\|')[-1]
+        if ($long -ceq $Name) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1)) }
+    })
+    [void] $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)
+    if ($keys.Count -ne 1) { throw "the MSI lays out $($keys.Count) files named $Name" }
+    $keys[0]
+}
+
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $whole = @('PitboardShare.exe', 'PitboardShare.msix')
@@ -146,7 +163,14 @@ try {
     New-Item -ItemType Directory -Path $built | Out-Null
     Copy-Item -LiteralPath $msiPath -Destination $built
     & $verify -Path $msiPath -Mode unsigned -Built $built
-    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files and tables it was built with'
+    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, the others as their makers sign them, and it holds the files and tables it was built with'
+    # A harvested file renamed in the File table, whose name msiexec /a lays it out under.
+    $stranger = Edit-Msi 'stranger' "UPDATE ``File`` SET ``FileName`` = 'Stranger.dll' WHERE ``File`` = '$(Get-FileKey 'WinSparkle.dll')'"
+    Assert-Thrown 'an unsigned program that is neither Pitboard''s nor WinSparkle.dll' $verify @{ Path = $stranger; Mode = 'unsigned' } `
+        'Pitboard\.msi/Stranger\.dll is NotSigned, not Valid as Microsoft Corporation signs it'
+    $impostor = Edit-Msi 'impostor' "UPDATE ``File`` SET ``FileName`` = 'Microsoft.Impostor.dll' WHERE ``File`` = '$(Get-FileKey 'CommunityToolkit.Common.dll')'"
+    Assert-Thrown 'a program the .NET Foundation signed where Microsoft signs' $verify @{ Path = $impostor; Mode = 'unsigned' } `
+        "Pitboard\.msi/Microsoft\.Impostor\.dll is signed by '.*\(\.NET Foundation\).*', not by Microsoft Corporation"
     $renamed = Edit-Msi 'renamed' "UPDATE ``File`` SET ``FileName`` = 'other.exe' WHERE ``File`` = 'CommandLineExe'"
     Assert-Thrown 'an MSI that lays out a file under another name than it was built with' $verify `
         @{ Path = $renamed; Mode = 'unsigned'; Built = $built } 'holds other files than it was built with'

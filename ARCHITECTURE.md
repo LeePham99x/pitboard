@@ -914,17 +914,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
-    hands on, in a zip or an MSI, and of a sparse package, `pack-session-bundle.ps1` sums,
-    zips and encrypts the session bundle, and `test-windows-release.ps1` tests the first three
-    on zips and the fourth with a stand-in for age. `check-windows-app.ps1` checks the Windows
-    app's Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package
-    beside it, `test-certificate.ps1` makes the throwaway certificate it and the runner facts
-    sign with, `extract-msi.ps1` extracts an MSI's administrative image and
-    `check-windows-msi.ps1` checks one, `check-msi-components.ps1` holds its components'
-    GUIDs and key paths to the last release's MSIs, `validate-windows-msi.ps1` runs ICE03 on an
-    MSI with the WiX that built it, `read-assembly.ps1` reads a value from a .NET assembly's metadata,
-    and `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
-    package.
+    hands on, in a zip or an MSI, an MSI's other programs against their makers, and of a sparse
+    package, `pack-session-bundle.ps1` sums, zips and encrypts the session bundle, and
+    `test-windows-release.ps1` tests the first three on zips and the fourth with a stand-in for
+    age. `check-windows-app.ps1` checks the Windows app's Release build,
+    `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `test-certificate.ps1` makes the throwaway certificate it and the runner facts sign with,
+    `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1` checks
+    one, `check-msi-components.ps1` holds its components' GUIDs and key paths to the last
+    release's MSIs, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
+    `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests the checks and the signature check on the MSI and the package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -2863,6 +2863,16 @@ key paths they share the same GUIDs. A standard folder's Directory row goes by i
 `ProgramFiles64Folder` under `TARGETDIR`, and each folder under `Pitboard` by an id WiX makes
 up, such as `dGNBjMVUkheIrP_lIJTI5NBZzo_c` for `af-ZA`. So `check-msi-components.ps1` names a
 key path by the standard folder and the long names below it.
+
+The Authenticode certificate tables of the app folders 1.0.0-beta.3's MSIs carry, the artifacts
+`app-windows-x64` and `app-windows-arm64` of release run 39205401692, read as bytes with
+LibreSSL's `pkcs7 -print_certs` on 20 October 2026. Of the 512 programs on x64 and 511 on ARM64,
+284 and 283 DLLs, three executables, 172 `.mui` and 53 `.winmd` files, seven are not signed:
+Pitboard's six and `WinSparkle.dll`. The Windows Community Toolkit's five are signed by the .NET
+Foundation, as `Community Toolkit (.NET Foundation)` or `Windows Community Toolkit (.NET
+Foundation)`, and every other one by a certificate whose organisation is Microsoft Corporation,
+issued by Microsoft's own code signing CAs. So `verify-windows-signatures.ps1` holds each to its
+maker by its name, Microsoft for a name it does not list.
 
 The images:
 

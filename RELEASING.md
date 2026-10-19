@@ -192,8 +192,11 @@ signer's credentials. Make it before the first 1.x tag: a job that names a missi
 makes one with no rule. `.github/scripts/verify-windows-signatures.ps1` checks every program in
 the zips, the app's programs and package, and each MSI and the programs named for Pitboard in
 it: signed by `WINDOWS_SIGNER_SUBJECT`, valid and timestamped, or, with no signer, not signed at
-all. The .NET runtime and the Windows App SDK ship as Microsoft signed them. WinSparkle.dll
-ships unsigned, as NuGet's WinSparkle 0.9.4 holds it. An MSI is checked on its own machine,
+all. The MSI's other programs ship as their makers signed them, and the script holds each to
+its maker: the .NET runtime's and the Windows App SDK's valid and signed by Microsoft
+Corporation, and the Windows Community Toolkit's by the .NET Foundation. WinSparkle.dll ships
+unsigned, as NuGet's WinSparkle 0.9.4 holds it, and the script refuses it signed until it names
+the signer. An MSI is checked on its own machine,
 `windows-msi`, since `msiexec /a` extracts one only where it could install it, and must hold
 the files and tables it was built with. No signer has a signing step yet, so a set
 `WINDOWS_SIGNER` fails the job.

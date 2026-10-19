@@ -218,7 +218,8 @@ jobs:
   # once a signer is set, PitboardShare.exe and its sparse package. An unsigned build ships no
   # sparse package, since only a signature the machine trusts registers one. Pitboard's own
   # programs and the package go to the signer; the .NET runtime's and the Windows App SDK's go on
-  # as Microsoft signed them, and WinSparkle.dll unsigned, as NuGet's WinSparkle 0.9.4 holds it.
+  # as Microsoft signed them, the Windows Community Toolkit's as the .NET Foundation did, and
+  # WinSparkle.dll unsigned, as NuGet's WinSparkle 0.9.4 holds it.
   # No cache here, as in build-windows.
   app-windows-build:
     needs: guard
@@ -689,8 +690,8 @@ jobs:
 
   # Every MSI reaches publish through here, checked on its own machine, since msiexec /a extracts an
   # MSI only where it could install it: its signature and each program of Pitboard's in it signed by
-  # the signer's subject when the guard says signed and none signed when it does not, and the same
-  # files and tables the MSI was built with.
+  # the signer's subject when the guard says signed and none signed when it does not, every other
+  # program as its maker signs it, and the same files and tables the MSI was built with.
   windows-msi:
     needs: [guard, windows-sign-msi]
     if: needs.guard.outputs.windows == 'true'
