@@ -24,6 +24,7 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Pitboard">
         <Directory Id="BinFolder" Name="bin" />
+        <Directory Id="CompletionsFolder" Name="completions" />
       </Directory>
     </StandardDirectory>
 
@@ -48,6 +49,9 @@
       <!-- Never beside Pitboard.exe, which NTFS takes for the same name. -->
       <Component Directory="BinFolder">
         <File Id="CommandLineExe" Source="$(CommandLine)" Name="pitboard.exe" />
+      </Component>
+      <Component Directory="CompletionsFolder">
+        <File Id="PowerShellCompletions" Source="$(Completions)" Name="pitboard.ps1" />
       </Component>
 
       <Component Id="CommandLineOnPath" Directory="INSTALLFOLDER">

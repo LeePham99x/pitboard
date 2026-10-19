@@ -116,6 +116,23 @@ public sealed class PackageTests
         Assert.AreEqual("[~];[INSTALLFOLDER]bin", row[1]);
     }
 
+    // Beside Pitboard.exe, and never in bin, which the user PATH reaches.
+    [TestMethod]
+    public void ItLaysOutTheZipsPowerShellCompletions()
+    {
+        using var database = Open();
+
+        var file = Rows(
+            database,
+            "SELECT `File`.`FileName`, `Directory`.`DefaultDir`, `Directory`.`Directory_Parent` FROM `File`, `Component`, `Directory` " +
+            "WHERE `File`.`Component_` = `Component`.`Component` AND `Component`.`Directory_` = `Directory`.`Directory` AND `File`.`File` = 'PowerShellCompletions'",
+            3).Single();
+        Assert.AreEqual("pitboard.ps1", file[0]!.Split('|')[^1]);
+        Assert.AreEqual("completions", file[1]!.Split('|')[^1]);
+        Assert.AreEqual("INSTALLFOLDER", file[2]);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(Built.Image, "completions", "pitboard.ps1")), "Register-ArgumentCompleter");
+    }
+
     [TestMethod]
     public void PitboardLinksOpenTheInstalledPitboardExe()
     {

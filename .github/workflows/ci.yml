@@ -695,10 +695,17 @@ jobs:
         env:
           INSTALLER: ${{ matrix.installer }}
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:GITHUB_WORKSPACE 'target\windows-app'
           $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
+          # The PowerShell completions the release's zip holds beside that pitboard.exe.
+          $zip = & "$env:GITHUB_WORKSPACE/.github/scripts/package-windows.ps1" -Exe $commandLine -Version $env:VERSION -Triple $env:TRIPLE `
+            -Out (Join-Path $out 'zip')
+          $completions = Join-Path ($zip -replace '\.zip$', '') 'completions\pitboard.ps1'
+          "completions=$completions" >> $env:GITHUB_OUTPUT
           $unsigned = Join-Path $out 'release-unsigned'
           Copy-Item -LiteralPath (Join-Path $out 'release') -Destination $unsigned -Recurse
           $share = @(Get-ChildItem -LiteralPath $unsigned -File -Filter 'PitboardShare.*') +
@@ -711,7 +718,7 @@ jobs:
           foreach ($kind in @{ Name = 'msi'; App = 'release'; Signed = 'true' }, @{ Name = 'msi-unsigned'; App = 'release-unsigned'; Signed = 'false' }) {
             dotnet build Pitboard.Installer -c Release -o (Join-Path $out $kind.Name) "-p:IntermediateOutputPath=obj\$($kind.Name)\" `
               "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$(Join-Path $out $kind.App)" "-p:PitboardCommandLine=$commandLine" `
-              "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$($kind.Signed)"
+              "-p:PitboardCompletions=$completions" "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$($kind.Signed)"
             if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
             $msi = Join-Path $out "$($kind.Name)\Pitboard.msi"
             & "$env:GITHUB_WORKSPACE/.github/scripts/validate-windows-msi.ps1" -Msi $msi
@@ -736,19 +743,20 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:UNSIGNED_IMAGE -Triple $env:TRIPLE `
             -GatedLibrary target/gated/release/pitboard_ffi.dll -UpdateKey $env:UPDATE_TEST_KEY `
             -Version $env:VERSION -FileVersion $env:FILE_VERSION
-      - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and the signed package"
+      - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and completions, and the signed package"
         shell: pwsh
         env:
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.msi-folder }}
           UNSIGNED_IMAGE: ${{ steps.msi.outputs.msi-unsigned-folder }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
         run: |
           ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi/Pitboard.msi -Folder $env:IMAGE `
-            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe `
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS `
             -Share -Package target/windows-app/release/PitboardShare.msix
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi-unsigned/Pitboard.msi -Folder $env:UNSIGNED_IMAGE `
-            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS
           exit $LASTEXITCODE
       # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
       # carries one, both read by the release's signature check.
@@ -762,11 +770,12 @@ jobs:
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.msi-folder }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi -MsiImage $env:IMAGE
-          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe -Completions $env:COMPLETIONS
       - name: The UI tests over the MSI's Pitboard.exe, and each MSI's own tests
         working-directory: apps/windows
         env:

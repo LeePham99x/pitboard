@@ -786,13 +786,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     removes the package registered for its folder, since removing a package ends the
     package's own processes. It loads `pitboard_share_ffi.dll` and none of the core.
   - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
-    Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
-    otherwise, as single package authoring has it, and its launch condition refuses a
-    per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
-    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and
-    the command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the
-    user `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
-    `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and `pitboard://`.
+    Release publish, `pitboard.exe` and the PowerShell completions the zip holds beside it.
+    A dual-purpose package, per user unless told otherwise, as single package authoring has
+    it, and its launch condition refuses a per-machine install, so per user
+    `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and HKMU is HKCU: `Pitboard\` with
+    `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, the command line in `Pitboard\bin\`,
+    never beside `Pitboard.exe`, and the completions in `Pitboard\completions\`; `bin`
+    appended to the user `PATH` and taken off on uninstall; the Start menu shortcut with the
+    AppUserModelID `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and
+    `pitboard://`.
     `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so
     either replaces the other. Settings offers no Modify, since there is one feature and no
     UI. `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a

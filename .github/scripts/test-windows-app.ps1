@@ -12,11 +12,13 @@ param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $FileVersion,
     # The MSI the job built from that folder, unsigned, the folder of its administrative image that
-    # holds Pitboard.exe, the ProductVersion windows-versions.sh gives it and the pitboard.exe in it.
+    # holds Pitboard.exe, the ProductVersion windows-versions.sh gives it, and the pitboard.exe and
+    # completions\pitboard.ps1 in it.
     [Parameter(Mandatory)] [string] $Msi,
     [Parameter(Mandatory)] [string] $MsiImage,
     [Parameter(Mandatory)] [string] $MsiVersion,
-    [Parameter(Mandatory)] [string] $CommandLine
+    [Parameter(Mandatory)] [string] $CommandLine,
+    [Parameter(Mandatory)] [string] $Completions
 )
 $ErrorActionPreference = 'Stop'
 
@@ -156,10 +158,12 @@ try {
     Assert-Thrown 'an unsigned MSI in a signed release' $verify @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
         'Pitboard\.msi is NotSigned, and every program of a signed release is Valid'
 
-    $msiGiven = @{ Msi = $msiPath; Folder = $MsiImage; MsiVersion = $MsiVersion; CommandLine = $CommandLine; Share = $true }
+    $msiGiven = @{ Msi = $msiPath; Folder = $MsiImage; MsiVersion = $MsiVersion; CommandLine = $CommandLine; Completions = $Completions; Share = $true }
     Assert-Thrown 'an MSI of another version' $checkMsi $msiGiven "ProductVersion is '.+', not 9\.9\.9" @{ MsiVersion = '9.9.9' }
     Assert-Thrown 'an MSI with another command line than the zip''s' $checkMsi $msiGiven 'bin\\pitboard\.exe is not the zip''s' `
         @{ CommandLine = (Join-Path $root 'Pitboard.exe') }
+    Assert-Thrown 'an MSI with other completions than the zip''s' $checkMsi $msiGiven 'completions\\pitboard\.ps1 is not the zip''s' `
+        @{ Completions = (Join-Path $root 'Pitboard.dll') }
     Assert-Thrown 'a share target in an MSI without a signed package' $checkMsi $msiGiven 'this release has no signed package' @{ Share = $false }
     $otherPackage = Join-Path $work 'other.msix'
     Copy-Item -LiteralPath (Join-Path $root 'PitboardShare.msix') -Destination $otherPackage

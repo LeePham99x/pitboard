@@ -519,9 +519,11 @@ jobs:
           $top = "pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE"
           Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP "cli\$top.zip") -DestinationPath (Join-Path $env:RUNNER_TEMP 'zip')
           $commandLine = Join-Path $env:RUNNER_TEMP "zip\$top\pitboard.exe"
+          $completions = Join-Path $env:RUNNER_TEMP "zip\$top\completions\pitboard.ps1"
           $out = Join-Path $env:RUNNER_TEMP 'msi'
           dotnet build Pitboard.Installer -c Release -o $out "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$app" `
-            "-p:PitboardCommandLine=$commandLine" "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$env:SIGNED"
+            "-p:PitboardCommandLine=$commandLine" "-p:PitboardCompletions=$completions" "-p:PitboardMsiVersion=$env:MSI_VERSION" `
+            "-p:PitboardShareSigned=$env:SIGNED"
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $dist = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'dist')
           $msi = Join-Path $dist "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
@@ -532,6 +534,7 @@ jobs:
           "msi=$msi" >> $env:GITHUB_OUTPUT
           "folder=$folder" >> $env:GITHUB_OUTPUT
           "command-line=$commandLine" >> $env:GITHUB_OUTPUT
+          "completions=$completions" >> $env:GITHUB_OUTPUT
       - name: "The MSI's files: the checks of the Release build"
         shell: pwsh
         env:
@@ -545,16 +548,17 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary (Join-Path $env:RUNNER_TEMP 'app\pitboard_ffi.dll') -Signer $env:SUBJECT -UpdateKey $env:KEY
           -Version $env:BASE -FileVersion $env:FILE_VERSION
-      - name: "The MSI: its version, its layout, the zip's command line and the signed package"
+      - name: "The MSI: its version, its layout, the zip's command line and completions, and the signed package"
         shell: pwsh
         env:
           MSI: ${{ steps.msi.outputs.msi }}
           IMAGE: ${{ steps.msi.outputs.folder }}
           MSI_VERSION: ${{ steps.numbers.outputs.msi }}
           COMMAND_LINE: ${{ steps.msi.outputs.command-line }}
+          COMPLETIONS: ${{ steps.msi.outputs.completions }}
           SIGNED: ${{ needs.guard.outputs.signed }}
         run: |
-          $given = @{ Msi = $env:MSI; Folder = $env:IMAGE; MsiVersion = $env:MSI_VERSION; CommandLine = $env:COMMAND_LINE }
+          $given = @{ Msi = $env:MSI; Folder = $env:IMAGE; MsiVersion = $env:MSI_VERSION; CommandLine = $env:COMMAND_LINE; Completions = $env:COMPLETIONS }
           if ($env:SIGNED -eq 'true') {
             $given.Share = $true
             $given.Package = Join-Path $env:RUNNER_TEMP 'signed-app\PitboardShare.msix'

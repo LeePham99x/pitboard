@@ -6,8 +6,9 @@ param(
     [Parameter(Mandatory)] [string] $Folder,
     # The ProductVersion windows-versions.sh gives Cargo.toml's version.
     [Parameter(Mandatory)] [string] $MsiVersion,
-    # The pitboard.exe the release's zip for this machine holds.
+    # The pitboard.exe the release's zip for this machine holds, and its completions\pitboard.ps1.
     [Parameter(Mandatory)] [string] $CommandLine,
+    [Parameter(Mandatory)] [string] $Completions,
     # The MSI carries PitboardShare.exe and its package, as it does where the package is signed.
     [switch] $Share,
     # The signed PitboardShare.msix it must carry byte for byte.
@@ -37,7 +38,7 @@ if ($version -cne $MsiVersion) { throw "the MSI's ProductVersion is '$version', 
 Write-Output "The MSI is version $version."
 
 $root = (Resolve-Path -LiteralPath $Folder).Path
-foreach ($name in 'Pitboard.exe', 'Pitboard.dll', 'pitboard_ffi.dll', 'WinSparkle.dll', 'Pitboard.ico', 'bin\pitboard.exe') {
+foreach ($name in 'Pitboard.exe', 'Pitboard.dll', 'pitboard_ffi.dll', 'WinSparkle.dll', 'Pitboard.ico', 'bin\pitboard.exe', 'completions\pitboard.ps1') {
     if (-not (Test-Path -LiteralPath (Join-Path $root $name) -PathType Leaf)) { throw "the MSI lays out no $name beside Pitboard.exe" }
 }
 $bin = @(Get-ChildItem -LiteralPath (Join-Path $root 'bin') -Force | ForEach-Object Name)
@@ -45,9 +46,12 @@ if ($bin.Count -ne 1) { throw "the MSI's bin holds $($bin -join ', '): the user 
 if ((Get-Hash (Join-Path $root 'bin\pitboard.exe')) -ne (Get-Hash $CommandLine)) {
     throw "the MSI's bin\pitboard.exe is not the zip's, $CommandLine"
 }
+if ((Get-Hash (Join-Path $root 'completions\pitboard.ps1')) -ne (Get-Hash $Completions)) {
+    throw "the MSI's completions\pitboard.ps1 is not the zip's, $Completions"
+}
 $symbols = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.pdb' | ForEach-Object Name)
 if ($symbols) { throw "the MSI lays out $($symbols -join ', ')" }
-Write-Output "It lays out Pitboard.exe with the zip's pitboard.exe alone in bin, and no symbols."
+Write-Output "It lays out Pitboard.exe with the zip's pitboard.exe alone in bin, the zip's PowerShell completions, and no symbols."
 
 # Windows reads the sparse package's logos from its external location, the install folder.
 $shareFiles = 'PitboardShare.exe', 'PitboardShare.msix', 'pitboard_share_ffi.dll',

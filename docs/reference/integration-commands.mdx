@@ -118,8 +118,9 @@ It writes the script to standard output. With `--json`, it prints no script and 
 | Release tarball | `completions/pitboard.bash`, `pitboard.zsh` and `pitboard.fish` |
 | The macOS app | The same three files in `Pitboard.app/Contents/Resources/completions/` |
 | Windows zip | `completions/pitboard.ps1` and `completions/pitboard.bash`, for PowerShell and Git Bash |
+| The Windows app | `completions\pitboard.ps1` in `%LOCALAPPDATA%\Programs\Pitboard` |
 
-No release includes the elvish script, and the Windows installer includes no script.
+No release includes the elvish script.
 
 bash-completion 2.2 or later and fish 4 load the install script's files from those folders. zsh loads its file once `~/.zshrc` has these lines:
 
@@ -140,6 +141,17 @@ pitboard completions zsh > ~/.zfunc/_pitboard
 ```
 
 Then add the same two lines to `~/.zshrc`, with `~/.zfunc` as the folder.
+
+PowerShell loads the script from your profile. In each PowerShell you use, add the app's script to the file `$PROFILE` names:
+
+```powershell
+if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force }
+Add-Content -Path $PROFILE -Value '. "$env:LOCALAPPDATA\Programs\Pitboard\completions\pitboard.ps1"'
+```
+
+From a zip, name the `completions\pitboard.ps1` in the folder you unpacked it to.
+
+Windows PowerShell 5.1 runs no profile while its execution policy is `Restricted`, its default on Windows 11.
 
 ## `manpage`
 

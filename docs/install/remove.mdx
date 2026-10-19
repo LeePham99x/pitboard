@@ -107,6 +107,8 @@ sudo rm /usr/local/bin/pitboard
 
 On Windows, uninstalling the app removes `%LOCALAPPDATA%\Programs\Pitboard`, its Start shortcut, its `PATH` entry, its `pitboard://` links, its start at sign-in and `%LOCALAPPDATA%\Pitboard App`, where the account windows keep their sign-ins. It turns off daily renewal where the task runs the app's own `pitboard.exe`. It leaves the parked logins and the Pitboard directory, so run `pitboard uninstall` first.
 
+If you added the app's completions to your PowerShell profile, delete that line from the file `$PROFILE` names.
+
 A task that runs another copy, such as Scoop's, stays. If you removed every `pitboard.exe` while daily renewal was on, the task runs nothing each day. Remove it in PowerShell:
 
 ```powershell
