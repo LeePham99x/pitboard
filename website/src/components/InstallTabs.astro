@@ -64,15 +64,14 @@ const after = "js:not-data-shown:hidden";
         beta={windows.prerelease}
         after
       />
-      <p class={note}>
-        <span class={after} data-after="windows">If Windows says it protected your PC, select
-          <b>More info</b>, then <b>Run anyway</b>.
-        </span
-        >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
+      <p class:list={[note, after]} data-after="windows">
+        If Windows says it protected your PC, select <b>More info</b>, then <b>Run anyway</b>.
       </p>
       <p class={note}>
-        For the command line alone, <a href="/download#windows">download its zip</a>.
+        For the command line alone,
+        <a href={`${DOCS}/install#install-the-command-line-on-windows`}>install it from its zip</a>.
       </p>
+      <p class={note}>Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
     </div>
     <div
       class={panel("linux")}
