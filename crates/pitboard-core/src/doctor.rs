@@ -2549,7 +2549,7 @@ fn judge_auth(facts: &Facts) -> Check {
 /// be noise on every machine. What is worth a warning is an assumption that has actually
 /// stopped holding, which is a probe's job and not a version number's.
 fn judge_claude_version(facts: &Facts) -> Check {
-    let verified = crate::provider::claude::assumptions::VERIFIED_AGAINST;
+    let verified = read_from(ProviderId::Claude, facts.os);
     match facts.claude_version.as_deref() {
         None => ok(
             "claude_version",
@@ -2567,6 +2567,10 @@ fn judge_claude_version(facts: &Facts) -> Check {
             format!("{installed} installed; Pitboard's facts were read from {verified}"),
         ),
     }
+}
+
+fn read_from(tool: ProviderId, os: Os) -> &'static str {
+    crate::assumptions::verified_against(tool, crate::assumptions::Platform::of(os))
 }
 
 // A path to pitboard.exe, or a script of the person's own, needs no PATH of Pitboard's.
@@ -3109,7 +3113,7 @@ fn judge_codex(
     checks.extend(parks.iter().map(|p| judge_park(p, now, moment)));
     checks.extend(parks.iter().filter_map(|p| judge_dormant(p, now)));
 
-    checks.push(judge_codex_version(facts));
+    checks.push(judge_codex_version(os, facts));
     checks.push(judge_codex_running(facts.running.as_deref()));
     checks
 }
@@ -3136,8 +3140,8 @@ fn judge_codex_running(running: Option<&[crate::holder::Holding]>) -> Check {
 
 /// Which Codex is installed, against which one Pitboard's facts were read. Stated rather
 /// than warned about, for the reason Claude Code's is.
-fn judge_codex_version(facts: &CodexFacts) -> Check {
-    let verified = crate::provider::codex::assumptions::VERIFIED_AGAINST;
+fn judge_codex_version(os: Os, facts: &CodexFacts) -> Check {
+    let verified = read_from(ProviderId::Codex, os);
     ok(
         "codex_version",
         "Codex build",
@@ -7508,6 +7512,41 @@ mod tests {
             .detail
             .clone();
         assert!(version.starts_with("not found here"), "{version}");
+    }
+
+    // Windows' facts are read from builds of their own, which its version lines name.
+    #[test]
+    fn a_build_is_set_beside_the_one_read_for_this_system() {
+        use crate::assumptions::{Platform, verified_against};
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let claude = verified_against(ProviderId::Claude, Platform::of(os));
+            let mut f = facts();
+            f.os = os;
+            f.claude_version = None;
+            assert_eq!(
+                check(&evaluate(&f), "claude_version").detail,
+                format!("not found here; Pitboard's facts were read from {claude}"),
+                "{os:?}"
+            );
+            f.claude_version = Some(claude.into());
+            assert_eq!(
+                check(&evaluate(&f), "claude_version").detail,
+                format!("{claude}, which is what Pitboard's facts were read from"),
+                "{os:?}"
+            );
+
+            let codex = verified_against(ProviderId::Codex, Platform::of(os));
+            let installed = CodexFacts {
+                version: Some(codex.into()),
+                ..with_codex()
+            };
+            let checks = judge_codex(os, None, &installed, &[], NOW, &time::moment);
+            assert_eq!(
+                check(&checks, "codex_version").detail,
+                format!("{codex}, which is what Pitboard's facts were read from"),
+                "{os:?}"
+            );
+        }
     }
 
     /// Each way Codex is installed, laid out in a scratch directory, and a shim that names

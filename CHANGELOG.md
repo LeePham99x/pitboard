@@ -50,6 +50,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pitboard.exe`, and leaves a task that runs another copy, such as Scoop's.
 - On Windows, Pitboard says to run `claude.cmd` or `codex.cmd` where npm installed the tool,
   since Windows PowerShell refuses a bare `claude` or `codex` there by default.
+- On Windows, `pitboard doctor` names the Claude Code and Codex builds Pitboard's facts for
+  Windows were read from, not the macOS ones.
 
 ## [1.0.0-beta.3] - 2026-10-19
 
