@@ -268,7 +268,7 @@ fn children(scratch: &Path) -> Value {
     json!({ "identity": identity(), "children": out })
 }
 
-// The way PitboardShare.exe hands a page to Pitboard.exe: through Launcher.LaunchUriAsync.
+// How PitboardShare.exe handed a page to Pitboard.exe before it started Pitboard.exe itself.
 fn launch(scratch: &Path) -> Value {
     let report = scratch.join(LAUNCHED_REPORT);
     let _ = std::fs::remove_file(&report);
@@ -304,7 +304,7 @@ pub(super) fn handed(link: &str) -> Report {
     )
 }
 
-// The way PitboardShare.exe would start the Pitboard.exe beside it, and the policy it would add
+// The way PitboardShare.exe starts the Pitboard.exe beside it, and the policy it would add
 // should that child keep this process's identity.
 fn handoff(scratch: &Path) -> Value {
     let link = format!("{CF8_SCHEME}://{HANDED_QUERY}");

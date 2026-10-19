@@ -1,7 +1,6 @@
 using Pitboard.Share.Core;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.ApplicationModel.DataTransfer.ShareTarget;
-using Windows.System;
 
 namespace Pitboard.Share;
 
@@ -12,7 +11,7 @@ internal sealed class SystemShareOperation(ShareOperation operation) : IShareOpe
     public async Task<string?> WebLinkAsync() =>
         operation.Data.Contains(StandardDataFormats.WebLink) ? (await operation.Data.GetWebLinkAsync()).AbsoluteUri : null;
 
-    public async Task<bool> LaunchAsync(string link) => await Launcher.LaunchUriAsync(new Uri(link));
+    public Task<bool> LaunchAsync(string link) => Task.FromResult(Handoff.Start(AppContext.BaseDirectory, link));
 
     public void ReportCompleted() => operation.ReportCompleted();
 
