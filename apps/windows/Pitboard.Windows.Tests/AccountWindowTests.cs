@@ -278,6 +278,34 @@ public sealed partial class AccountWindowTests
         }
     }
 
+    // As the model answers a window opened again: its last page, under a new number.
+    [UITestMethod]
+    public async Task AWindowBackInSightKeepsItsPageAndLoadsALinkChosenForIt()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var account = webs.Own(Main);
+        var (windows, model) = AccountWindowsOver(webs, account);
+        try
+        {
+            var window = await Away(windows, model, account, site);
+            var started = new List<string>();
+            Page(window)!.NavigationStarting += (_, args) => started.Add(args.Uri);
+            var open = model.Snapshot().AccountWindows.Open.Single();
+
+            windows.Open(account);
+            windows.Follow(model.Snapshot().AccountWindows with { Open = [open with { Load = new PageLoad(2, Home) }] });
+            windows.Follow(model.Snapshot().AccountWindows with { Open = [open with { Load = new PageLoad(3, Chat) }] });
+
+            await Views.Until(() => started.Count > 0, "the link chosen for the window did not load", Webs.Patience);
+            Assert.AreEqual(Chat, string.Join(", ", started));
+        }
+        finally
+        {
+            windows.Window(account.Store)?.Close();
+        }
+    }
+
     // Exit asks in the window of the download it would stop, back in sight where the person closed it.
     [UITestMethod]
     public async Task ExitAsksInTheWindowOfADownloadOutOfSight()
