@@ -4404,7 +4404,9 @@ Microsoft's documentation.
 - Microsoft's InfoBar page raises no notification for a bar changed while open, and has it
   closed and opened again for a screen reader to hear the new content
   ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25
-  June 2026). So the sheet's failure bar closes and opens again for each new failure, and a
+  June 2026). So the sheet's failure bar closes and opens again for each new failure, an
+  account window's note bar for a note in place of another, as the macOS window announces
+  each (`AccountWindowTests.ANoteInPlaceOfAnotherOpensItsBarAgain`), and a
   code the tool refused is an error InfoBar under the code field, where plain text was. A new
   failure gives focus back to the field it is about, as the sheet's opening does, so the
   default button is the one Enter presses.

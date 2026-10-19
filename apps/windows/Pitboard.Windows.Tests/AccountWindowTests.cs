@@ -154,6 +154,37 @@ public sealed partial class AccountWindowTests
         }
     }
 
+    // Narrator hears an InfoBar as it opens, and the macOS window announces each note, so a note in place of another opens
+    // the bar again.
+    [UITestMethod]
+    public async Task ANoteInPlaceOfAnotherOpensItsBarAgain()
+    {
+        await using var webs = await Webs.Make();
+        var sent = new List<Intent>();
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        try
+        {
+            window.Follow(Shown(
+                new WaitingShown.Reading("Reading accounts…"),
+                webs.Opened(Main, Home) with { Note = new WindowNoteKind.SignIn() }));
+            await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
+            var note = Views.Element<InfoBar>(window.Content, "window.note");
+            Assert.IsTrue(note.IsOpen);
+            var opened = new List<bool>();
+            note.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) => opened.Add(note.IsOpen));
+
+            await Page(window)!.Script("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'; 0");
+
+            await Views.Until(() => note.Message.StartsWith("Google does not allow", StringComparison.Ordinal), "Google's refusal was not said", Webs.Patience);
+            Assert.AreEqual("closed, opened", string.Join(", ", opened.Select(open => open ? "opened" : "closed")));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // Microsoft's title bar text guidance names the document before the program, where macOS's subtitle names the page.
     [UITestMethod]
     public async Task ItsTitleIsItsPagesAndThenItsAccounts()

@@ -20,6 +20,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private WebSession? _session;
     private SignInWindow? _signIn;
     private Action? _standInChoice;
+    private WindowNoteKind? _noteShown;
     private bool _starting;
     private bool _closed;
 
@@ -238,8 +239,16 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        Note.Message = session.Note is { } note ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
-        Note.IsOpen = session.Note is not null;
+        // Narrator hears an InfoBar as it opens, so a note in place of another opens it again.
+        var note = session.Note;
+        if (note is not null && Note.IsOpen && !Equals(note, _noteShown))
+        {
+            Note.IsOpen = false;
+        }
+
+        _noteShown = note;
+        Note.Message = note is not null ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
+        Note.IsOpen = note is not null;
         RemoveDataButton.IsEnabled = !session.PageClosed;
         ReloadButton.IsEnabled = true;
         ShowHistory();
