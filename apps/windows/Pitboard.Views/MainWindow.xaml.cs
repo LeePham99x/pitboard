@@ -161,6 +161,12 @@ public sealed partial class MainWindow : Window
         Close();
     }
 
+    private void OnHelp(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        _context.Open(new Uri(IconMenu.HelpLink));
+    }
+
     // Ctrl+N adds an account from any pane; the model then shows the accounts.
     private void OnAddAccount(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {

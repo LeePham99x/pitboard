@@ -16,6 +16,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the window.
 - The Windows app's **Settings** says when Windows turned Pitboard's notifications off, or every
   app's, and offers **Open notification settings**.
+- The Windows app's window opens Pitboard's help with F1, and its **About** links to it.
 
 ### Changed
 

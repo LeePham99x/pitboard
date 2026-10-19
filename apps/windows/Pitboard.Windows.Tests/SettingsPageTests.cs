@@ -465,6 +465,11 @@ public sealed class SettingsPageTests
         var report = Views.Visible<HyperlinkButton>(page).Single(link => link.Content as string == "Report a problem");
         new HyperlinkButtonAutomationPeer(report).Invoke();
         Assert.AreEqual(new Uri("https://github.com/datlechin/pitboard/issues"), opened.Single());
+
+        // The window had no way to the help but the icon's menu.
+        var help = Views.Visible<HyperlinkButton>(page).Single(link => link.Content as string == "Pitboard help");
+        new HyperlinkButtonAutomationPeer(help).Invoke();
+        Assert.AreEqual(new Uri("https://docs.usepitboard.com"), opened.Last());
     }
 
     // A switch sat about 100 epx in from its card's edge with "Off" after it. Windows Settings puts it at

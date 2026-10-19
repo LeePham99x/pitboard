@@ -10,6 +10,7 @@ using Pitboard.Core;
 using Pitboard.Views;
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.System;
 
 namespace Pitboard.Windows.Tests;
 
@@ -90,6 +91,24 @@ public sealed class MainWindowTests
                 await Showing(window, pane);
                 Assert.AreEqual("", string.Join(", ", Views.StrayShortcuts(window.Content)), $"over {pane?.ToString() ?? "settings"}");
             }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // The window had no way to the help but the icon's menu.
+    [UITestMethod]
+    public async Task TheWindowTakesF1ForTheHelp()
+    {
+        var window = await Views.Activated(Made(Snapshots.Read(1)));
+        try
+        {
+            var root = (UIElement)window.Content;
+
+            Assert.HasCount(
+                1, root.KeyboardAccelerators.Where(accelerator => accelerator is { Key: VirtualKey.F1, Modifiers: VirtualKeyModifiers.None }));
         }
         finally
         {

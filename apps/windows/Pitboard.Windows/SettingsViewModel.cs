@@ -36,6 +36,7 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
     public static readonly SettingsLink[] Links =
     [
         new("usepitboard.com", "https://usepitboard.com"),
+        new("Pitboard help", IconMenu.HelpLink),
         new("Source code on GitHub", "https://github.com/datlechin/pitboard"),
         new("Report a problem", "https://github.com/datlechin/pitboard/issues"),
         new("Apache License 2.0", "https://github.com/datlechin/pitboard/blob/main/LICENSE"),

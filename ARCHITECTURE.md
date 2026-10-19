@@ -726,7 +726,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     test app shows them as `Pitboard.exe` does. `MainWindow` is a `TitleBar` over a
     `NavigationView`, whose `Frame` shows a page for each of the model's `Pane`s and the
     settings page, each navigated to with a `PaneContext` and kept for the next visit; it
-    takes Ctrl+N, Ctrl+comma, Ctrl+W, F6 and Shift+F6 from any of them. `AccountsPage` lists
+    takes Ctrl+N, Ctrl+comma, Ctrl+W, F1, F6 and Shift+F6 from any of them. `AccountsPage` lists
     the accounts under their notices and setup step, each an `AccountRow` with an
     `AccountMenu`, and shows an `EmptyState` in place of an empty list; `ActivityPage` is the
     log, a table whose column headers are its list's header, each change stacked under its
