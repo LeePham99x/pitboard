@@ -276,6 +276,27 @@ fn a_missing_jar_beside_an_item_or_a_key_is_never_signed_out() {
     );
     assert_eq!(code(use_(&m, "work")), "login_folder_unknown");
     assert_eq!(snapshot(&m), before);
+
+    // An item 2.42304.0 clears for another account, and no jar.
+    let m = desktop_machine("no-jar-preview");
+    without_items(&m);
+    for key in [
+        "oauth:tokenCache",
+        "oauth:tokenCacheV2",
+        "lastKnownAccountUuid",
+    ] {
+        set(&m, key, None);
+    }
+    std::fs::create_dir(data(&m).join("Partitions")).expect("a preview browser");
+    let before = snapshot(&m);
+    let refused = enrol(&m, "work").expect_err("refused");
+    assert!(
+        refused
+            .to_string()
+            .contains("has no cookie store and still holds `Partitions`"),
+        "{refused}"
+    );
+    assert_eq!(snapshot(&m), before);
 }
 
 #[test]
@@ -284,7 +305,7 @@ fn a_missing_jar_beside_an_item_or_a_key_is_never_signed_out() {
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
 fn no_data_folder_and_an_empty_one_hold_nobody() {
-    // Row 5: no jar, none of the items, none of the three keys.
+    // Row 5: no jar, none of the items, none of the keys.
     let m = two_accounts("row-5");
     without_items(&m);
     for key in [
@@ -1225,14 +1246,15 @@ fn park_of(m: &Machine, label: &str) -> Option<Park> {
 }
 
 fn named_in_settings(m: &Machine) -> Option<String> {
-    let settings: Map<String, Value> = serde_json::from_str(
+    setting(m, "lastKnownAccountUuid").and_then(|name| name.as_str().map(str::to_string))
+}
+
+fn setting(m: &Machine, key: &str) -> Option<Value> {
+    let mut settings: Map<String, Value> = serde_json::from_str(
         &std::fs::read_to_string(data(m).join("config.json")).expect("settings"),
     )
     .expect("JSON");
-    settings
-        .get("lastKnownAccountUuid")
-        .and_then(Value::as_str)
-        .map(str::to_string)
+    settings.shift_remove(key)
 }
 
 #[test]
@@ -1309,6 +1331,109 @@ fn a_switch_parks_the_account_in_use_and_puts_the_other_in() {
     rested(&m, "and back");
 }
 
+// What 2.42304.0 clears when another account signs in: a switch hides that change from it,
+// so it carries them instead.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_switch_carries_what_claude_clears_for_another_account() {
+    let m = desktop_pair("carried");
+    let preview = data(&m).join("Partitions/launch-preview-static/Cookies");
+    std::fs::create_dir_all(preview.parent().expect("a partition")).expect("a partition");
+    std::fs::write(&preview, "work's preview").expect("a preview jar");
+    std::fs::create_dir(data(&m).join("builtin-mcp-auth")).expect("a connector cache");
+    for file in [
+        "custom3p-builtin-mcp.json",
+        "custom3p-builtin-mcp.json.journal",
+        "chrome-import-sites.json",
+        "session-popouts.json",
+    ] {
+        std::fs::write(data(&m).join(file), "{}").expect("a file of work's");
+    }
+    set(&m, "custom3pMcpOAuth", Some(json!({"grant": "work's"})));
+    let carried = [
+        "Partitions",
+        "builtin-mcp-auth",
+        "custom3p-builtin-mcp.json",
+        "custom3p-builtin-mcp.json.journal",
+        "chrome-import-sites.json",
+        "session-popouts.json",
+    ];
+
+    // `home`'s park holds none of them, as one an earlier Pitboard made.
+    let (_, warnings) = used(&m, "home");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    for item in carried {
+        assert!(!data(&m).join(item).exists(), "`{item}` left with `work`");
+    }
+    assert_eq!(setting(&m, "custom3pMcpOAuth"), None);
+    hold(&m, "a switch");
+    rested(&m, "a switch");
+
+    used(&m, "work");
+    for item in carried {
+        assert!(data(&m).join(item).exists(), "`{item}` back with `work`");
+    }
+    assert_eq!(
+        std::fs::read_to_string(&preview).expect("back"),
+        "work's preview"
+    );
+    assert_eq!(
+        setting(&m, "custom3pMcpOAuth"),
+        Some(json!({"grant": "work's"}))
+    );
+    hold(&m, "and back");
+    rested(&m, "and back");
+}
+
+// A leave stopped after the keys went, then Claude run signed out beside grants it kept.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_leave_finished_beside_connector_grants_verifies_and_commits() {
+    let m = desktop_pair("grants-settled");
+    killed(&m, "leave.item_out", "home");
+    let claude = m.claude();
+    claude.opens();
+    claude.quits();
+    set(&m, "custom3pMcpOAuth", Some(json!({"grant": "kept"})));
+
+    let gave = gave_up(&m).expect("settled");
+    assert!(gave.moves.is_empty(), "nothing given up: {gave:?}");
+    assert!(
+        matches!(
+            gave.warnings.as_slice(),
+            [Warning::MoveSettled(moved)]
+                if moved.half == state::Half::Leave && moved.ended == super::Ended::Finished
+        ),
+        "{:?}",
+        gave.warnings
+    );
+    assert_eq!(in_use(&m), None);
+}
+
+// A Log out leaves the connector grants, which hold no login of Claude's.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_log_out_beside_connector_grants_is_signed_out() {
+    let m = desktop_machine("grants-kept");
+    jar(&m, None);
+    for key in ["oauth:tokenCache", "oauth:tokenCacheV2"] {
+        set(&m, key, Some(serde_json::from_str(EMPTIED).expect("JSON")));
+    }
+    set(&m, "custom3pMcpOAuth", Some(json!({"grant": "kept"})));
+    let before = snapshot(&m);
+    assert_eq!(code(enrol(&m, "work")), "live_credential_absent");
+    assert_eq!(snapshot(&m), before);
+}
+
 // A switch Pitboard makes writes no `in-use` line. One into a Claude signed out since writes
 // who left and whose only login went, as a read of any other tool would.
 #[test]
@@ -1343,8 +1468,12 @@ fn a_use_into_a_signed_out_claude_says_who_left_in_the_activity_log() {
 )]
 fn the_keys_leave_before_the_jar_and_arrive_after_it() {
     let m = desktop_pair("order");
+    set(&m, "custom3pMcpOAuth", Some(json!({"grant": "work's"})));
+    used(&m, "home");
+    set(&m, "custom3pMcpOAuth", Some(json!({"grant": "home's"})));
+    used(&m, "work");
     let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    // How many of the three keys the settings hold.
+    // How many of the account's keys the settings hold.
     let look = |at: &'static str| {
         let (seen, root) = (std::rc::Rc::clone(&seen), data(&m));
         move || {
@@ -1356,6 +1485,7 @@ fn the_keys_leave_before_the_jar_and_arrive_after_it() {
                 "oauth:tokenCache",
                 "oauth:tokenCacheV2",
                 "lastKnownAccountUuid",
+                "custom3pMcpOAuth",
             ]
             .into_iter()
             .filter(|key| settings.contains_key(*key))
@@ -1380,7 +1510,7 @@ fn the_keys_leave_before_the_jar_and_arrive_after_it() {
             ("leave.keys_out", 0, true),
             ("leave.jar_out", 0, false),
             ("arrive.jar_in", 0, true),
-            ("arrive.keys_in", 3, true),
+            ("arrive.keys_in", 4, true),
         ]
     );
 }
