@@ -1,6 +1,6 @@
 // What the Windows app shows in the site's figures, in its own words: windows.test.ts finds each
 // in the file that says it.
-import { clock, type Limit, type Moment, type Tool } from "./world.ts";
+import { clock, warmUp, type Limit, type Moment, type Tool } from "./world.ts";
 import {
   activity,
   isInUse,
@@ -74,8 +74,7 @@ export function accountTip(label: string, moment: Moment): string {
 
 const capitalised = (s: string) => s[0].toUpperCase() + s.slice(1);
 
-// AccountRow.xaml: its notes are the problem, the pace, the parked login's life and the warm-up,
-// and Windows warms up no account.
+// AccountRow.xaml: its notes are the problem, the pace, the parked login's life and the warm-up.
 export function accountsPage(moment: Moment) {
   return {
     title: "Accounts",
@@ -108,6 +107,9 @@ export function accountsPage(moment: Moment) {
           notes: [
             runsOut && capitalised(runsOut),
             !inUse && a.parked && `Parked login good for ${a.parked.app}`,
+            tool === "claude" &&
+              warmUp.accounts.includes(a.label) &&
+              `Warms up again at ${clock.warmsAgain}`,
           ].filter((n): n is string => Boolean(n)),
         };
       }),
@@ -117,7 +119,8 @@ export function accountsPage(moment: Moment) {
 
 const threshold = 95;
 
-// SettingsPage.xaml's Limits, with machine.rs's words under Switch Claude Code automatically
+// SettingsPage.xaml's Limits, with machine.rs's words under Switch Claude Code automatically and
+// Warm up limits open on its hours and WarmAccountRow.cs's rows
 export const settingsPage = {
   title: "Settings",
   section: "Limits",
@@ -128,6 +131,23 @@ export const settingsPage = {
     note: `Pitboard switches Claude Code to another of your accounts with room below ${threshold}% in every limit, once a limit of the one in use reaches ${threshold}%, while the app is open. Sessions already running follow within about 33 seconds. It never switches back by itself, and never switches Codex: a running codex keeps its account until restarted.`,
   },
   share: { header: "Switch when a limit reaches", range: "From 50% to 99%", value: threshold },
+  warm: {
+    header: "Warm up limits",
+    range: `${warmUp.from} to ${warmUp.to}`,
+    standing: `Next warm-up: ${warmUp.accounts[0]} at ${clock.warmsAgain}.`,
+    hours: [
+      ["From", warmUp.from],
+      ["To", warmUp.to],
+    ],
+    accounts: toolAccounts("claude").map((a) => {
+      const on = warmUp.accounts.includes(a.label);
+      return {
+        title: menuTitle(a),
+        standing: on ? `Warms up again at ${clock.warmsAgain}` : null,
+        on,
+      };
+    }),
+  },
 };
 
 export const activityPage = {

@@ -55,6 +55,11 @@ test("pitboard watch starts with the line the command line writes", () => {
     start,
     /^Watching Claude Code\. Pitboard switches to another of your accounts once a limit of the one in use reaches \d+%, and warms up \w+ from \d\d:\d\d to \d\d:\d\d\. Stop with Ctrl-C\.$/,
   );
+  const unwarmed = start.replace(/, and warms up .+ to \d\d:\d\d/, "").replace(/\d+%/, "90%");
+  assert.ok(docs("guides/automatic-switching.mdx").split("\n").includes(unwarmed));
+  for (const p of platforms) {
+    assert.deepEqual(text(printed(sessions.watch, p)), [start, watching], p);
+  }
   const shape =
     /^\d\d:\d\d:\d\d Watching \w+: \d+% of its (5-hour|weekly) limit, as of \d\d:\d\d\.$/;
   assert.match(watching, shape);
@@ -150,25 +155,13 @@ test("pitboard lists Claude Desktop on macOS alone, where Pitboard supports it",
   }
 });
 
-test("pitboard watch on Windows starts with no warm-up, as no account is turned on there", () => {
-  const source = joined(repo("crates/pitboard/src/watch.rs"));
-  assert.ok(source.includes("overview.accounts.iter().any(|choice| choice.on)"));
-  const [start, watching] = text(printed(sessions.watch, "windows"));
-  assert.match(
-    start,
-    /^Watching Claude Code\. Pitboard switches to another of your accounts once a limit of the one in use reaches \d+%\. Stop with Ctrl-C\.$/,
-  );
-  assert.ok(
-    docs("guides/automatic-switching.mdx").split("\n").includes(start.replace(/\d+%/, "90%")),
-  );
-  assert.equal(watching, text(printed(sessions.watch, "macos"))[1]);
-  assert.deepEqual(text(printed(sessions.watch, "linux")), text(printed(sessions.watch, "macos")));
-});
-
-test("warm-ups run on macOS and Linux, and Claude Desktop switches on macOS", () => {
-  assert.deepEqual(sessions.warm.on, ["macos", "linux"]);
+test("warm-ups run on every system, and Claude Desktop switches on macOS alone", () => {
+  assert.ok(!repo("crates/pitboard-core/src/duty/warm/mod.rs").includes("Unbuilt"));
+  assert.ok(!("on" in sessions.warm));
+  for (const p of platforms) {
+    assert.deepEqual(printed(sessions.warm, p), printed(sessions.warm, "macos"), p);
+  }
   assert.deepEqual(sessions.useDesktop.on, ["macos"]);
-  assert.throws(() => printed(sessions.warm, "windows"));
   assert.throws(() => printed(sessions.useDesktop, "linux"));
 });
 
@@ -178,7 +171,8 @@ test("pitboard log lists only the changes each system makes, each verb padded to
   assert.match(log("macos").join("\n"), /warm-up/);
   assert.doesNotMatch(log("linux").join("\n"), /desktop\//);
   assert.match(log("linux").join("\n"), /warm-up/);
-  assert.doesNotMatch(log("windows").join("\n"), /desktop\/|warm-up/);
+  assert.doesNotMatch(log("windows").join("\n"), /desktop\//);
+  assert.match(log("windows").join("\n"), /warm-up/);
   assert.ok(repo("crates/pitboard/src/main.rs").includes("ui::pad(&e.verb, width)"));
   for (const p of platforms) {
     const verbs = log(p).map((l) => /^\S+ {2}(\S+ *) {2}\S+ {2}ok$/.exec(l)![1]);

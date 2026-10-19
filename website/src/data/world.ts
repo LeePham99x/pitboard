@@ -122,13 +122,8 @@ export const windowsClock = {
   runOut: { time: "07:56", date: "14/10/2026" },
 };
 
-// The accounts turned on for warm-up on each system. Windows warms up none, since Claude Code there
-// does not read the token a warm-up hands it (duty/warm/mod.rs).
-export const warmUp: { from: string; to: string; accounts: Record<Platform, string[]> } = {
-  from: "07:00",
-  to: "23:00",
-  accounts: { macos: ["personal"], windows: [], linux: ["personal"] },
-};
+// The accounts turned on for warm-up, alike on every system.
+export const warmUp = { from: "07:00", to: "23:00", accounts: ["personal"] };
 
 export interface Logged {
   day: string;
@@ -149,7 +144,6 @@ export const logged: Logged[] = [
     verb: "warm-up",
     account: "personal",
     caller: "app",
-    on: platforms.filter((p) => warmUp.accounts[p].includes("personal")),
   },
   {
     day: "2026-10-13",

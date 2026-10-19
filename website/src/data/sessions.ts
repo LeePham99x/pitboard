@@ -48,14 +48,12 @@ function status(moment: Moment): Session {
 }
 
 // watch.rs `warms`: nothing where no account is turned on.
-function warms(platform: Platform): string {
-  const on = warmUp.accounts[platform].map((label) => `<b>${label}</b>`);
+function warms(): string {
+  const on = warmUp.accounts.map((label) => `<b>${label}</b>`);
   if (on.length === 0) return "";
   const named = on.length > 1 ? `${on.slice(0, -1).join(", ")} and ${on.at(-1)}` : on[0];
   return `, and warms up ${named} from ${warmUp.from} to ${warmUp.to}`;
 }
-
-const warming = platforms.filter((p) => warmUp.accounts[p].length > 0);
 
 // main.rs `log`: each verb padded to the longest of the entries shown.
 function log(entries: Logged[]): Session {
@@ -97,9 +95,8 @@ export const sessions = {
     title: "pitboard watch",
     command: "pitboard watch",
     output: [
-      ...said(
-        (p) =>
-          `Watching Claude Code. Pitboard switches to another of your accounts once a limit of the one in use reaches 95%${warms(p)}. Stop with Ctrl-C.`,
+      line(
+        `Watching Claude Code. Pitboard switches to another of your accounts once a limit of the one in use reaches 95%${warms()}. Stop with Ctrl-C.`,
       ),
       line(
         `<span class="dim">${clock.read}:14</span> Watching <b>work</b>: 40% of its weekly limit, as of ${clock.read}.`,
@@ -109,7 +106,6 @@ export const sessions = {
   warm: {
     title: "pitboard warm",
     command: "pitboard warm",
-    on: warming,
     output: [
       line(
         `Pitboard warms up these accounts from ${warmUp.from} to ${warmUp.to}, while the app or \`pitboard watch\` runs.`,

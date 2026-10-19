@@ -337,22 +337,17 @@ const jsonLd = [
                 describe:
                   "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
               },
-              windows: {
-                caption: "The same from a terminal.",
-                describe:
-                  "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, then: Watching work: 40% of its weekly limit, as of 20:50.",
-              },
             }}
           >
             <Settings show="switch" />
-            <WinSettings slot="win" />
+            <WinSettings slot="win" show="switch" />
             <Term slot="cli" session={sessions.watch} />
           </Figure>
         </Row>
         <Row id="warm-title" title="Warm-up">
           <p>
-            On macOS and Linux, a <a href={`${DOCS}/guides/warm-up`}>warm-up</a> starts Claude
-            Code's next five-hour period when the last one ends, with one short message.
+            A <a href={`${DOCS}/guides/warm-up`}>warm-up</a> starts Claude Code's next five-hour
+            period when the last one ends, with one short message.
           </p>
           <Figure
             slot="fig"
@@ -361,6 +356,11 @@ const jsonLd = [
                 caption: "Warm-up in the Limits pane on macOS.",
                 describe:
                   "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+              },
+              windows: {
+                caption: "Warm-up in Settings on Windows, under Limits.",
+                describe:
+                  "Pitboard's Settings under Limits, with Warm up limits open: 07:00 to 23:00, and the line: Next warm-up: personal at 22:00. Under it, From 07:00 and To 23:00, personal turned on and warming up again at 22:00, and work off.",
               },
             }}
             cli={{
@@ -372,6 +372,7 @@ const jsonLd = [
             }}
           >
             <Settings show="warm" />
+            <WinSettings slot="win" show="warm" />
             <Term slot="cli" session={sessions.warm} />
           </Figure>
         </Row>
@@ -422,7 +423,7 @@ const jsonLd = [
           windows: {
             caption: "The Activity page on Windows.",
             describe:
-              "The Activity page of the Pitboard window lists the switch to work, asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
+              "The Activity page of the Pitboard window lists the switch to work and a warm-up of personal, both asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
           },
         }}
         cli={{
@@ -439,7 +440,7 @@ const jsonLd = [
           windows: {
             caption: "The same from a terminal.",
             describe:
-              "<code>pitboard log</code> lists the enrolment of work and the switch to work, each ok.",
+              "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal and the switch to work, each ok.",
           },
         }}
       >

@@ -141,17 +141,24 @@ test("the notice after a switch says what notices.rs and NoticeBar.xaml.cs put t
   assert.equal(accountsPage("before").notice, null);
 });
 
-test("an account's notes are the core's, and none says when it warms up", () => {
+test("an account's notes are the core's, with when it warms up last", () => {
   const said = core("words.rs");
   assert.ok(said.includes('"{limit} limit runs out in {} at this pace",'));
   assert.ok(said.includes('days => format!("Parked login good for {days} more days"),'));
+  assert.ok(said.includes('format!("warms up again at {}", moment(*next))'));
+  assert.ok(present("accounts.rs").includes("warm_note: warm_note(seen, account),"));
+  assert.ok(views("AccountRow.xaml.cs").includes("item.Pace, item.ParkedNote, item.WarmNote"));
   const notes = (moment: "before" | "after") =>
     accountsPage(moment).sections.flatMap((s) => s.rows.flatMap((r) => r.notes));
   assert.deepEqual(notes("before"), [
     "Weekly limit runs out in 11h 05m at this pace",
+    "Warms up again at 22:00",
     "Parked login good for 26 more days",
   ]);
-  assert.ok(!notes("after").some((n) => /warm/i.test(n)));
+  assert.deepEqual(notes("after"), [
+    "Parked login good for 26 more days",
+    "Warms up again at 22:00",
+  ]);
 });
 
 test("Settings says what SettingsPage.xaml, SettingsViewModel.cs and machine.rs say", () => {
@@ -183,6 +190,26 @@ test("Settings says what SettingsPage.xaml, SettingsViewModel.cs and machine.rs 
   assert.equal(s.autoSwitch.note, note);
 });
 
+test("Warm up limits says what SettingsPage.xaml, WarmAccountRow.cs and machine.rs say", () => {
+  const w = settingsPage.warm;
+  const xaml = views("SettingsPage.xaml");
+  assert.ok(xaml.includes(`Header="${w.header}"`));
+  for (const [name] of w.hours) {
+    assert.ok(xaml.includes(`<toolkit:SettingsCard Header="${name}"`), name);
+  }
+  assert.ok(present("words.rs").includes('Some(format!("{} to {to}", time_of_day(from)?))'));
+  assert.equal(w.range, "07:00 to 23:00");
+  assert.ok(
+    present("machine.rs").includes('format!("Next warm-up: {account} at {}.", seen.clock(at))'),
+  );
+  assert.equal(w.standing, "Next warm-up: personal at 22:00.");
+  assert.ok(shell("WarmAccountRow.cs").includes('$"{_account.Title} · {plan}"'));
+  assert.deepEqual(w.accounts, [
+    { title: "personal · Max 20x", standing: "Warms up again at 22:00", on: true },
+    { title: "work · Max 20x", standing: null, on: false },
+  ]);
+});
+
 test("Activity lists Windows' changes in the app's words, dated as the regional format's g", () => {
   const page = activityPage;
   const xaml = views("ActivityPage.xaml");
@@ -192,6 +219,7 @@ test("Activity lists Windows' changes in the app's words, dated as the regional 
   const words = present("words.rs");
   assert.ok(words.includes('"use" | "switch" => "Switch".into(),'));
   assert.ok(words.includes('"enroll" => "Enrol".into(),'));
+  assert.ok(words.includes('"warm-up" => "Warm-up".into(),'));
   assert.ok(words.includes('"ok" => "Done".into(),'));
   assert.ok(words.includes('"app" => "Pitboard app".into(),'));
   assert.ok(words.includes('"cli" => "Command line".into(),'));
@@ -199,6 +227,7 @@ test("Activity lists Windows' changes in the app's words, dated as the regional 
     page.rows.map((r) => [r.date, r.change, r.account, r.result, r.by]),
     [
       ["13/10/2026 20:49", "Switch", "work", "Done", "Pitboard app"],
+      ["13/10/2026 17:00", "Warm-up", "personal", "Done", "Pitboard app"],
       ["10/10/2026 09:16", "Enrol", "work", "Done", "Command line"],
     ],
   );
