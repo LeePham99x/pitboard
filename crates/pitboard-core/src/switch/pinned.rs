@@ -18,8 +18,7 @@ const CODEX_FILE: &str = "file .codex/auth.json";
 const AUTH_JSON: &str = "auth.json";
 const CODEX_HERE: &str = "pitboard-park-here_user-here-1760000000000";
 const CODEX_THERE: &str = "pitboard-park-there_user-there-1760000000000";
-// The look `store::cost` takes for the backend holding the login, which a chain Credential
-// Manager takes over skips (`credman_migration`).
+// `store::cost`'s look, which a chain Credential Manager took over skips (`credman_migration`).
 const PRICED: &str = "contains, to price";
 
 struct Pinned {
@@ -80,8 +79,7 @@ fn watch(m: &Machine, change: fn(&Machine)) -> Seen {
     }
 }
 
-// Claude Code's login held whole in one Credential Manager item, which its store looks for and
-// reads after the manifest `#m`, and writes after reading `#p` and `#m` (`credman_chunking`).
+// Credential Manager reads `#m` before a look or read, and `#p` and `#m` before a write.
 fn on_this_system(store: &str, call: &'static str, service: &str) -> Vec<Touch> {
     let touch = |call, service: String| Touch {
         store: store.into(),

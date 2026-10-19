@@ -813,8 +813,7 @@ fn doctor_is_only_read_when_asked_for() {
     assert_eq!(machine.doctor_asks, 1);
 }
 
-// The session of 2026-10-18 saw no notification of a login replaced outside Pitboard, and
-// nothing said whether Windows had refused it.
+// The 2026-10-18 session saw no replaced-login toast, and nothing said whether Windows refused it.
 #[test]
 fn a_notification_the_system_refused_is_said_after_doctors_checks_until_one_is_posted() {
     let replaced = |label: &str| Warning {

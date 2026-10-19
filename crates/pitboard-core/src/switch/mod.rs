@@ -1540,8 +1540,7 @@ mod tests {
         }
     }
 
-    // Windows PowerShell 5.1 under its default policy refuses the `claude.ps1` npm leaves
-    // beside `claude.cmd`, and runs the `.cmd` (session of 2026-10-18).
+    // Windows PowerShell 5.1 refuses npm's `claude.ps1` and runs the `.cmd` (2026-10-18).
     #[test]
     #[allow(
         clippy::disallowed_methods,

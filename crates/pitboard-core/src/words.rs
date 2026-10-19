@@ -1413,8 +1413,7 @@ mod tests {
         );
     }
 
-    // npm leaves `claude`, `claude.cmd` and `claude.ps1`; the native installer and WinGet a bare
-    // `claude.exe` (`windows_install_layout`).
+    // npm leaves `claude.cmd` and `claude.ps1`, the native installer and WinGet `claude.exe`.
     #[test]
     fn a_hint_names_the_cmd_only_where_pitboard_found_one_on_windows() {
         use crate::provider::ProviderId;

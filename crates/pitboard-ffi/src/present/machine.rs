@@ -142,11 +142,9 @@ pub struct RenewalShown {
 /// Doctor's checks, as the window shows them.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ChecksShown {
-    /// Every check, in the order doctor makes them, then a notification the app's system
-    /// refused.
+    // every check, in the order doctor makes them, then a notification the app's system refused
     pub lines: Vec<CheckLine>,
-    /// Over them, in the words of the last line of `pitboard doctor`, once there are checks
-    /// to head.
+    // over them, in the words of the last line of `pitboard doctor`, once there are checks to head
     pub summary: Option<String>,
     // the worst of the checks, which the line over them shows in its colour and symbol
     pub level: Level,

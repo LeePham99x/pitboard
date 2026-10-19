@@ -1767,8 +1767,7 @@ mod tests {
         }
     }
 
-    // Word for word what each said before a tool could be an app, and with npm's `.cmd` where
-    // Pitboard found it in place of the bare program.
+    // Word for word what each said before a tool could be an app, with npm's `.cmd` where found.
     #[test]
     fn every_claude_code_and_codex_sentence_reads_as_it_did() {
         let said = |tool: ProviderId, spelling: Spelling| {

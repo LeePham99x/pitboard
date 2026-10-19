@@ -38,8 +38,7 @@ fn adoption_on(os: Os, behind: Option<&Behind>) -> Adoption {
         (Os::MacOs | Os::Windows, Some(behind)) => Adoption::AtRenewal {
             file: behind.path.clone(),
         },
-        // On Windows the file store's is measured (`windows_file_adoption`, 2.1.302), and
-        // Credential Manager's waits on session step 7 (`windows_credman_cache`).
+        // Windows: measured for the file store, not Credential Manager (`windows_credman_cache`).
         (Os::MacOs | Os::Windows, None) => Adoption::PollingWithin(ADOPTION_SECONDS),
         // The file is the store, so nothing is behind it, and a switch changes its mtime.
         (Os::Linux, _) => Adoption::PollingWithin(ADOPTION_SECONDS),

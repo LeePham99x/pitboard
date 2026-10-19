@@ -81,8 +81,7 @@ const STOW: &str = if cfg!(windows) {
     "Put away the login Claude Code left in a file behind the keychain, then delete the file"
 };
 
-// The default folder, by the name a person knows it by on each system. On Windows it is under
-// the profile whatever `LOCALAPPDATA` says, as `Os::default_pitboard_home` makes it.
+// On Windows it is under the profile whatever `LOCALAPPDATA` says (`default_pitboard_home`).
 const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
     "Renew as the daily renewal schedule does: %USERPROFILE%\\AppData\\Local\\Pitboard, \
      whatever PITBOARD_HOME says"

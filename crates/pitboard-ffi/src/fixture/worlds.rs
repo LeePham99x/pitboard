@@ -83,8 +83,7 @@ pub(crate) enum World {
     /// own store, as a sign-in that could not reach the store leaves one, so the app offers to
     /// put it away.
     LeftInFile,
-    // `OneTool`, after personal signed in with Claude Code itself over work's only login, which
-    // a terminal's read has said since.
+    // `OneTool`, then personal signs in with Claude Code over work's only login, read by a CLI.
     LoginReplaced,
 }
 
