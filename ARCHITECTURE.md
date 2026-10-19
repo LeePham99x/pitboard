@@ -4378,7 +4378,11 @@ Microsoft's documentation.
   where WebView2's own browser keys serve Back, Forward and Reload. So an account window takes
   Ctrl+W, and the browser keys for its Back, Forward and Reload, on its root, for its toolbar
   and its note (`AccountWindowTests.TheWindowTakesTheKeysOfItsCommands`,
-  `TheToolbarTakesBackAndCtrlW`).
+  `TheToolbarTakesBackAndCtrlW`). An accelerator for Alt+Left on the root missed the key with
+  the command bar's More focused on windows-2025 (run 39310757537), though
+  `CommandBar_Partial.cpp` at `winui3/release/2.5.1` moves focus on Left or Right only with
+  Alt up, so Alt+Left and Alt+Right are read in the root's `PreviewKeyDown`, Alt from the
+  thread's key state.
 - Microsoft's User Interface Text guidelines (updated 15 April 2025) title a top-level
   document-centric window "document name - program name", the document first. So an account
   window is titled with its page's `DocumentTitle`, a hyphen and the account's title, where

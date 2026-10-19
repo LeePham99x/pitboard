@@ -431,7 +431,7 @@ public sealed partial class AccountWindowTests
             var root = (UIElement)window.Content;
 
             Assert.AreEqual(
-                "Control+W, Menu+Left, Menu+Right, None+F5, Control+R",
+                "Control+W, None+F5, Control+R",
                 string.Join(", ", root.KeyboardAccelerators.Select(key => $"{key.Modifiers}+{key.Key}")));
         }
         finally
