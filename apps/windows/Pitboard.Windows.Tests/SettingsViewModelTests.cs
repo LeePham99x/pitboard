@@ -236,6 +236,32 @@ public sealed class SettingsViewModelTests
         Assert.IsFalse(shown.StartsAtSignIn);
         Assert.IsFalse(shown.CanStartAtSignIn);
         Assert.AreEqual(SettingsViewModel.TurnedOffNote, shown.StartupNote);
+        Assert.IsTrue(shown.OffersStartupSettings);
+    }
+
+    // Back from Settings > Apps > Startup, where the person turned Pitboard off while the page showed.
+    [TestMethod]
+    public void ReadingWindowsSettingsAgainShowsWhatSettingsChangedAndAsksTheModelNothing()
+    {
+        var key = new StandInRunKey();
+        var item = new RunValue(Build.Release, @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe", key);
+        item.Write(starts: true);
+        var (shown, model, _) = Over(Snapshots.Read(1), new StartAtSignIn(item));
+        shown.Shown();
+        var sent = model.Sent.Count;
+        var told = 0;
+        shown.PropertyChanged += (_, _) => told++;
+
+        Assert.IsTrue(shown.StartsAtSignIn);
+        Assert.IsFalse(shown.OffersStartupSettings);
+
+        key.Approvals["Pitboard"] = [0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        shown.ReadWindowsSettings();
+
+        Assert.IsFalse(shown.StartsAtSignIn);
+        Assert.IsTrue(shown.OffersStartupSettings);
+        Assert.IsGreaterThan(0, told);
+        Assert.AreEqual(sent, model.Sent.Count, string.Join(", ", model.Sent.Skip(sent)));
     }
 
     [TestMethod]

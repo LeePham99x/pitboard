@@ -87,6 +87,31 @@ public sealed class SettingsPageTests
         Assert.IsFalse(start.On);
     }
 
+    // As the macOS settings offer Open Login Items Settings: only Windows' own switch turns it on again.
+    [UITestMethod]
+    public async Task StartAtSignInTurnedOffInWindowsSettingsLinksThere()
+    {
+        var opened = new List<Uri>();
+        var page = await Shown(
+            new AppModel(new StandInModel(Snapshots.Read(1))), new StartAtSignIn(new FixtureStartupItem(offInSettings: true)),
+            open: opened.Add);
+        var toggle = Views.Element<ToggleSwitch>(page, "settings.startAtSignIn");
+        var link = Views.Element<HyperlinkButton>(page, "settings.startupSettings");
+
+        Assert.IsFalse(toggle.IsOn);
+        Assert.IsFalse(toggle.IsEnabled);
+        Assert.Contains(SettingsViewModel.TurnedOffNote, Views.Texts(page));
+        Assert.AreSame(Card(toggle), Card(link));
+        new HyperlinkButtonAutomationPeer(link).Invoke();
+        Assert.AreEqual(new Uri("ms-settings:startupapps"), opened.Single());
+
+        var on = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))));
+
+        Assert.IsFalse(
+            Views.Visible<HyperlinkButton>(on).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.startupSettings"),
+            "a link to Settings while nothing there holds Pitboard back");
+    }
+
     [UITestMethod]
     public async Task ADebugBuildHoldsTheSwitchBackAndSaysWhy()
     {

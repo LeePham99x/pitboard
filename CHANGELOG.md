@@ -11,6 +11,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Pitboard warms up Claude Code accounts on Windows, from `pitboard warm`, `pitboard watch` and
   the app.
+- Where Windows' Startup settings turned Pitboard off, the Windows app's **Start when you sign in
+  to Windows** offers **Open Startup settings**, and reads the setting again as you come back to
+  the window.
 
 ### Changed
 

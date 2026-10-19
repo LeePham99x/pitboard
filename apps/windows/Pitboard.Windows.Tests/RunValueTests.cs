@@ -148,6 +148,27 @@ public sealed class RunValueTests
         Assert.IsNull(shown.Refusal);
     }
 
+    // PITBOARD_FIXTURE_STARTUP=off stands for a Run value Settings > Apps > Startup turned off, which a UI test reaches.
+    [TestMethod]
+    public void AFixtureTurnedOffInSettingsIsHeldBackAsRunValueIs()
+    {
+        var shown = StartAtSignIn.For(
+            new AppStart(new Identity(Build.Debug), new() { [FixtureStartupItem.Variable] = "off" }, "oneTool", @"C:\Temp\pitboard-fixture"),
+            Installed);
+
+        shown.Read();
+        Assert.IsFalse(shown.On);
+        Assert.IsTrue(shown.TurnedOff);
+
+        shown.Set(on: true);
+        Assert.IsFalse(shown.On);
+        Assert.AreEqual(SettingsViewModel.TurnedOffNote, shown.Failed);
+
+        shown.Set(on: false);
+        Assert.IsTrue(shown.TurnedOff, "turning it off in Pitboard undid what Settings keeps");
+        Assert.IsFalse(StartAtSignIn.For(new AppStart(new Identity(Build.Debug), new(), "oneTool", @"C:\Temp\pitboard-fixture"), Installed).TurnedOff);
+    }
+
     // A Debug build's writer refuses before it reads the Run key, so asking it touches nothing.
     [TestMethod]
     public void AFixtureGetsAStandInAndADebugBuildWithoutOneItsRefusingWriter()

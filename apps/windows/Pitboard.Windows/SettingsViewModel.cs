@@ -14,6 +14,9 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 
     public const string TurnedOffNote = "Turned off in Settings > Apps > Startup, where you can turn it on again.";
 
+    // Settings > Apps > Startup, by the URI Microsoft's "Launch the Windows Settings app" lists.
+    public const string StartupSettings = "ms-settings:startupapps";
+
     public const string BetaNote = "A beta updates itself to 1.0.0 once that is out. Install a later beta by hand.";
 
     public const string NewTerminals = "Pitboard’s installer puts pitboard on your PATH, which terminals opened after it ran see.";
@@ -68,6 +71,8 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
     public string StartupNote => _start.Refusal ?? (_start.TurnedOff ? TurnedOffNote : SignInNote);
 
     public string? StartupFailed => _start.Failed;
+
+    public bool OffersStartupSettings => _start.TurnedOff;
 
     // Why a Release build posts no notifications; empty where it posts them.
     public string NotificationsOff { get; }
@@ -194,11 +199,14 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
     // Every visit: a terminal can change the schedule and the command line, and another program the Run key.
     public void Shown()
     {
-        _start.Read();
+        ReadWindowsSettings();
         _model.Send(new Intent.ReadSchedule());
         _model.Send(new Intent.LookForCommandLine());
         _updates.LookForFeed();
     }
+
+    // Also as the window comes back, as from Settings > Apps > Startup, where the macOS settings read again too.
+    public void ReadWindowsSettings() => _start.Read();
 
     public void SetStartsAtSignIn(bool on)
     {

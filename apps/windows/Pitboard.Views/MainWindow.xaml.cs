@@ -66,12 +66,22 @@ public sealed partial class MainWindow : Window
             _sheets?.Dispose();
             _alerts?.Dispose();
         };
-        // Back from installing a tool the sheet said Pitboard could not find.
+        // Back from installing a tool the sheet said Pitboard could not find, or from a setting Windows keeps.
         Activated += (_, args) =>
         {
-            if (args.WindowActivationState != WindowActivationState.Deactivated && _model.Sheet is not null)
+            if (args.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                return;
+            }
+
+            if (_model.Sheet is not null)
             {
                 _model.Send(new Intent.LookForTools());
+            }
+
+            if (Pages.Content is SettingsPage { ViewModel: { } settings })
+            {
+                settings.ReadWindowsSettings();
             }
         };
         // VK_OEM_COMMA, which VirtualKey has no name for.

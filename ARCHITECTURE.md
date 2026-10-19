@@ -703,9 +703,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
-    `FixtureStartupItem`. It reads `StartupApproved\Run`, which only Settings > Apps >
-    Startup writes: where that turned the `Run` value off, the switch is off and held back,
-    and its note says to turn it on there. `SettingsViewModel` is what the settings page shows and sends,
+    `FixtureStartupItem`, which `PITBOARD_FIXTURE_STARTUP=off` makes a value Settings turned
+    off. It reads `StartupApproved\Run`, which only Settings > Apps > Startup writes: where
+    that turned the `Run` value off, the switch is off and held back, its note says to turn it
+    on there, and a link opens `ms-settings:startupapps`. The settings read it again at each
+    visit and as `MainWindow` is activated while they show. `SettingsViewModel` is what the settings page shows and sends,
     beyond the model's words its own, each warm-up account a `WarmAccountRow`, and
     `Versions` the app's own version. `AccountsViewModel`, `ActivityViewModel` and `MachineViewModel` are what
     the accounts, activity and This PC pages bind to, told part by part as `AppModel` tells

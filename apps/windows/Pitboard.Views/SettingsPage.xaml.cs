@@ -73,6 +73,9 @@ public sealed partial class SettingsPage : Page
     private void OnStartAtSignInToggled(object sender, RoutedEventArgs args) =>
         ViewModel?.SetStartsAtSignIn(((ToggleSwitch)sender).IsOn);
 
+    private void OnOpenStartupSettings(object sender, RoutedEventArgs args) =>
+        Context.Open(new Uri(SettingsViewModel.StartupSettings));
+
     private void OnAutoSwitchToggled(object sender, RoutedEventArgs args) => ViewModel?.SetAutoSwitch(((ToggleSwitch)sender).IsOn);
 
     // A cleared box shows the share again once its change has run.

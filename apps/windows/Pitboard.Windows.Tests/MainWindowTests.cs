@@ -18,11 +18,11 @@ public sealed class MainWindowTests
     private static readonly Pane?[] Panes = [Pane.Accounts, Pane.Activity, Pane.Machine, null];
 
     // A window over its own placement file, which goes with it.
-    internal static MainWindow Made(Snapshot snapshot)
+    internal static MainWindow Made(Snapshot snapshot, StartAtSignIn? start = null)
     {
         var placement = Path.Combine(Path.GetTempPath(), $"pitboard-placement-{Guid.NewGuid()}.json");
         var window = new MainWindow(
-            new AppModel(new StandInModel(snapshot)), new StartAtSignIn(new FixtureStartupItem()), new NoUpdates(), "0.0.0",
+            new AppModel(new StandInModel(snapshot)), start ?? new StartAtSignIn(new FixtureStartupItem()), new NoUpdates(), "0.0.0",
             _ => { }, new WindowPlacement(placement));
         window.Closed += (_, _) => File.Delete(placement);
         return window;
@@ -191,6 +191,33 @@ public sealed class MainWindowTests
 
                 Assert.IsGreaterThanOrEqualTo(title.Bottom + 24, host.Top, $"{page.GetType().Name}: the title ends at {title.Bottom}, its scrolling at {host.Top}");
             }
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // As the macOS settings read the login item again once the app is active, back from System Settings.
+    [UITestMethod]
+    public async Task BackFromWindowsSettingsTheSettingsReadWhatItKeepsAgain()
+    {
+        var key = new StandInRunKey();
+        var item = new RunValue(Build.Release, @"C:\Users\Dana Lee\AppData\Local\Programs\Pitboard\Pitboard.exe", key);
+        item.Write(starts: true);
+        var window = await Views.Activated(Made(Snapshots.Read(1), new StartAtSignIn(item)));
+        try
+        {
+            var page = await Showing(window, null);
+            var toggle = Views.Element<ToggleSwitch>(page, "settings.startAtSignIn");
+            Assert.IsTrue(toggle.IsOn);
+
+            key.Approvals["Pitboard"] = [0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            UnitTestApp.Window!.Activate();
+            window.Activate();
+
+            await Views.Until(() => !toggle.IsOn && !toggle.IsEnabled, "the switch still shows on once the window came back");
+            Assert.AreEqual(Visibility.Visible, Views.Element<HyperlinkButton>(page, "settings.startupSettings").Visibility);
         }
         finally
         {
