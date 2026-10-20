@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.check.outputs.version }}
+      kind: ${{ steps.check.outputs.kind }}
       base: ${{ steps.check.outputs.base }}
       prerelease: ${{ steps.check.outputs.prerelease }}
       windows: ${{ steps.check.outputs.windows }}
@@ -2058,3 +2059,34 @@ jobs:
             & $env:KOMAC submit $manifests --yes
             if ($LASTEXITCODE -ne 0) { throw "komac submit $manifests exited $LASTEXITCODE" }
           }
+
+  # The site lists the latest release and the betas above it as they stood when it was built,
+  # and Workers Builds builds it only on a push to main. A release published after that push
+  # stays off the site until the next one, so this asks Workers Builds to build main again.
+  site:
+    needs: [guard, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.kind != 'rc' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          case $HOOK in
+            "")
+              echo "SITE_DEPLOY_HOOK is not set, so the site does not show this release" >&2
+              exit 1
+              ;;
+            https://api.cloudflare.com/client/v4/workers/builds/deploy_hooks/*) ;;
+            *)
+              echo "SITE_DEPLOY_HOOK is not a Workers Builds deploy hook" >&2
+              exit 1
+              ;;
+          esac
+          answer=$(curl -fsS --retry 3 -X POST "$HOOK")
+          if ! jq -e '.success == true and (.result.build_uuid | type == "string")' <<<"$answer" >/dev/null; then
+            echo "Workers Builds did not start a build: $(jq -c '.errors' <<<"$answer")" >&2
+            exit 1
+          fi
+          jq -r '.result | "Workers Builds build \(.build_uuid)\(if .already_exists then ", already queued" else "" end)"' <<<"$answer"
