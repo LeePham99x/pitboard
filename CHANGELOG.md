@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-10-20
+
 ### Added
 
 - Pitboard warms up Claude Code accounts on Windows, from `pitboard warm`, `pitboard watch` and
@@ -56,11 +58,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `pitboard.exe`, and leaves a task that runs another copy, such as Scoop's.
 - On Windows, Pitboard removes the temporary files a killed run left behind, each of which can
   hold a whole login, as it does on macOS and Linux.
-
-### Security
-
-- A switch parks Claude Code's `cloudSessionsOauth` and `trustedDeviceEnrolledAfterRefusalAtMs`
-  with the outgoing account's login, and no longer leaves them for the incoming account.
 - On Windows, Pitboard says to run `claude.cmd` or `codex.cmd` where npm installed the tool,
   since Windows PowerShell refuses a bare `claude` or `codex` there by default.
 - On Windows, `pitboard doctor` names the Claude Code and Codex builds Pitboard's facts for
@@ -69,6 +66,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not elevated, since Codex refuses to start it from an elevated one.
 - On Windows, `pitboard doctor` says a switch changes the login of a Codex in WSL that uses
   the Windows Codex home, where it said every tool in WSL keeps a login of its own.
+
+### Security
+
+- A switch parks Claude Code's `cloudSessionsOauth` and `trustedDeviceEnrolledAfterRefusalAtMs`
+  with the outgoing account's login, and no longer leaves them for the incoming account.
 
 ## [1.0.0-beta.3] - 2026-10-19
 
@@ -1017,7 +1019,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard keeps an audit log of every change it makes.
 - The account index is schema 3, with one parked login per account and its expiry.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.4...HEAD
+[1.0.0-beta.4]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/datlechin/pitboard/compare/v0.15.0...v1.0.0-beta.1
