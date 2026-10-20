@@ -69,7 +69,7 @@ Pitboard for Windows, and 1.0.0, also rewrite what
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes eight failures:
+10. Watch the run to the end. A re-run fixes nine failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
@@ -81,6 +81,7 @@ Pitboard for Windows, and 1.0.0, also rewrite what
 | `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
 | `winget` | Before "Submit" | Re-run it |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
+| `site` | Anywhere | Re-run it. Workers Builds answers a second request with the build already queued |
 
 Never re-run `winget` once its "Submit" step has started: komac may have opened a pull request
 on `microsoft/winget-pkgs`. Answer in that pull request.
@@ -164,6 +165,10 @@ The MSI is built with WiX v7. The owner accepted its Open Source Maintenance Fee
 Nothing is owed while Pitboard's revenue stays under US$10,000 a year and sponsorships stay
 donations: WiX v7.0.0's `OSMFEULA.txt`, lines 12 to 23, and `.github/FUNDING.yml`.
 
+Once a full release or a beta is published, the `site` job asks Workers Builds to build
+usepitboard.com from `main` again, through `SITE_DEPLOY_HOOK`. The site lists the releases it
+found when it was built, and Workers Builds builds only on a push to `main`.
+
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
 mistake in a published file. A deleted release's tag name cannot be used again.
@@ -220,11 +225,12 @@ Keep the signer's account apart from the update key and the Developer ID certifi
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
 | `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
 | `WINDOWS_UPDATE_PUBLIC_KEY`, `WINDOWS_UPDATE_PRIVATE_KEY` | As [the Windows update key](#the-windows-update-key) says. The private key is a secret of the `windows-update` environment alone |
+| `SITE_DEPLOY_HOOK` | In Cloudflare, the `pitboard` Worker's **Settings** > **Builds** > **Deploy Hooks**: a hook that builds `main`. The secret is the whole URL. Anyone with it can start a build |
 | `WINGET_TOKEN` | A classic token with the `public_repo` scope, of a GitHub account kept for it alone, which holds the fork of `microsoft/winget-pkgs` and can write to no `datlechin` repository. A classic token writes to every public repository its account can, the tap and the bucket among them. komac 2.16.0's README says a fine-grained token fails to open the pull request |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
 warns about the app on first launch. The `app` job fails without the Sparkle secrets. The
-`tap` job fails without `HOMEBREW_TAP_TOKEN`. Without `SCOOP_BUCKET_TOKEN` or the bucket, the
+`tap` job fails without `HOMEBREW_TAP_TOKEN`, and the `site` job without `SITE_DEPLOY_HOOK`. Without `SCOOP_BUCKET_TOKEN` or the bucket, the
 `scoop` job writes nothing and says which is missing.
 
 There is no `CARGO_REGISTRY_TOKEN`: the `publish` job gets a crates.io token through Trusted
@@ -376,7 +382,7 @@ That reaches the copy in the release GitHub marks latest. For the latest release
 
 `usepitboard.com/install.sh` is a Cloudflare Single Redirect rule on the `usepitboard.com`
 zone, in the owner's dashboard. Nothing in this repository deploys it, and no workflow holds
-a Cloudflare token. Whoever can edit the rule picks the script every reader runs. Guard that
+a Cloudflare token: `SITE_DEPLOY_HOOK` only starts a build of `main`. Whoever can edit the rule picks the script every reader runs. Guard that
 Cloudflare account as closely as the `release` environment.
 
 | Setting | Value |
