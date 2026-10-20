@@ -440,7 +440,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in a column and in a sentence has a function for each form. The command line calls these
     functions directly, and so does `pitboard-ffi`'s `present/` as it makes the snapshot,
     which carries what an app shows of them. The bindings export none of them. Clock times
-    are not in it.
+    are not in it. A sentence that says to run a tool names its program as `spelled` gives
+    it: on Windows, the `claude.cmd` or `codex.cmd` npm installs where Pitboard found that,
+    since Windows PowerShell 5.1 under its default policy refuses the `claude.ps1` beside
+    it, and the bare name everywhere else. An error, a warning, a status row, the report and
+    each kind of process found running a tool (`holder::Holding`) carry that name, since their
+    words are made with no context.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
   `build.rs` gives a Windows build its manifest, which the linker embeds, and its version
@@ -597,7 +602,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the fourteen on the real core: a home in the fixture's own folder in the
+    makes each of the fifteen on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `claudeDesktop` and `claudeDesktopOpen` hold Claude Desktop only where
@@ -690,7 +695,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `IconImage` loads it at for the primary display's scale, and `IconMenu`
     lists what the icon's menu offers, in the macOS menu's order. `WindowsNotifications`
     posts the model's notifications through `IAppNotifications`, which
-    `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
+    `SystemAppNotifications` sends to `AppNotificationManager` and tests replace, and refuses
+    one Windows did not show by the exception's type and HRESULT alone; only a
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. Its `Read` is why Windows shows none of them, from the
     manager's `Setting` at each settings visit, as a `NotificationsBlocked`. `WindowsApps` is the model's `AppControl`: through
@@ -1348,9 +1354,16 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - A login replaced outside Pitboard, which every read says until it is put right
   (`login_replaced`), is posted once for each account while the reads that ask say it, and
   again only once one has stopped saying it and a later one says it, or after the app is
-  opened again. What was posted is kept by the account the warning is about (`Warning`'s
-  `account`), since its words name whose login is stored now, which every switch changes,
-  and not across launches.
+  opened again. The core says it only beside a read that answers. A failed read or a refused
+  change whose warnings named one would post it the same way, which nothing sends today.
+  Neither counts as a read that stopped saying one, since neither says whether a login it
+  leaves out was put right. What was posted is kept by the account the warning is about
+  (`Warning`'s `account`), since its words name whose login is stored now, which every
+  switch changes, and not across launches.
+- A notification the app's system refused is kept with its title, the system's reason and
+  when, until the next one is posted, and not across launches. Doctor cannot know of it, so
+  This Mac and This PC list it after doctor's checks (`notification_not_posted`), and the
+  line over them counts it. `MacNotifications` refuses none.
 - A read that asks nobody, after another front end changed the index or a session recorded
   numbers, that says Claude Code's config has named another account since Anthropic last
   named the login stored (`in_use_unconfirmed`) starts one read that asks, which settles
@@ -3618,7 +3631,8 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   - (`codex_windows_app_server`) the background app server runs
     `<CODEX_HOME>\packages\app-server-daemon\current\bin\codex.exe`, `current` a
     junction Codex points at one of its releases. It is started with `DETACHED_PROCESS |
-    CREATE_BREAKAWAY_FROM_JOB`, never from an elevated terminal.
+    CREATE_BREAKAWAY_FROM_JOB`, never from an elevated terminal, so its remedy there says to
+    run `codex app-server daemon restart` from a terminal that is not elevated.
   - (`codex_windows_app_identity`) the desktop app for Windows, ChatGPT- or Codex-branded,
     is the package of family `OpenAI.Codex_2p2nqsd0c76g0`, its app
     `OpenAI.Codex_2p2nqsd0c76g0!App`, and Codex tells its process by that family. So
@@ -3699,7 +3713,10 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
   Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
   names Microsoft, and there starts no shared background server where its home is on 9p,
-  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way.
+  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way. On Windows it says a
+  switch changes the login of a Codex in WSL that uses the Windows Codex home. Whether the
+  ChatGPT app's WSL mode hands its Linux codex that home is not measured (session M8), so
+  doctor says it of no distribution in particular.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor
@@ -4839,6 +4856,10 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   `.credentials.json` behind Claude Code's store. Its read warns `fallback_login` with the
   notice's Put Away…, the read of what is known says nothing of it, and Put Away keeps the
   login for personal and deletes the file.
+- loginReplaced, which the Swift fixture never had, is oneTool after personal signed in
+  with Claude Code itself over work's only login, recorded by a terminal's read ten minutes
+  before. Every read, the one of what is known too, warns `login_replaced`, work's row reads
+  `login_replaced`, and the app's first read posts it.
 - stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
   from the core's own read: a read says an interrupted switch is waiting wherever the next
   change would be refused over it, as a warning with the refusal's code,
