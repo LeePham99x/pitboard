@@ -1,4 +1,4 @@
-//! Embed a manifest into three of the probe's programs, on the MSVC toolchain only:
+//! Embed a manifest into four of the probe's programs, on the MSVC toolchain only:
 //!
 //! - `pitboard-probe-detached`: `consoleAllocationPolicy=detached` in the spelling
 //!   Microsoft's application manifest reference documents (`asmv3:windowsSettings` in the
@@ -8,13 +8,15 @@
 //!   only the documented form is honoured;
 //! - `pitboard-probe-sparse`: the `<msix>` element that ties the program to the sparse probe
 //!   package of block K1, so running it from the package's external location gives it that
-//!   package's identity.
+//!   package's identity;
+//! - `pitboard-probe-longpath`: `pitboard.exe`'s own manifest, so T8's long path row reads
+//!   what its `longPathAware` does.
 //!
 //! Nothing is embedded on any other target, and the probe builds everywhere. The console
 //! block reads each program's manifest back, so a build that embedded nothing says so.
 //!
 //! It also records which compiler built the probe, since block F3 measures that compiler's
-//! standard library.
+//! standard library, and on MSVC gives every program an 8 MB main stack.
 
 // A build script reads its configuration from the environment Cargo sets; the workspace
 // rule about reading the environment through the context is for Pitboard's engine, not here.
@@ -40,6 +42,10 @@ fn main() {
         return;
     }
 
+    // clap's parser of every subcommand outgrows the 1 MB main stack in a debug build: each
+    // probe exited 0xC00000FD in windows-facts run 39316394518.
+    println!("cargo:rustc-link-arg-bins=/STACK:8388608");
+
     let manifests = Path::new(env!("CARGO_MANIFEST_DIR")).join("manifests");
     embed(
         "pitboard-probe-detached",
@@ -53,6 +59,11 @@ fn main() {
         "pitboard-probe-sparse",
         &manifests.join("sparse-identity.manifest"),
     );
+    let pitboard =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../pitboard/build/pitboard.exe.manifest");
+    embed("pitboard-probe-longpath", &pitboard);
+    // It carries asInvoker, as for pitboard.exe, so the linker adds no trustInfo beside it.
+    println!("cargo:rustc-link-arg-bin=pitboard-probe-longpath=/MANIFESTUAC:NO");
 }
 
 /// Embed `manifest` into the binary named `bin` through the MSVC linker, which merges it

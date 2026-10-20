@@ -852,6 +852,15 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
         }
     }
 
+    // As `administered_file`, read as `administered::read_up_to` reads it.
+    fn administered_file_up_to(&self, path: &Path, limit: u64) -> Administered {
+        if administered::READ_BY_REAL_HOSTS {
+            administered::read_up_to(path, limit)
+        } else {
+            Administered::Unset
+        }
+    }
+
     /// The text an administrator's configuration profile forces `key` of the program whose
     /// preferences are `domain` to: a managed preference, on macOS. Unset where nothing
     /// forces it, whoever set it otherwise, and on a system with no managed preferences.
@@ -876,6 +885,12 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     // Windows' `FOLDERID_ProgramData`, where it can say; none elsewhere.
     fn program_data(&self) -> Option<PathBuf> {
         None
+    }
+
+    // The letters of Windows' fixed drives, at whose root a path with no drive leads; none
+    // elsewhere.
+    fn fixed_drives(&self) -> Vec<char> {
+        Vec::new()
     }
 
     // The names of Credential Manager's items that begin `prefix`, never what they hold; none

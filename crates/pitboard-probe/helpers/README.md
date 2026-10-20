@@ -3,8 +3,10 @@
 Scripts `.github/scripts/runner-facts.ps1` runs beside `pitboard-probe` on the Windows
 runners, as the job's user and as the throwaway users it makes. They touch only the scratch
 folder they are given, and `bun-secrets.mjs` only its `pitboard-citest-bun` items, which it
-writes and the row deletes. They load no website, sign in to nothing, and print counts,
-error codes and redacted paths, never what they read.
+writes and the row deletes. `remote-token.mjs` reads only Claude Code's remote token path at
+the root of its working folder's drive, and prints that drive, the byte count and whether it
+read the dummy. They load no website, sign in to nothing, and print counts, error codes and
+redacted paths, never what they read.
 
 The runner gets Bun from its release zip, checked against the SHA-256 `windows-facts.yml`
 pins, and `proper-lockfile` from `bun.lock` with `bun install --frozen-lockfile
@@ -32,3 +34,7 @@ pins, and `proper-lockfile` from `bun.lock` with `bun install --frozen-lockfile
   prints which branch it took, what fstat saw and whether it got the bytes. `pitboard-probe
   fd-handover` hands it a dummy on descriptor 3 through the C runtime's inheritance table, as a
   pipe or a socket (RF-WW1); it reads nothing of its own.
+- `remote-token.mjs <dummy>`: resolves Claude Code's remote token path,
+  `/home/claude/.claude/remote/.oauth_token`, from the working folder and reads it as Claude
+  Code 2.1.303 does, then prints the drives involved and whether it read the dummy the row
+  wrote there (RF-T7).

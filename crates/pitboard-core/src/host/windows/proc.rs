@@ -8,8 +8,8 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{
-    ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_PARAMETER, ERROR_SUCCESS, FILETIME,
-    INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+    ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_HANDLE, ERROR_INVALID_PARAMETER, ERROR_SUCCESS,
+    FILETIME, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_EXECUTE,
@@ -49,7 +49,12 @@ fn open(pid: u32, access: u32) -> Open {
         return Open::Handle(unsafe { OwnedHandle::from_raw_handle(handle) });
     }
     match std::io::Error::last_os_error().raw_os_error() {
-        Some(code) if code == ERROR_INVALID_PARAMETER as i32 => Open::Gone,
+        // 87 for a pid never given out, 6 for one freed a while ago (RF-T8).
+        Some(code)
+            if code == ERROR_INVALID_PARAMETER as i32 || code == ERROR_INVALID_HANDLE as i32 =>
+        {
+            Open::Gone
+        }
         _ => Open::Refused,
     }
 }
@@ -658,6 +663,39 @@ mod tests {
         let told = token_owner(4);
         println!("pid 4's token: {told:?}");
         assert_eq!(told, Told::Refused);
+    }
+
+    // Freed for a while, a pid fails OpenProcess with 6 (RF-T8, windows-facts run 39320680285).
+    // Windows may keep the exited process a while longer, or give its pid to another.
+    #[test]
+    fn a_process_gone_a_while_is_gone() {
+        let (pid, created) = {
+            let mut child = std::process::Command::new(std::env::current_exe().expect("this test"))
+                .arg("--list")
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .expect("it starts");
+            let created = started(child.id()).expect("its creation time");
+            child.wait().expect("it ends");
+            (child.id(), created)
+        };
+        let reused = || started(pid).is_some_and(|other| other != created);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match open(pid, PROCESS_QUERY_LIMITED_INFORMATION) {
+                Open::Gone => {
+                    assert!(!may_be_running(pid) || reused());
+                    return;
+                }
+                Open::Refused => panic!("OpenProcess refused pid {pid}, this test's own child's"),
+                Open::Handle(_) if reused() => {
+                    println!("pid {pid} went to another process before it read as gone");
+                    return;
+                }
+                Open::Handle(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            }
+        }
+        println!("pid {pid} still opened as its exited child after 5 s");
     }
 
     #[test]

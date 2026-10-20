@@ -618,6 +618,25 @@ pub(crate) fn in_a_sync_root(path: &Path) -> bool {
     answer >= 0
 }
 
+// The machine's, so a build for tests reads them too: what lies at their roots is
+// `administered_file`'s to read.
+pub(crate) fn fixed_drives() -> Vec<char> {
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    use windows_sys::Win32::System::WindowsProgramming::DRIVE_FIXED;
+    // SAFETY: no arguments.
+    let present = unsafe { GetLogicalDrives() };
+    ('A'..='Z')
+        .zip(0..26)
+        .filter(|(_, bit)| present & (1 << bit) != 0)
+        .map(|(letter, _)| letter)
+        .filter(|letter| {
+            let root = wide(Path::new(&format!(r"{letter}:\")));
+            // SAFETY: a NUL-terminated name.
+            unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_FIXED }
+        })
+        .collect()
+}
+
 // The volume and the file's id on it (MC-fileid), a folder's included, through a junction.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
@@ -908,6 +927,23 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn the_fixed_drives_hold_the_one_this_test_keeps_its_temporaries_on() {
+        use std::path::{Component, Prefix};
+        let drives = fixed_drives();
+        println!("fixed drives: {drives:?}");
+        let temp = std::env::temp_dir();
+        let Some(Component::Prefix(prefix)) = temp.components().next() else {
+            panic!("{} names no drive", temp.display());
+        };
+        let (Prefix::Disk(letter) | Prefix::VerbatimDisk(letter)) = prefix.kind() else {
+            panic!("{} names no drive letter", temp.display());
+        };
+        assert!(drives.contains(&char::from(letter).to_ascii_uppercase()));
+        assert!(drives.iter().all(char::is_ascii_uppercase));
+        assert!(drives.is_sorted_by(|a, b| a < b), "each once");
     }
 
     fn private_to_you(path: &Path, folder: bool) {

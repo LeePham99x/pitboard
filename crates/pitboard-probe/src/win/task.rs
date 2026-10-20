@@ -21,9 +21,9 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
 };
 use windows::Win32::System::TaskScheduler::{
-    IExecAction, ITaskFolder, ITaskService, TASK_ACTION_EXEC, TASK_CREATE_OR_UPDATE,
-    TASK_ENUM_HIDDEN, TASK_LOGON_INTERACTIVE_TOKEN, TASK_RUNLEVEL_LUA, TASK_TRIGGER_TIME,
-    TaskScheduler,
+    IDailyTrigger, IExecAction, ITaskFolder, ITaskService, TASK_ACTION_EXEC, TASK_CREATE_OR_UPDATE,
+    TASK_ENUM_HIDDEN, TASK_LOGON_INTERACTIVE_TOKEN, TASK_RUNLEVEL_LUA, TASK_TRIGGER_DAILY,
+    TASK_TRIGGER_TIME, TaskScheduler,
 };
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::{BSTR, Interface};
@@ -37,6 +37,9 @@ pub(super) struct Request<'a> {
     pub exec: TaskExec,
     pub args: Option<&'a str>,
     pub at_minutes: Option<u32>,
+    pub daily_since_minutes: Option<u32>,
+    pub daily_in_minutes: Option<u32>,
+    pub disabled: bool,
     pub start_when_available: bool,
     pub allow_battery: bool,
 }
@@ -110,12 +113,13 @@ fn connect() -> Result<ITaskService, String> {
 }
 
 /// The time `minutes` from now as the UTC ISO 8601 a trigger's start boundary takes.
-fn utc_in(minutes: u32) -> String {
-    let secs = std::time::SystemTime::now()
+fn utc_in(minutes: i64) -> String {
+    let secs = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0)
-        + u64::from(minutes) * 60;
+        .unwrap_or(0) as i64
+        + minutes * 60)
+        .max(0) as u64;
     let days = (secs / 86_400) as i64;
     let rem = secs % 86_400;
     // Howard Hinnant's civil-from-days.
@@ -173,6 +177,7 @@ pub(super) fn task(req: &Request) -> Report {
         TaskAction::Read => read(&service, req.folder, &name, sid.as_deref()),
         TaskAction::List => list(&service),
         TaskAction::Delete => delete(&service, req.folder, &name, scratch.expect("checked")),
+        TaskAction::Enable => enable(&service, req.folder, &name),
     };
     match result {
         Ok(mut v) => {
@@ -273,6 +278,7 @@ fn register(
         settings
             .SetExecutionTimeLimit(&BSTR::from("PT10M"))
             .map_err(err)?;
+        settings.SetEnabled(flag(!req.disabled)).map_err(err)?;
 
         let mut boundary = None;
         if let Some(minutes) = req.at_minutes {
@@ -281,10 +287,29 @@ fn register(
                 .map_err(err)?
                 .Create(TASK_TRIGGER_TIME)
                 .map_err(err)?;
+            let at = utc_in(i64::from(minutes));
+            trigger
+                .SetStartBoundary(&BSTR::from(at.as_str()))
+                .map_err(err)?;
+            boundary = Some(at);
+        }
+        // As the renewal's trigger, a day at a time, begun before now or after it.
+        let daily = req
+            .daily_since_minutes
+            .map(|minutes| -i64::from(minutes))
+            .or(req.daily_in_minutes.map(i64::from));
+        if let Some(minutes) = daily {
+            let trigger = def
+                .Triggers()
+                .map_err(err)?
+                .Create(TASK_TRIGGER_DAILY)
+                .map_err(err)?;
             let at = utc_in(minutes);
             trigger
                 .SetStartBoundary(&BSTR::from(at.as_str()))
                 .map_err(err)?;
+            let daily: IDailyTrigger = trigger.cast().map_err(err)?;
+            daily.SetDaysInterval(1).map_err(err)?;
             boundary = Some(at);
         }
 
@@ -318,6 +343,8 @@ fn register(
             "registered": true,
             "state": registered.State().map(|s| s.0).ok(),
             "start_boundary_utc": boundary,
+            "daily": daily.is_some(),
+            "disabled": req.disabled,
             "start_when_available": req.start_when_available,
             "allow_battery": req.allow_battery,
             "exec": exe.file_name().map(|n| n.to_string_lossy().into_owned()),
@@ -338,6 +365,22 @@ fn run(service: &ITaskService, f: TaskFolder, name: &str) -> Result<Value, Strin
             "action": "run",
             "started": started.is_ok(),
             "error": started.err().map(err),
+        }))
+    }
+}
+
+fn enable(service: &ITaskService, f: TaskFolder, name: &str) -> Result<Value, String> {
+    // SAFETY: `service` is connected; the calls are on live interfaces.
+    unsafe {
+        let task = service
+            .GetFolder(&BSTR::from(folder_path(f)))
+            .and_then(|folder| folder.GetTask(&BSTR::from(name)))
+            .map_err(err)?;
+        let enabled = task.SetEnabled(VARIANT_TRUE);
+        Ok(json!({
+            "action": "enable",
+            "enabled": enabled.is_ok(),
+            "error": enabled.err().map(err),
         }))
     }
 }
@@ -483,6 +526,9 @@ pub(super) fn run_once(
         exec,
         args: Some(args),
         at_minutes: None,
+        daily_since_minutes: None,
+        daily_in_minutes: None,
+        disabled: false,
         start_when_available: false,
         allow_battery: true,
     };

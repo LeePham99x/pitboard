@@ -84,19 +84,20 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `app_id`), the scheduler, whether this process runs as the person (`elevation`), whether
     the system is one Pitboard changes things on by its version (`floor`, `host::Floor`),
     and what an administrator set for a program outside every home (`administered_file`,
-    `administered_folder`, `managed_preference`, which `macos/preferences.rs` reads, and
-    `policy`, a value under the Windows registry's `HKLM` or `HKCU`), the environment a
-    Windows program started now is given (`user_environment`, `machine_environment`) and
-    Windows' `ProgramData` (`program_data`), reached through `Context` and faked by
-    `host/memory.rs`, which plays every answer. In a build for tests the real hosts read
-    nothing an administrator set (`host/administered.rs`) and no app installed on the
-    machine. `fs`, `proc` and `user` are plain functions for what the system does whoever
-    asks: private files and directories, every other change to the disk, whether a process
-    is alive, a program run with a ceiling (`proc::run_within`), the login name, whether
-    this process runs as root, and the `PATH` the person's login shell builds, which
-    `unix/shell.rs` asks for. `fs` creates each private file itself and hands it back open
-    (`create_private`, `open_private_append` and `open_private_lock`), so how a file is made
-    private is the face's alone. A login kept as files moves through four more:
+    `administered_file_up_to`, `administered_folder`, `managed_preference`, which
+    `macos/preferences.rs` reads, and `policy`, a value under the Windows registry's `HKLM`
+    or `HKCU`), the environment a Windows program started now is given (`user_environment`,
+    `machine_environment`), Windows' `ProgramData` (`program_data`) and its fixed drives
+    (`fixed_drives`), reached through `Context` and faked by `host/memory.rs`, which plays
+    every answer. In a build for tests the real hosts read nothing an administrator set
+    (`host/administered.rs`) and no app installed on the machine. `fs`, `proc` and `user`
+    are plain functions for what the system does whoever asks: private files and
+    directories, every other change to the disk, whether a process is alive, a program run
+    with a ceiling (`proc::run_within`), the login name, whether this process runs as root,
+    and the `PATH` the person's login shell builds, which `unix/shell.rs` asks for. `fs`
+    creates each private file itself and hands it back open (`create_private`,
+    `open_private_append` and `open_private_lock`), so how a file is made private is the
+    face's alone. A login kept as files moves through four more:
     `fs::private_dir` says whether a folder is this user's own and closed to others,
     `fs::lock_dir` takes a folder's advisory lock without waiting, `fs::same_volume` says
     whether two paths can be renamed between, and `fs::move_new` is the kernel's rename that
@@ -934,6 +935,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     release's MSIs, which `previous-msis.ps1` downloads, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
     `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
     `test-windows-app.ps1` tests the checks and the signature check on the MSI and the package.
+    `windows-pending.py` fails on a test Windows leaves out without a reason it accepts, and
+    `test-windows-pending.py` tests it.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -1065,8 +1068,6 @@ window loads its site, and whatever the site's pages load, as a browser would.
   warm-up hands Claude Code its token (`os::warm_up_token`).
 - The whole suite runs on macOS, Linux and Windows. A test put off on a system says why in
   its `ignore` reason, which libtest lists:
-  - A test that cannot pass on Windows until a later pull request of the Windows work says
-    which: `#[cfg_attr(windows, ignore = "W<id>: …")]`.
   - A test of something one system does not have or do names it, such as
     `ignore = "on Linux the file is Claude Code's only store, never behind a keychain"` on
     Linux and `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.
@@ -1078,6 +1079,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `os::claude_desktop_runs_here()`, which is false on Linux and Windows. A test of the app
   model's or a fixture's Claude Desktop asks `ProviderId::Desktop.supported_on(host::OS)`,
   since the app lists the tool only where that is true.
+- A test a `cfg` compiles out on Windows, or that returns early there, says why in a
+  `// windows: <reason>` line right above that `cfg` or that `if`, since neither takes a reason.
+- `.github/scripts/windows-pending.py` lists the reasons a Rust or C# test may give for being
+  left out on Windows, and CI fails on any other. A reason for a gap being closed has a ceiling
+  there, so no new test gives it.
 - No test addresses a name a real login may be kept under. `guard_not_live` refuses by
   pattern, never by a hash computed for a real home, the families
   `pitboard_core::provider::names` tells apart, which the measurement probe's leak check
@@ -1568,8 +1574,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
   the `Pitboard.exe` it starts through `CreateProcess` carries none of its identity is
   measured only for a sparse-identity process started by path (CF8), not for one the share
-  sheet activates, until P2 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real
-  share started ([Documented, not measured](#documented-not-measured)).
+  sheet activates, until the 1.0 session's P1, which shares from Edge, Chrome and Firefox,
+  reads `GetCurrentPackageFamilyName` in the `Pitboard.exe` each share started
+  ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
@@ -2076,6 +2083,28 @@ its Windows reading came on 16 October from both Windows builds of 2.1.301, wher
 sits behind Credential Manager wherever that store is on
 (`credman_unreachable_writes_file`). The checker finds every fact each build was read for.
 
+On 20 October 2026 the Windows readings were read again as bytes on a Mac, from Claude Code
+2.1.303's `win32-x64` and `win32-arm64` builds, built from commit 07df2ae as its macOS and
+Linux builds are, and from Codex 0.163.0's, with its source at `rust-v0.163.0`. The checker
+passes on all four:
+
+- For each Claude Code fact read on Windows from 2.1.289 to 2.1.302, the code around its
+  literals was compared with the build it was read from, minified names apart. Three facts
+  moved. From 2.1.300 a sign-in also prunes `trustedDeviceEnrolledAfterRefusalAtMs` and
+  `cloudSessionsOauth` (`account_scoped_keys`, read again in all four builds of 2.1.303), so
+  `ACCOUNT_SCOPED` moves both. From 2.1.301 a diskless launch reads no `HKCU` policy
+  (`windows_managed_settings`). From 2.1.302 a session started with `--session-tunnel` takes
+  the `env` of its line of JSON (`windows_backend_choice`). The refresh lock takes a
+  synchronous `fs` from 2.1.301, at the same path and timing. The facts read from one build on
+  every system, 2.1.294's and 2.1.296's, keep that reading.
+- 2.1.302 and 2.1.303 embed Bun 1.4.4 (0049fd75e), which has no public release. 2.1.289 to
+  2.1.296 embed 1.4.3 at eecfd55de, and 2.1.300 and 2.1.301 at 9ecafc196, neither a public
+  commit. So each fact's Bun half stays a reading of `bun-v1.4.3`'s source, and the runner
+  rows run Bun 1.4.3 from its release zip. The session machine ran 2.1.302, on Bun 1.4.4.
+- Codex's sources for the facts read at 0.160.0 changed only in comments, telemetry and an
+  enterprise sign-out step by 0.163.0, and those for the facts read at 0.162.1 not at all.
+  0.163.0's builds still have no resource directory.
+
 On 12 October 2026 the checker was run by hand on the `app.asar` of an installed Claude
 Desktop 2.7032.0, without running Claude. The register's 19 facts that name literals hold
 there, and its other six are about behaviour. On 13 October it was run again with two more
@@ -2497,8 +2526,9 @@ in `windows-facts.yml` run 38693947329 on 15 October 2026, unless a line names a
 Every run met the same images: windows-2025 (Windows Server 2025 Datacenter, 24H2, build
 26100, UBR 33438) and windows-11-arm (build 26200, UBR 9457, 25H2). The script runs the
 probe as the job's user and as three throwaway users it makes: a standard user, a standard
-user whose name is not ASCII, and a member of Administrators. Its Bun is 1.4.3, the one
-Claude Code 2.1.300 embeds, with proper-lockfile 4.1.2. A fact holds on both images unless it
+user whose name is not ASCII, and a member of Administrators. Its Bun is 1.4.3 from Bun's
+release, the version Claude Code 2.1.300 and 2.1.301 embed, with proper-lockfile 4.1.2; 2.1.302
+and 2.1.303 embed 1.4.4, which has no public release. A fact holds on both images unless it
 names one. The tokens these list, and the session machine's, are the only ones the Windows face
 has been seen to read.
 
@@ -2625,6 +2655,9 @@ Accounts and tokens:
 - FlaUI.UIA3 5.0.0, run as that user, finds that user's WinUI elements by AutomationId and
   selects a NavigationView item through its SelectionItem pattern (CF2,
   `LifecycleTests.AWinUIElementIsFoundAndInvokedByItsAutomationId`, run 38804714545).
+- A launch redirected to the running copy carries the second copy's arguments: a second Debug
+  copy started with a link handed it to the one running, which opened its picker for it
+  (`AccountPickerTests`, CI run 39254279757).
 - The self-contained Debug app, started by that user, has its window up 1194 ms after the
   start on windows-11-arm (CF5, run 38804714545). Both images hold the Windows App Runtime
   2.5.1.0 package for some user, so that the app needs none is not measured here.
@@ -2637,6 +2670,10 @@ Accounts and tokens:
 - `RtlGetVersion` gives 10.0.26100 and 10.0.26200, the builds the registry's `CurrentBuild`
   gives. The registry's `ProductName` says `Windows 10 Enterprise` on windows-11-arm, so
   Pitboard never reads which Windows this is from it.
+- `VerQueryValueW` reads a program's version resource: `cmd.exe`'s product version is 10.0
+  with a build no later than the running Windows, and `pitboard.exe`'s names Pitboard and its
+  version (`cmd_exe_carries_the_build_of_the_windows_it_ships_in` and
+  `pitboard_exe_carries_its_version_resource`, CI run 39254279757).
 
 Homes and variables:
 
@@ -2660,6 +2697,11 @@ Homes and variables:
   `.CPL` after it, and pass it on to theirs.
 - A value `setx` writes into the job user's `HKCU\Environment` reaches a task started after
   it.
+- A value written straight into the job user's `HKCU\Environment` never reaches the
+  environment of a program already running, even once `WM_SETTINGCHANGE` for `Environment` is
+  broadcast as `setx` broadcasts it. That reaches the program's top-level window that is never
+  shown, and not its message-only window. The Explorer already running starts a program with
+  the new value before any broadcast (RF-T8, runs 39310064516 and 39320680285).
 - A profile folder whose name is not ASCII, such as one holding `Đ` and `ạ` (10 UTF-16
   units, 13 UTF-8 bytes, NFC), has an ASCII 8.3 alias holding `~`, and so has the `Temp`
   inside it.
@@ -2678,6 +2720,12 @@ Who may read a login:
 - A file made with a protected DACL granting the user, SYSTEM and Administrators is owned by
   the user who made it, standard or limited administrator, and the elevated job user can
   read, write and delete it.
+- A fresh administrator's limited token, in which Administrators is for deny only, gets from
+  a file the elevated job user made, owned by Administrators with a protected DACL, what an
+  ACE for that user grants and nothing an Administrators ACE does: read, write and delete
+  with one for full control, read alone with one for reading, and nothing without one,
+  `CreateFileW` failing 5. Delete works with read alone, since the folder it is in grants that
+  user full control (RF-T8, run 39320680285).
 
 Replacing a file:
 
@@ -2699,6 +2747,28 @@ Replacing a file:
   `MoveFileExW` fails 5 most of the time. In 180 s it replaced the file 154 times on
   windows-2025, 30 rounds running out of 50 retries, and 2439 times on windows-11-arm, in up
   to 33 attempts. No reader saw a torn or empty file.
+
+Names, ids and long paths (RF-T8, runs 39310064516 and 39320680285):
+
+- `FILE_ID_INFO` gives a folder, a file, a hard link to the file and a junction to the folder
+  one volume serial number, and ids by which the hard link is its file, the junction is its
+  folder and the junction's own reparse point is another. A file keeps its id across a
+  rename, and another folder or file has another. The ids take at most 51 bits on NTFS and 55
+  on the SMB share, and 75 on ReFS, past 64. On the share a hard link is made and a junction
+  is not.
+- exFAT and FAT32 give no `FILE_ID_INFO`: `GetFileInformationByHandleEx` fails 87. Neither
+  takes a hard link or a junction, so there `host::lies_in` compares by path alone.
+- `GetFullPathNameW` of a name in a folder makes a device of `NUL` alone, `\\.\NUL`. `CON`,
+  `con.txt`, `NUL.json`, `AUX.json`, `PRN.json`, `COM1`, `COM0.json`, `LPT1.json`, `COM¹.json`,
+  `LPT².json`, `CONIN$`, `CONOUT$` and `CLOCK$.json` are names a file is made and kept by, as
+  written. A trailing dot or space goes: `work.`, `work..`, `work ` and `work. .` make
+  `work`, and `work.json.` makes `work.json`. The vault refuses each as a park's name, more
+  than Windows asks on Pitboard's floor.
+- Both images set `LongPathsEnabled` to 1. There a program whose manifest holds
+  `pitboard.exe`'s `longPathAware` makes, opens and finds a file and a folder at 328
+  characters through `CreateFileW`, `CreateDirectoryW` and `GetFileAttributesW`, with no
+  `\\?\`, and `RtlAreLongPathsEnabled` says so. Without the manifest each call fails 3.
+  std's own calls reach the folder either way, adding `\\?\` past `MAX_PATH`.
 
 Flushing and times:
 
@@ -2770,6 +2840,15 @@ Processes and jobs:
   all 200 times. In a job with it, all 200 leaves started with the flag left that job and
   stayed in the outer job the process was already in, however the chain was assigned (run
   38704825885).
+- `GetProcessTimes` of a child opened by its pid for limited queries gives a creation time
+  between the readings of `GetSystemTimePreciseAsFileTime` either side of its start, the same
+  as the child's own reading as text, and the same once it has exited while a handle is open,
+  its exit time later. Each of 50 children had its own (RF-T8, runs 39310064516 and
+  39320680285).
+- Once the probe holds no handle to an exited child, opening its pid at once gives the same
+  exited process in 30 and 11 of 50 tries on windows-2025 and windows-11-arm, and fails 6 in
+  the rest. 100 ms later it fails 6 in 99 of 100 (RF-T8, run 39320680285). A pid never given
+  out fails 87, as the core's Windows tests read, and `proc::open` takes both for gone.
 - `GetModuleFileNameW` and `current_exe` give the path a program was started by, through a
   file symbolic link, a junction or a hard link. Canonicalizing resolves the link and the
   junction, not the hard link.
@@ -2789,6 +2868,19 @@ Handing a descriptor:
   falls back to the direct read only on EACCES or EPERM, as Claude Code 2.1.300's does,
   gets nothing from a pipe or a socket (run 38821312770).
 
+Claude Code's remote token path, `/home/claude/.claude/remote/.oauth_token`, which it reads
+where no descriptor is named (`remote_token_files`), names no drive. Bun 1.4.3 resolves it
+against the drive of its working folder (RF-T7, runs 39310064516 and 39320680285):
+
+- Run from a folder on a VHD holding a dummy at `\home\claude\.claude\remote\.oauth_token`,
+  it read the dummy whole, a regular file of 39 bytes.
+- Run from a folder on `C:`, which has no `C:\home\claude`, it got ENOENT.
+
+So a session reads the file at the root of the drive its working folder is on, and doctor's
+`auth_source` check and a warm-up's halt over `.api_key` look at the root of each fixed
+drive. Each reads at most 64 KiB of a regular file, as Claude Code does, since any account on
+the PC may put one there.
+
 Credential Manager:
 
 - A generic item's blob holds 2560 bytes, `CRED_MAX_CREDENTIAL_BLOB_SIZE`, and `CredWriteW`
@@ -2803,12 +2895,16 @@ Credential Manager:
   standard user, after each Windows test run, it does the same and finds nothing (run
   37762408901).
 
-A network logon, by key through sshd as the standard user on windows-2025:
+A network logon, by key through sshd as the standard user: windows-2025's own OpenSSH 9.5p2,
+and on windows-11-arm the Win32-OpenSSH 10.0p2 RF-M installs (runs 38821312770, 38922866517,
+38928930271, 39291962999, 39310064516 and 39320680285):
 
 - It is logon type 3, in session 0.
-- `CredWriteW`, `CredReadW`, `CredDeleteW` and `CredEnumerateW` fail 1312, and
-  `CryptProtectData` fails 5.
+- `CredWriteW`, `CredReadW`, `CredDeleteW` and `CredEnumerateW` fail 1312.
 - WTS and Toolhelp name the same user's `codex.exe` in session 2.
+- On windows-2025 `CryptProtectData` fails 5. On windows-11-arm it seals and unseals, and
+  refuses the wrong entropy. Whether sshd's build or the image makes that difference is not
+  measured: RF-M installs OpenSSH only where the image ships none, as AGENTS.md allows.
 
 Scoop, winget and the user `PATH`, as the job's user, with the gated build in the zips
 `package-windows.ps1` makes for 0.14.0 and 0.14.1, served on loopback (run 38725515950):
@@ -2904,8 +3000,10 @@ The images:
   trusted Dev Drive with Defender's filter attached.
 - The Server service runs, and `New-SmbShare` serves a folder to `\\localhost`.
 - windows-2025 runs OpenSSH Server, whose `AllowGroups` turned the standard user away until
-  it joined OpenSSH Users (run 38691271016). windows-11-arm has none, and
-  `Add-WindowsCapability` did not install it within 10 minutes (run 38685119129).
+  it joined OpenSSH Users (run 38691271016). windows-11-arm ships none, and
+  `Add-WindowsCapability` did not install it within 10 minutes (run 38685119129). There RF-M
+  installs Win32-OpenSSH 10.0p2 from Microsoft's release, its SHA-256 pinned, starts it and
+  removes it after (runs 38821312770, 38922866517 and 38928930271).
 - Neither image holds Codex's `%ProgramData%\OpenAI\Codex`, Claude Code's
   `C:\Program Files\ClaudeCode` or its policy keys.
 
@@ -2958,13 +3056,16 @@ The MSI, `Pitboard.exe` and the notification area:
   Shift+F10 reach the icon and its menu, which opens at the icon in the taskbar's mode.
 - Registering for notifications worked with no Singleton package: it wrote
   `HKCU\Software\Classes\AppUserModelId\Pitboard.Pitboard` with `DisplayName`, `IconUri` and
-  `CustomActivator`. A login replaced outside Pitboard is said in the window alone.
+  `CustomActivator`. A login replaced outside Pitboard was said in the window, and no
+  notification came for it, though the model asks the app to post one.
 - `msiexec /i` of a second MSI, one higher in the fourth field, upgraded 1.0.0.1 to 1.0.0.2
   with no UAC prompt in 7 s. The default schedule removed the old product first, so
   `bin\pitboard.exe` was missing for about 2 s: 9 of 416 runs of the status line every 250 ms
   found no `pitboard`. The MSI now removes it after the new one's files are in place.
 - `msiexec /fa` with Pitboard open had Restart Manager close it, not forced, and start it
-  again within 4 s; the icon kept its place.
+  again within 4 s; the icon kept its place. Of Pitboard's windows, only the hidden one, never
+  shown, ends Pitboard on `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP` or on `WM_CLOSE`, so one
+  of them reached it. Which one was not recorded.
 - With start at sign-in on, a sign-in started Pitboard with no window, its icon there 7 s
   after. Settings > Apps > Startup listed it; turning it off there wrote 01 as the first byte
   of `StartupApproved\Run`'s `Pitboard` and kept the `Run` value.
@@ -3005,22 +3106,16 @@ Daily renewal:
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
-[The session machine](#the-session-machine) measured.
+on 15 and 16 October 2026. W27 took out the rows [The session machine](#the-session-machine)
+measured on 18 October 2026, and those CI and the runner facts measured by 20 October 2026.
 
 | Fact | Source | Why not measured |
 |---|---|---|
 | `GetProfileType` reports `PT_ROAMING` for a roaming profile | [GetProfileType](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-getprofiletype) | The runners have local profiles only. |
 | `CfGetSyncRootInfoByPath` finds a sync root such as OneDrive's | [CfGetSyncRootInfoByPath](https://learn.microsoft.com/en-us/windows/win32/api/cfapi/nf-cfapi-cfgetsyncrootinfobypath) | No sync provider runs on the runners. |
-| `FILE_ID_INFO` names a file uniquely on its volume | [FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info) | No row reads it. |
-| An explicit ACE for the user decides what a UAC-filtered token can do with a file | [How DACLs control access](https://learn.microsoft.com/en-us/windows/win32/secauthz/how-dacls-control-access-to-an-object) | The limited token opened only a file it made. |
-| `VerQueryValueW` reads a program's version resource | [VerQueryValueW](https://learn.microsoft.com/en-us/windows/win32/api/winver/nf-winver-verqueryvaluew) | No row reads one. |
-| A running program sees a variable changed in the registry only after `WM_SETTINGCHANGE` | [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | Only a task started after `setx` was measured. |
 | WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
-| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | Only the tests read it, of their own process. |
-| Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
-| `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
-| `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
+| `longPathAware` in a manifest lifts nothing where `LongPathsEnabled` is 0 or absent, as on a PC no policy or installer changed | [Maximum path length limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation) | Both images set it to 1, where the manifest lifts the limit (RF-T8, runs 39310064516 and 39320680285), and AGENTS.md does not let runner-facts.ps1 change it. |
+| `StartWhenAvailable` runs, about 10 minutes later, a start missed while the PC slept or was off | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. Task Scheduler took no missed start of the renewal's daily trigger begun before the task was registered, or passed while it was disabled: none of four tasks, two with the setting, ran within 21 to 29 minutes, each `0x00041303` with no missed run counted (RF-T8, runs 39310064516 and 39320680285). |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
 | `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |
@@ -3035,12 +3130,11 @@ on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
-| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs, and no test starts a Restart Manager session; the session's step A7 upgrades a running Pitboard. |
-| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agreed ended on `WM_ENDSESSION` (run 38895887782); the session's step A7 upgrades a running copy. |
+| A sign-out's `WM_ENDSESSION` reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | RF-T8's `WM_SETTINGCHANGE` broadcast reached a never-shown top-level window and not a message-only one (runs 39310064516 and 39320680285). The session's `msiexec /fa` ended Pitboard through its hidden window by `WM_ENDSESSION` or `WM_CLOSE`, and did not record which ([The session machine](#the-session-machine)). No runner signs out. |
+| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agreed ended on `WM_ENDSESSION` (run 38895887782), and the session's `msiexec /fa` ended Pitboard without force; neither recorded a `WM_CLOSE`. |
 | `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
 | `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
 | Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
-| A launch redirected to the running copy carries the second copy's arguments | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No `windows-app` run has passed `AccountPickerTests` yet: in run 38825074643 the running copy crashed on a theme brush as the link reached it. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
 | A self-contained unpackaged app runs without the Windows App Runtime's packages | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps) | Both images hold the 2.5.1.0 package (run 38804714545); the session's step A5 records `Get-AppxPackage *WindowsAppRuntime*` on a clean PC. |
@@ -3055,7 +3149,7 @@ on 15 and 16 October 2026. W27 took out on 18 October 2026 the rows
 | A deferred custom action without `msidbCustomActionTypeNoImpersonate` runs as the person running the install or removal, so a per-user removal started unelevated has `Pitboard.exe --unregister` pass the core's gate and reach that person's renewal task. One started from an elevated terminal runs it elevated, the gate refuses it, and the task stays | [Custom action in-script execution options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-in-script-execution-options) | The session of 18 October 2026 saw `--unregister` delete the person's `Run` value, and read no token. No runner installs an MSI; the next session removes Pitboard from a terminal that is not elevated and from one that is, and reads whether the task went. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
-| A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process with no desktop app policy set starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The probe's identity process, started by path, gave its `CreateProcessW` children none, and one handed a link as its only argument got it whole (runs 38928930271, 39291962999 and 39301311398, CF8 under [Windows](#windows)). No runner activates a share target, whose activation may set a policy that keeps children in the package: P2 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real share started, and P1, with no copy running, whether it keeps running once `PitboardShare.exe` has returned. |
+| A process that `PitboardShare.exe` starts through `CreateProcess` carries none of its package identity, since a process with no desktop app policy set starts its children outside the package | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | The probe's identity process, started by path, gave its `CreateProcessW` children none, and one handed a link as its only argument got it whole (runs 38928930271, 39291962999 and 39301311398, CF8 under [Windows](#windows)). No runner activates a share target, whose activation may set a policy that keeps children in the package: the 1.0 session's P1 reads `GetCurrentPackageFamilyName` in a `Pitboard.exe` a real share started and, with no copy running, whether it keeps running once `PitboardShare.exe` has returned. |
 
 ### One sign-in at a time
 
@@ -3373,10 +3467,10 @@ treated, and only the macOS build shows it. The run reads both builds since.
   pending session step 7), and a session whose start-up look at `Bun.secrets` fails, or
   gives no answer within 10 seconds, reads only the file for its life. Where the file is the
   store, a session reads it again once its modification time changes
-  (`windows_file_adoption`, read, pending session step 6). A network logon has no credential
-  set: every call fails 1312, the look at the live target before the chain is built
-  included, which Pitboard reads as out of reach (`credential_store_locked`), never as no
-  login.
+  (`windows_file_adoption`, read, and measured on the session machine). A network logon has
+  no credential set: every call fails 1312, the look at the live target before the chain is
+  built included, which Pitboard reads as out of reach (`credential_store_locked`), never as
+  no login.
 - Measured on both runner images on 16 October 2026 (runs 38856939312 and 38858363708): a
   fresh standard user's Credential Manager takes about 237 pieces of 2400 characters, then
   `CredWriteW` fails with `ERROR_NOT_ENOUGH_MEMORY`, and pieces a failed run left count
@@ -4609,11 +4703,13 @@ Microsoft's documentation.
 - Run and RunOnce registry keys (updated 21 February 2026): a value under the person's `Run`
   key is a command line of at most 260 characters that Windows starts at each of their
   sign-ins, with no promise how soon, and a program started from the key should not write
-  to it while it runs. So `RunValue` writes `"<path>\Pitboard.exe"`, quoted for a path with a
-  space, refuses a longer one, and writes only when somebody turns the switch, never as
-  Pitboard starts. It never reads what Settings > Apps > Startup keeps, which has no
-  documented layout; Microsoft's support article on startup apps sends people there to turn
-  one off, and the switch's caption says so. `RunValueTests` hold it.
+  to it while it runs. So `RunValue` writes `"<path>\Pitboard.exe" --sign-in`, its path
+  quoted, refuses a longer one, and writes only when somebody turns the switch, never as
+  Pitboard starts. What Settings > Apps > Startup keeps, `StartupApproved\Run`, has no
+  documented layout: turning Pitboard off there wrote 01 as its value's first byte and kept
+  the `Run` value on the session machine. So `RunValue` reads an odd first byte as off, and
+  the switch then shows off and refuses to turn on, its note sending the person to Settings,
+  as Microsoft's support article on startup apps does. `RunValueTests` hold it.
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a ToggleSwitch raises `Toggled`
   whenever `IsOn` changes (`ToggleSwitch_Partial.cpp`), a NumberBox raises `ValueChanged` on
   any change of `Value`, NaN for cleared text (`NumberBox.cpp`), and a TimePicker raises

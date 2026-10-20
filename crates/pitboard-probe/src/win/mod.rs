@@ -19,10 +19,13 @@ mod files;
 mod handover;
 mod homes;
 mod job;
+mod paths;
 mod processes;
 mod runner;
+mod settingchange;
 mod sparse;
 mod task;
+mod times;
 mod tokens;
 mod windowless;
 
@@ -115,6 +118,9 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             exec,
             args,
             at_minutes,
+            daily_since_minutes,
+            daily_in_minutes,
+            disabled,
             start_when_available,
             allow_battery,
         } => task::task(&task::Request {
@@ -126,6 +132,9 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             exec: *exec,
             args: args.as_deref(),
             at_minutes: *at_minutes,
+            daily_since_minutes: *daily_since_minutes,
+            daily_in_minutes: *daily_in_minutes,
+            disabled: *disabled,
             start_when_available: *start_when_available,
             allow_battery: *allow_battery,
         }),
@@ -200,6 +209,22 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
         C::Symlink { scratch } => runner::symlink(scratch),
         C::RunnerFacts { scratch } => runner::runner_facts(scratch),
         C::ExePath => exe_path(),
+        C::FileId { scratch } => paths::file_id_block(scratch),
+        C::ReservedNames { scratch } => paths::reserved_names(scratch),
+        C::LongPath { scratch } => paths::long_path(scratch),
+        C::ProcessTimes { children } => times::process_times(*children),
+        C::ProcessTimesChild => return times::child(),
+        C::SettingChange {
+            action: crate::cli::SettingAction::Watch,
+            name,
+            seconds,
+            scratch,
+        } => settingchange::watch(name, *seconds, scratch.as_deref()),
+        C::SettingChange {
+            action: crate::cli::SettingAction::Broadcast,
+            name,
+            ..
+        } => settingchange::broadcast(name),
     };
     Outcome::Report(report)
 }

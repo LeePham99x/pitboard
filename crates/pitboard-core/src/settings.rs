@@ -282,12 +282,53 @@ pub(crate) fn custom_oauth(ctx: &Context) -> bool {
         })
 }
 
+// Each read where no descriptor is named for it, and taken before `apiKeyHelper` and the stored
+// login (`remote_token_files`).
+const OAUTH_TOKEN: (&str, &str) = (".oauth_token", "the OAuth token");
+const API_KEY: (&str, &str) = (".api_key", "the API key");
+// Claude Code's, past which it takes neither.
+const REMOTE_TOKEN_LIMIT: u64 = 65_536;
+
+// On Windows the path names no drive, so it is at the root of whichever drive a session runs
+// from.
+fn remote_tokens(ctx: &Context, files: &[(&str, &str)]) -> Vec<Override> {
+    let folders: Vec<String> = match ctx.os {
+        Os::Windows => ctx
+            .host()
+            .fixed_drives()
+            .into_iter()
+            .map(|drive| format!(r"{drive}:\home\claude\.claude\remote\"))
+            .collect(),
+        Os::MacOs | Os::Linux => vec!["/home/claude/.claude/remote/".into()],
+    };
+    folders
+        .iter()
+        .flat_map(|folder| {
+            files
+                .iter()
+                .map(move |(file, what)| (format!("{folder}{file}"), *what))
+        })
+        .filter(|(path, _)| {
+            matches!(
+                ctx.host()
+                    .administered_file_up_to(std::path::Path::new(path), REMOTE_TOKEN_LIMIT),
+                Administered::Set(text) if !text.trim().is_empty()
+            )
+        })
+        .map(|(layer, what)| Override {
+            layer,
+            key: what.into(),
+        })
+        .collect()
+}
+
 pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
     let mut found: Vec<Override> = managed(ctx)
         .into_iter()
         .chain(own(&claude::config_dir(ctx).join("settings.json")))
         .flat_map(|layer| overrides_in(&layer))
         .collect();
+    found.extend(remote_tokens(ctx, &[OAUTH_TOKEN, API_KEY]));
     // What this process was started with, which a command line sees and an app does not.
     found.extend(ctx.overriding_auth().iter().map(|key| Override {
         layer: "the environment".into(),
@@ -344,13 +385,16 @@ pub(crate) fn status_line_command(ctx: &Context) -> Option<String> {
         })
 }
 
-// A warm-up's run gets none of this process's environment.
+// A warm-up's run gets none of this process's environment, and its own token comes before
+// `.oauth_token`.
 pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
-    managed(ctx)
+    let mut found: Vec<Override> = managed(ctx)
         .into_iter()
         .chain(own(&config.join("settings.json")))
         .flat_map(|layer| overrides_in(&layer))
-        .collect()
+        .collect();
+    found.extend(remote_tokens(ctx, &[API_KEY]));
+    found
 }
 
 #[cfg(test)]
@@ -647,6 +691,97 @@ mod managed_tests {
         );
         let (ctx, _scratch) = on(Os::Windows, &memory);
         assert_eq!(said(&overrides(&ctx)), [(user, "apiKeyHelper".to_string())]);
+    }
+
+    #[test]
+    fn a_token_in_claude_codes_remote_files_comes_before_the_stored_login() {
+        for os in [Os::MacOs, Os::Linux] {
+            let memory = MemoryHost::new();
+            memory.administers("/home/claude/.claude/remote/.oauth_token", "a token\n");
+            memory.administers("/home/claude/.claude/remote/.api_key", " \n");
+            let (ctx, _scratch) = on(os, &memory);
+            assert_eq!(
+                said(&overrides(&ctx)),
+                [(
+                    "/home/claude/.claude/remote/.oauth_token".to_string(),
+                    "the OAuth token".to_string()
+                )],
+                "{os:?}"
+            );
+            assert_eq!(
+                overrides(&ctx)[0].to_string(),
+                "the OAuth token in /home/claude/.claude/remote/.oauth_token"
+            );
+        }
+    }
+
+    #[test]
+    fn a_remote_token_file_over_claude_codes_limit_holds_no_token() {
+        let key = "/home/claude/.claude/remote/.api_key";
+        let memory = MemoryHost::new();
+        memory.administers(key, &"k".repeat(65_536));
+        let (ctx, _scratch) = on(Os::Linux, &memory);
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [(key.to_string(), "the API key".to_string())]
+        );
+
+        memory.administers(key, &"k".repeat(65_537));
+        assert_eq!(overrides(&ctx), Vec::new());
+    }
+
+    // A warm-up's own token comes before `.oauth_token`, and `.api_key` before both.
+    #[test]
+    fn a_warm_ups_run_takes_the_api_key_in_claude_codes_remote_file() {
+        for (os, folder) in [
+            (Os::MacOs, "/home/claude/.claude/remote/"),
+            (Os::Linux, "/home/claude/.claude/remote/"),
+            (Os::Windows, r"C:\home\claude\.claude\remote\"),
+        ] {
+            let memory = MemoryHost::new();
+            memory.administers(format!("{folder}.oauth_token"), "a token");
+            let (ctx, scratch) = on(os, &memory);
+            let run = scratch.path().join("warm").join("config");
+            assert_eq!(overrides_of_a_run_in(&ctx, &run), Vec::new(), "{os:?}");
+
+            memory.administers(format!("{folder}.api_key"), "sk-ant-x");
+            assert_eq!(
+                said(&overrides_of_a_run_in(&ctx, &run)),
+                [(format!("{folder}.api_key"), "the API key".to_string())],
+                "{os:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn on_windows_a_remote_token_file_is_at_a_drives_root() {
+        let memory = MemoryHost::new();
+        memory.administers(r"C:\home\claude\.claude\remote\.api_key", "sk-ant-x");
+        memory.administers("/home/claude/.claude/remote/.oauth_token", "a token");
+        let (ctx, _scratch) = on(Os::Windows, &memory);
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [(
+                r"C:\home\claude\.claude\remote\.api_key".to_string(),
+                "the API key".to_string()
+            )]
+        );
+
+        memory.has_fixed_drives(&['C', 'D']);
+        memory.administers(r"D:\home\claude\.claude\remote\.oauth_token", "a token");
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [
+                (
+                    r"C:\home\claude\.claude\remote\.api_key".to_string(),
+                    "the API key".to_string()
+                ),
+                (
+                    r"D:\home\claude\.claude\remote\.oauth_token".to_string(),
+                    "the OAuth token".to_string()
+                ),
+            ]
+        );
     }
 
     #[test]
