@@ -4378,7 +4378,11 @@ Microsoft's documentation.
   where WebView2's own browser keys serve Back, Forward and Reload. So an account window takes
   Ctrl+W, and the browser keys for its Back, Forward and Reload, on its root, for its toolbar
   and its note (`AccountWindowTests.TheWindowTakesTheKeysOfItsCommands`,
-  `TheToolbarTakesBackAndCtrlW`).
+  `TheToolbarTakesBackAndCtrlW`). An accelerator for Alt+Left on the root missed the key with
+  the command bar's More focused on windows-2025 (run 39310757537), though
+  `CommandBar_Partial.cpp` at `winui3/release/2.5.1` moves focus on Left or Right only with
+  Alt up, so Alt+Left and Alt+Right are read in the root's `PreviewKeyDown`, Alt from the
+  thread's key state.
 - Microsoft's User Interface Text guidelines (updated 15 April 2025) title a top-level
   document-centric window "document name - program name", the document first. So an account
   window is titled with its page's `DocumentTitle`, a hyphen and the account's title, where
@@ -4464,11 +4468,12 @@ Microsoft's documentation.
   dialog opens; a dialog made in code, outside the live tree, is put whole in its popup.
   `KeyboardInputProcessor.cpp` raises `PreviewKeyDown` and `KeyDown` with one event
   argument, so a `PreviewKeyDown` handled on the dialog keeps Esc from its close button.
-  `InfoBar.cpp` announces an InfoBar as it opens only through an automation peer it has
-  already. So `AccountSheet` cancels each button's click and leaves closing to the model,
-  dims its close button through `CloseButtonStyle` while nothing may close it, keeps Esc
-  from a sign-in that waits on its app, and keeps its failure's InfoBar in the tree while it
-  is closed. `AccountSheetTests` holds what runs without a person on the runners.
+  `InfoBar.cpp` announces an InfoBar as it opens, by its severity, title and message, only
+  through an automation peer it has already. So `AccountSheet` cancels each button's click
+  and leaves closing to the model, dims its close button through `CloseButtonStyle` while
+  nothing may close it, keeps Esc from a sign-in that waits on its app, and keeps its
+  failure's InfoBar in the tree while it is closed. `AccountSheetTests` holds what runs
+  without a person on the runners.
 - Microsoft's InfoBar page raises no notification for a bar changed while open, and has it
   closed and opened again for a screen reader to hear the new content
   ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25
