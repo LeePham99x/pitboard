@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-10-20
+
 ### Added
 
 - Pitboard warms up Claude Code accounts on Windows, from `pitboard warm`, `pitboard watch` and
@@ -1017,7 +1019,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard keeps an audit log of every change it makes.
 - The account index is schema 3, with one parked login per account and its expiry.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.4...HEAD
+[1.0.0-beta.4]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/datlechin/pitboard/compare/v0.15.0...v1.0.0-beta.1
