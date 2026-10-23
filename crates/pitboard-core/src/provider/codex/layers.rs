@@ -818,6 +818,23 @@ mod tests {
         );
     }
 
+    /// A forced value is read only where Codex 0.164.0 reads it: trimmed, then strict
+    /// `BASE64_STANDARD` (codex-rs/config/src/loader/macos.rs:294).
+    #[test]
+    fn a_forced_value_is_decoded_as_codex_decodes_it() {
+        for text in ["Zg", "Zh==", "Zm-v", "Zm9v=", "Zm 9v"] {
+            assert_eq!(
+                decoded(Administered::Set(text.into())),
+                Administered::Unreadable("is not base64".into()),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            decoded(Administered::Set(" Zg== ".into())),
+            Administered::Set("f".into())
+        );
+    }
+
     /// A requirement pins the store over every layer, even the forced managed config, and the
     /// words say no line of the person's own can change it.
     #[test]
