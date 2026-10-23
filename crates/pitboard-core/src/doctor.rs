@@ -981,24 +981,6 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
             ),
         ));
     }
-    let codex = |folder: &std::path::Path| folder.join(".codex");
-    if let Some(profile) = windows
-        .profile
-        .as_deref()
-        .filter(|_| !windows.codex_home_set)
-        && !same(&codex(profile), &codex(&windows.home))
-    {
-        checks.push(warn(
-            "codex_installer_home",
-            "Codex's home",
-            format!(
-                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
-                codex(profile).display(),
-                codex(&windows.home).display()
-            ),
-            "Set CODEX_HOME, so both use one folder.",
-        ));
-    }
     if windows.roams {
         checks.push(warn(
             "roaming_profile",
@@ -1010,6 +992,25 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
         ));
     }
     checks
+}
+
+// Codex's home is in the known folder Profile, install.ps1's under `USERPROFILE`.
+fn judge_codex_installer_home(facts: &Facts) -> Option<Check> {
+    let windows = facts.windows.as_ref().filter(|w| !w.codex_home_set)?;
+    let codex = |folder: &std::path::Path| folder.join(".codex");
+    let profile = windows.profile.as_deref()?;
+    (!Os::Windows.same_path(&codex(profile), &codex(&windows.home))).then(|| {
+        warn(
+            "codex_installer_home",
+            "Codex's home",
+            format!(
+                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
+                codex(profile).display(),
+                codex(&windows.home).display()
+            ),
+            "Set CODEX_HOME, so both use one folder.",
+        )
+    })
 }
 
 // What changes what Pitboard or a tool does on Windows, each only where it is so.
@@ -1752,6 +1753,7 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     // Only where there is a Codex to say something about. A machine without it reads exactly
     // as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
+        checks.extend(judge_codex_installer_home(facts));
         checks.extend(judge_codex(
             facts.os,
             facts.sid.as_deref(),
@@ -8991,7 +8993,8 @@ mod tests {
             let mut facts = facts();
             facts.windows = windows;
             judge_windows_homes(&facts)
-                .iter()
+                .into_iter()
+                .chain(judge_codex_installer_home(&facts))
                 .map(|check| (check.code, check.level))
                 .collect::<Vec<_>>()
         };
@@ -9028,6 +9031,48 @@ mod tests {
             ..measured()
         };
         assert_eq!(codes(Some(roams)), [("roaming_profile", Level::Warn)]);
+    }
+
+    // The command line heads a tool's checks where they start, so each tool's come together.
+    #[test]
+    fn where_codex_keeps_its_home_on_windows_is_one_of_codexs_checks() {
+        let home = PathBuf::from("C:").join("Users").join("x");
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.codex = with_codex();
+        facts.windows = Some(WindowsHomes {
+            home: home.clone(),
+            default_pitboard_home: Os::Windows.default_pitboard_home(&home),
+            local_app_data: Some(home.join("AppData").join("Local")),
+            profile: Some(PathBuf::from("C:").join("Users").join("y")),
+            codex_home_set: false,
+            roams: true,
+        });
+        let checks = evaluate(&facts);
+        let codes: Vec<&str> = checks.iter().map(|c| c.code).collect();
+        let installer = codes
+            .iter()
+            .position(|code| *code == "codex_installer_home")
+            .expect("said");
+        assert!(
+            codes[..installer]
+                .iter()
+                .all(|code| section(code).is_none()),
+            "{codes:?}"
+        );
+        assert!(
+            codes[installer..]
+                .iter()
+                .all(|code| section(code) == Some(ProviderId::Codex)),
+            "{codes:?}"
+        );
+        facts.codex = no_codex();
+        let codes: Vec<&str> = evaluate(&facts).iter().map(|c| c.code).collect();
+        assert!(codes.contains(&"roaming_profile"), "{codes:?}");
+        assert!(
+            codes.iter().all(|code| section(code).is_none()),
+            "a machine with no Codex has no Codex heading: {codes:?}"
+        );
     }
 
     /// With neither tool present, a new machine is told what to do first, as it always was.

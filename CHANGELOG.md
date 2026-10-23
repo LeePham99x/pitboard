@@ -31,6 +31,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   named `systemctl`.
 - Shell completions leave out `pitboard renew --scheduled`, which only the daily renewal
   schedule runs.
+- On Windows, `pitboard doctor` says where Codex keeps its home among Codex's checks, instead
+  of under a second Codex heading above Pitboard's own.
 
 ## [1.0.0-beta.5] - 2026-10-23
 
