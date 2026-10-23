@@ -375,7 +375,7 @@ public sealed class ModelTests
                     Parked: null, Usage: null, Stale: null, StaleExplanation: null, Plan: null,
                     ReadAt: null),
             ])[0];
-        var link = PitboardFfiMethods.SiteLink("https://claude.ai/chat/x");
+        var link = new SiteLink(work.Site, "https://claude.ai/chat/x");
         var windows = NoWindows() with
         {
             Accounts = [work],

@@ -1216,8 +1216,9 @@ mod tests {
     // PowerShell's -EncodedCommand takes the command as base64 of its UTF-16, so nothing in it
     // is quoted again on the way.
     fn encoded(command: &str) -> String {
+        use base64::prelude::{BASE64_STANDARD, Engine as _};
         let bytes: Vec<u8> = command.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        crate::base64::encode(&bytes)
+        BASE64_STANDARD.encode(&bytes)
     }
 
     // Each line as a person pastes it, into cmd or into PowerShell.

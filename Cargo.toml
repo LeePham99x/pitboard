@@ -21,10 +21,12 @@ repository = "https://github.com/datlechin/pitboard"
 homepage = "https://usepitboard.com"
 
 [workspace.dependencies]
-pitboard-core = { path = "crates/pitboard-core", version = "=0.16.1" }
+pitboard-core = { path = "crates/pitboard-core", version = "=0.17.0" }
 pitboard-sites = { path = "crates/pitboard-sites" }
 anstream = "1"
 anstyle = "1"
+# Already in every build through ureq, and what Codex decodes its managed preferences with.
+base64 = { version = "0.23", default-features = false, features = ["alloc"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 clap_mangen = "0.3"
@@ -40,9 +42,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 # Claude's cookie jar is SQLite: the system's, never a bundled build. 0.40 needs a Rust past 1.91.
 rusqlite = { version = "0.40.2", default-features = false }
-# For the account windows' store ids alone, which are version 5 UUIDs, and RFC 9562 defines
-# those over SHA-1. Nothing secret is hashed.
-sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 tempfile = "3.27"
 thiserror = "2"
@@ -65,8 +64,9 @@ windows-sys = "0.61"
 # Both generators must match this exact version, since bindings check method checksums at load
 # time. The Swift one is built from it. The C# one, uniffi-bindgen-cs, is released for one
 # UniFFI version at a time (v0.11.1+v0.31.0 reads 0.31), so this moves only with a release of
-# it for the new version; Dependabot leaves it alone.
-uniffi = "=0.31.2"
+# it for the new version; Dependabot leaves it alone. Default features off: the libraries read
+# no Cargo metadata, and the Swift generator asks for it itself.
+uniffi = { version = "=0.31.2", default-features = false }
 # TLS: rustls for the protocol, the operating system for deciding which certificates to
 # trust. No bundled root store, so a corporate or system trust setting is honoured.
 # No socks-proxy: its connector in 3.4.2 waits past the time limit and looks the proxy up
@@ -76,6 +76,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # IDNA, for a host that is not plain ASCII. pitboard-sites splits a link itself, as
 # Foundation does, since the WHATWG standard url follows reads some links otherwise.
 url = "2.5"
+# The account windows' store ids, version 5 UUIDs. Nothing secret is hashed.
+uuid = { version = "1.27", default-features = false, features = ["v5"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

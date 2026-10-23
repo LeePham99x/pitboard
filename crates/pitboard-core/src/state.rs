@@ -688,12 +688,12 @@ impl State {
     }
 
     // An aside given back as a park, or deleted.
-    pub fn drop_aside(&mut self, name: &str) -> Option<Aside> {
+    pub(crate) fn drop_aside(&mut self, name: &str) -> Option<Aside> {
         let at = self.aside.iter().position(|aside| aside.name == name)?;
         Some(self.aside.remove(at))
     }
 
-    pub fn aside_of(&self, id: &str) -> impl Iterator<Item = &Aside> {
+    pub(crate) fn aside_of(&self, id: &str) -> impl Iterator<Item = &Aside> {
         self.aside
             .iter()
             .filter(move |aside| aside.account.as_deref() == Some(id))
@@ -720,11 +720,9 @@ impl State {
         self.foreign.retain(|listed| listed != service);
     }
 
-    /// Stop holding `service` because it has been used up, and list it for deletion
-    /// whoever wrote it: it has been installed, a renewal has spent it, or it copies a login
-    /// that is still signed in. Nothing can use it again, and for a tool whose park may
-    /// never be a copy it must not stay beside the login it copies.
-    pub fn discard(&mut self, service: &str, kind: ParkKind) {
+    // Installed, spent by a renewal, or a copy of a login still signed in: nothing can use
+    // it again, and a copy must not stay beside its login, so it goes whoever wrote it.
+    pub(crate) fn discard(&mut self, service: &str, kind: ParkKind) {
         self.let_go(service);
         if !self
             .discarded
@@ -848,14 +846,14 @@ impl State {
     }
 
     // Every folder set aside listed for deletion, as `uninstall` asks.
-    pub fn forget_asides(&mut self) {
+    pub(crate) fn forget_asides(&mut self) {
         for aside in std::mem::take(&mut self.aside) {
             self.forget_folder(&aside.name);
         }
     }
 
     // Every folder listed for deletion deleted whatever it still holds, as `uninstall` asks.
-    pub fn forget_discarded(&mut self) {
+    pub(crate) fn forget_discarded(&mut self) {
         let folders: Vec<String> = self
             .discarded
             .iter()

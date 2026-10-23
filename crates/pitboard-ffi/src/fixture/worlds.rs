@@ -27,7 +27,9 @@ use pitboard_core::service;
 use pitboard_core::state::Key;
 use pitboard_core::testing::desktop::{self as desktop, FakeClaude, JarAs};
 use pitboard_core::testing::fs as files;
-use pitboard_core::testing::{Fault, FixedClock, MemoryHost, ScriptedApi, live_service};
+use pitboard_core::testing::{
+    Fault, FixedClock, MemoryHost, ScriptedApi, live_service, unsigned_token,
+};
 use pitboard_core::usage;
 use serde_json::json;
 use std::collections::HashMap;
@@ -1184,31 +1186,4 @@ fn epoch_now() -> i64 {
         .map_or(0, |since| {
             i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
         })
-}
-
-/// A token in the shape a real one has, with a signature nothing checks, as Codex's login
-/// carries its claims: three parts of unpadded base64url.
-fn unsigned_token(payload: &serde_json::Value) -> String {
-    [
-        r#"{"alg":"RS256"}"#.as_bytes(),
-        payload.to_string().as_bytes(),
-        b"not a real signature",
-    ]
-    .map(base64url)
-    .join(".")
-}
-
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let held = chunk.iter().enumerate().fold(0u32, |held, (at, &byte)| {
-            held | (u32::from(byte) << (16 - 8 * at))
-        });
-        for at in 0..(chunk.len() * 8).div_ceil(6) {
-            let sextet = (held >> (18 - 6 * at)) & 0x3f;
-            out.push(char::from(ALPHABET[sextet as usize]));
-        }
-    }
-    out
 }

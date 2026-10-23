@@ -336,7 +336,7 @@ fn the_inbox_takes_pitboard_links_of_its_own_scheme() {
         second.shown,
         PickerShown::Refused {
             title: titled("Can’t Open This Link", "Can’t open this link"),
-            reason: crate::LinkRefusal::Unreadable.to_string(),
+            reason: pitboard_sites::LinkRefusal::Unreadable.to_string(),
         },
         "another build's scheme"
     );

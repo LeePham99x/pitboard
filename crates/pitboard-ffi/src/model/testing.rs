@@ -19,7 +19,7 @@ use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::switch::{Left, Stowed};
 use pitboard_core::testing::desktop::{self, FakeClaude, JarAs};
-use pitboard_core::testing::{MemoryHost, ScriptedApi, live_service, stand_in};
+use pitboard_core::testing::{MemoryHost, ScriptedApi, live_service, stand_in, unsigned_token};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1775,14 +1775,18 @@ impl World {
     /// with OpenAI scripted to answer for it.
     fn codex_login(&self, who: &str) -> String {
         let now = epoch_now();
-        let id_token = unsigned_token(&format!(
-            r#"{{"email":"{who}@example.com","exp":{},"https://api.openai.com/auth":{{"chatgpt_account_id":"{who}","chatgpt_user_id":"user-{who}","chatgpt_plan_type":"pro"}}}}"#,
-            now + 3_600
-        ));
-        let access = unsigned_token(&format!(
-            r#"{{"exp":{},"for":"refresh-{who}"}}"#,
-            now + 10 * 86_400
-        ));
+        let id_token = unsigned_token(&serde_json::json!({
+            "email": format!("{who}@example.com"),
+            "exp": now + 3_600,
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": who,
+                "chatgpt_user_id": format!("user-{who}"),
+                "chatgpt_plan_type": "pro",
+            },
+        }));
+        let access = unsigned_token(
+            &serde_json::json!({"exp": now + 10 * 86_400, "for": format!("refresh-{who}")}),
+        );
         self.api.using(
             &access,
             pitboard_core::usage::Snapshot {
@@ -2023,27 +2027,4 @@ fn epoch_now() -> i64 {
         .expect("after 1970")
         .as_secs();
     i64::try_from(now).expect("before 2262")
-}
-
-/// A token in the shape a real one has, with a signature nothing checks, as Codex's login
-/// carries its claims: three parts of unpadded base64url.
-fn unsigned_token(payload: &str) -> String {
-    [r#"{"alg":"RS256"}"#, payload, "not a real signature"]
-        .map(|part| base64url(part.as_bytes()))
-        .join(".")
-}
-
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let held = chunk.iter().enumerate().fold(0u32, |held, (at, &byte)| {
-            held | (u32::from(byte) << (16 - 8 * at))
-        });
-        for at in 0..(chunk.len() * 8).div_ceil(6) {
-            let sextet = usize::try_from((held >> (18 - 6 * at)) & 0x3f).expect("six bits");
-            out.push(char::from(ALPHABET[sextet]));
-        }
-    }
-    out
 }

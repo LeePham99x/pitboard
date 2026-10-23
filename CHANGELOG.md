@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The public API of `pitboard-core` changes; [its
+  documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
+
 ## [1.0.0-beta.5] - 2026-10-23
 
 ### Changed

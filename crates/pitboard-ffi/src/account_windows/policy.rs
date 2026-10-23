@@ -326,12 +326,9 @@ pub fn decide_response(
     }
 }
 
-/// Whether `url` is one of the site's own pages: on the window's scheme, on the site's host
-/// or an alias of it, with no port and no user to hide the host behind. Only such a page is
-/// kept as the window's last.
-#[uniffi::export]
-pub fn is_site_page(policy: NavigationPolicy, url: String) -> bool {
-    policy.is_site(&WebAddress::parse(&url))
+// Only such a page is kept as the window's last.
+pub(crate) fn is_site_page(policy: &NavigationPolicy, url: &str) -> bool {
+    policy.is_site(&WebAddress::parse(url))
 }
 
 /// Which page `frame` is, as an account window's policy tells pages apart: its main page on
@@ -357,13 +354,11 @@ pub fn window_home(policy: NavigationPolicy) -> String {
     format!("{}://{}/", policy.scheme, policy.site.host)
 }
 
-/// `link` on the window's scheme: the link itself in a live run, and the fixture's stand-in
-/// for it in a fixture, so a fixture's window never reaches the network.
-#[uniffi::export]
-pub fn window_address(policy: NavigationPolicy, link: SiteLink) -> String {
+// On the window's scheme, so a fixture's window never reaches the network.
+pub(crate) fn window_address(policy: &NavigationPolicy, link: &SiteLink) -> String {
     match link.url.split_once(':') {
         Some((_, rest)) => format!("{}:{rest}", policy.scheme),
-        None => window_home(policy),
+        None => window_home(policy.clone()),
     }
 }
 
@@ -824,12 +819,13 @@ mod tests {
             in_window(&fixture, page("https://chatgpt.com/c/x")),
             elsewhere("https://chatgpt.com/c/x", false)
         );
-        let link = crate::site_link("https://chat.openai.com/c/x?y=1#z".into()).expect("a link");
+        let link = pitboard_sites::SiteLink::parse("https://chat.openai.com/c/x?y=1#z");
+        let link = SiteLink::from(link.expect("a link"));
         assert_eq!(
-            window_address(fixture, link.clone()),
+            window_address(&fixture, &link),
             "pitboard-fixture://chatgpt.com/c/x?y=1#z"
         );
-        assert_eq!(window_address(chatgpt(), link.clone()), link.url);
+        assert_eq!(window_address(&chatgpt(), &link), link.url);
         assert_eq!(window_home(claude()), "https://claude.ai/");
     }
 
@@ -923,22 +919,16 @@ mod tests {
     fn only_the_sites_own_pages_are_its_pages() {
         let fixture = policy(&CLAUDE, "pitboard-fixture");
         assert!(is_site_page(
-            fixture.clone(),
-            "pitboard-fixture://claude.ai/chat/old".into()
+            &fixture,
+            "pitboard-fixture://claude.ai/chat/old"
         ));
-        assert!(!is_site_page(
-            fixture.clone(),
-            "https://example.com/somewhere".into()
-        ));
-        assert!(!is_site_page(fixture, "https://claude.ai/chat/old".into()));
-        assert!(is_site_page(chatgpt(), "https://chat.com/c/x".into()));
-        assert!(!is_site_page(
-            chatgpt(),
-            "https://auth.openai.com/log-in".into()
-        ));
-        assert!(!is_site_page(chatgpt(), "https://chatgpt.com:0/".into()));
-        assert!(!is_site_page(chatgpt(), "https://@chatgpt.com/".into()));
-        assert!(!is_site_page(chatgpt(), String::new()));
+        assert!(!is_site_page(&fixture, "https://example.com/somewhere"));
+        assert!(!is_site_page(&fixture, "https://claude.ai/chat/old"));
+        assert!(is_site_page(&chatgpt(), "https://chat.com/c/x"));
+        assert!(!is_site_page(&chatgpt(), "https://auth.openai.com/log-in"));
+        assert!(!is_site_page(&chatgpt(), "https://chatgpt.com:0/"));
+        assert!(!is_site_page(&chatgpt(), "https://@chatgpt.com/"));
+        assert!(!is_site_page(&chatgpt(), ""));
     }
 
     /// A page's host is the one its request goes to, as Foundation's `URL.host` gives it: a
@@ -946,13 +936,13 @@ mod tests {
     /// and an escape in the host is read, as `URL.host` reads it.
     #[test]
     fn a_page_is_the_sites_only_on_the_sites_own_host() {
-        assert!(is_site_page(claude(), "https://cl%61ude.ai/".into()));
-        assert!(!is_site_page(claude(), "https://xn--claude-.ai/".into()));
-        assert!(!is_site_page(chatgpt(), "https://chаtgpt.com/".into()));
-        assert!(!is_site_page(claude(), "https://claude.ai./".into()));
+        assert!(is_site_page(&claude(), "https://cl%61ude.ai/"));
+        assert!(!is_site_page(&claude(), "https://xn--claude-.ai/"));
+        assert!(!is_site_page(&chatgpt(), "https://chаtgpt.com/"));
+        assert!(!is_site_page(&claude(), "https://claude.ai./"));
         assert!(!is_site_page(
-            claude(),
-            "https://claude.ai:99999999999999999999/".into()
+            &claude(),
+            "https://claude.ai:99999999999999999999/"
         ));
     }
 }

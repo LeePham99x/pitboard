@@ -596,7 +596,8 @@ impl Context {
         self.custom_oauth
     }
 
-    /// The `claude` Pitboard would run to sign someone in.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn claude_program(&self) -> &std::path::Path {
         &self.programs[&ProviderId::Claude]
     }
@@ -642,7 +643,8 @@ impl Context {
         self
     }
 
-    /// The `codex` Pitboard would run to sign someone in.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn codex_program(&self) -> &std::path::Path {
         &self.programs[&ProviderId::Codex]
     }
@@ -735,7 +737,7 @@ impl Context {
     }
 
     // The program named for this tool, found or not; None for a tool with no program to run.
-    pub fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
+    pub(crate) fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
         self.programs.get(&tool).map(PathBuf::as_path)
     }
 

@@ -58,14 +58,14 @@ cargo fmt --check
 cargo clippy --all-targets --locked
 cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
 cargo nextest run --locked
-cargo nextest run --locked -p pitboard-ffi --features fixture
+cargo nextest run --locked -p pitboard-ffi --features fixture -E 'test(/^fixture::/)'
 cargo deny --all-features check
 cargo semver-checks --package pitboard-core
 python3 .github/scripts/windows-pending.py
 ```
 
 The `fixture` feature compiles the worlds the apps' debug builds launch into, so it gets a
-lint and a test run of its own.
+lint and a run of the `fixture::` tests of its own.
 
 CI checks the workspace on Rust 1.91 too:
 

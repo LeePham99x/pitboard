@@ -3,15 +3,11 @@ namespace Pitboard.Core.Tests;
 [TestClass]
 public sealed class BindingsTests
 {
-    private static readonly string[] Codes = ["claude", "codex"];
-
     // The first call checks every checksum against the library, so one that answers proves they agree.
     [TestMethod]
     public void TheBindingsLoadTheCoreAndAgreeWithIt()
     {
-        var sites = PitboardFfiMethods.Sites();
-
-        CollectionAssert.AreEqual(Codes, sites.Select(site => site.Provider).ToArray());
+        Assert.AreEqual("claude.ai and chatgpt.com", PitboardFfiMethods.SiteNames(Conjunction.And));
     }
 
     [TestMethod]
@@ -27,14 +23,15 @@ public sealed class BindingsTests
         [
             "Pitboard", "SignIn", "Settings", "PitboardException", "Cause", "Switched", "Switch",
             "Adoption", "Enrolled", "EnrolledAs", "Changed", "Holding", "Remedy", "Diagnosis", "Change",
-            "SignInView", "Check", "Renewed",
+            "SignInView", "Check", "Renewed", "LinkRefusal",
         ];
         var stillOffered = exported.Select(type => type.Name).Intersect(older).Order(StringComparer.Ordinal);
         string[] olderCalls =
         [
             "WindowsOf", "ForgetMessage", "Tools", "CommandLinePlaces", "SignInView", "FindCommandLine",
             "HomeDirectory", "LimitColumn", "LimitName", "UsageLevel", "Resets", "Runway", "ParkedLife",
-            "RenewalNote", "DoctorSummary", "SameReset", "PitboardLink", "LinkRefusalReason",
+            "RenewalNote", "DoctorSummary", "SameReset", "PitboardLink", "LinkRefusalReason", "Sites",
+            "SiteLink", "ReadPitboardLink", "WindowOfStore", "IsSitePage", "WindowAddress",
         ];
         var stillCalled = typeof(PitboardFfiMethods).GetMethods()
             .Select(method => method.Name)

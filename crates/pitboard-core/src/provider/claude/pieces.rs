@@ -5,6 +5,7 @@
 
 use crate::service::Permit;
 use crate::store::Error;
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 
 pub(crate) const ITEM_BYTES: usize = 2400;
 pub(crate) const PIECE: usize = 2400;
@@ -86,7 +87,7 @@ pub(crate) fn steps(old: Option<Manifest>, left: usize, contents: &str) -> Optio
         }
         return Some(steps);
     }
-    let encoded = crate::base64::encode(contents.as_bytes());
+    let encoded = BASE64_STANDARD.encode(contents.as_bytes());
     let mut steps = vec![set(PENDING, old_n.max(pieces).to_string())];
     if old.is_some() {
         let n = old_n.max(pieces);
@@ -173,7 +174,9 @@ pub(crate) fn read(items: &dyn Items, target: &str) -> Result<Option<String>, Er
             manifest.l
         ));
     }
-    crate::base64::decode(&joined)
+    BASE64_STANDARD
+        .decode(&joined)
+        .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .map(Some)
         .ok_or_else(|| broken(format!("`{target}` has pieces that are not base64 of text")))
@@ -268,7 +271,7 @@ pub(crate) fn claude_code_reads(items: &dyn Items) -> Result<Option<String>, ()>
     if joined.len() != manifest.l || parts.iter().any(Option::is_none) {
         return Err(());
     }
-    let bytes = crate::base64::decode(&joined).ok_or(())?;
+    let bytes = BASE64_STANDARD.decode(&joined).map_err(drop)?;
     String::from_utf8(bytes).map(Some).map_err(drop)
 }
 

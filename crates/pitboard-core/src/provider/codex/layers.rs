@@ -48,6 +48,7 @@
 use super::paths::Backend;
 use crate::context::Context;
 use crate::host::{Administered, Os};
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -373,14 +374,12 @@ fn read(
     }
 }
 
-/// A managed preference's TOML out of the base64 it is forced as, trimmed first, as Codex
-/// decodes it (`decode_managed_preferences_base64`).
+// Trimmed first, as Codex trims a forced value before decode_managed_preferences_base64.
 fn decoded(forced: Administered) -> Administered {
     match forced {
-        // As Codex's `BASE64_STANDARD` takes one: canonical padding and nothing else.
-        Administered::Set(encoded) => match crate::base64::decode(encoded.trim()) {
-            None => Administered::Unreadable("is not base64".into()),
-            Some(bytes) => String::from_utf8(bytes).map_or_else(
+        Administered::Set(encoded) => match BASE64_STANDARD.decode(encoded.trim()) {
+            Err(_) => Administered::Unreadable("is not base64".into()),
+            Ok(bytes) => String::from_utf8(bytes).map_or_else(
                 |_| Administered::Unreadable("does not decode to UTF-8 text".into()),
                 Administered::Set,
             ),
@@ -718,7 +717,7 @@ mod tests {
     const EPHEMERAL: &str = "cli_auth_credentials_store = \"ephemeral\"\n";
 
     fn base64(text: &str) -> String {
-        crate::base64::encode(text.as_bytes())
+        BASE64_STANDARD.encode(text)
     }
 
     /// Nothing set anywhere is Codex's own default, the file.

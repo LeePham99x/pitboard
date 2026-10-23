@@ -107,15 +107,6 @@ pub fn window_accounts(accounts: Vec<Account>) -> Vec<WindowAccount> {
     windows(&accounts)
 }
 
-/// The window whose data `store` keeps, while its account is one of `accounts`. `store` is
-/// compared without regard to case.
-#[uniffi::export]
-pub fn window_of_store(accounts: Vec<Account>, store: String) -> Option<WindowAccount> {
-    windows(&accounts)
-        .into_iter()
-        .find(|window| stores::same(&window.store, &store))
-}
-
 /// One menu entry per site that has an account with a window, in the sites' order.
 #[uniffi::export]
 pub fn site_menus(accounts: Vec<Account>) -> Vec<SiteMenu> {
@@ -307,30 +298,6 @@ pub(crate) mod tests {
         let labels: Vec<&str> = windows.iter().map(|w| w.label.as_str()).collect();
         assert_eq!(labels, ["main", "spare"]);
         assert!(site_menus(vec![account(None, "claude", "d")]).is_empty());
-    }
-
-    /// The window an app knows by its store is found whatever case the store is written in,
-    /// and none is found once its account is gone.
-    #[test]
-    fn a_window_is_found_by_its_store_in_any_case() {
-        let accounts = || {
-            vec![
-                account(
-                    Some("work"),
-                    "claude",
-                    "4f3c2a10-8b7e-4d2a-9c1e-5a6b7c8d9e0f",
-                ),
-                account(Some("main"), "codex", "team_user-1"),
-            ]
-        };
-        let found = window_of_store(accounts(), "7E15C34F-69EC-55B4-9542-F1C1FE3D7085".into());
-        assert_eq!(found.map(|w| w.label).as_deref(), Some("work"));
-        let found = window_of_store(accounts(), "8ff9e0e6-a7e2-53e2-a594-6e53ddadd38a".into());
-        assert_eq!(found.map(|w| w.label).as_deref(), Some("main"));
-        assert_eq!(
-            window_of_store(accounts(), "323d12fb-2c52-55b5-baec-df74fb60bc24".into()),
-            None
-        );
     }
 
     /// An account's own windows, not another tool's account with the same account id.

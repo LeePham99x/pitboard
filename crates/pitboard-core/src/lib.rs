@@ -78,7 +78,6 @@ pub mod usage;
 pub mod words;
 
 pub(crate) mod atomic;
-pub(crate) mod base64;
 pub(crate) mod fault;
 #[cfg(test)]
 mod helper;
@@ -114,6 +113,7 @@ pub mod testing {
     pub use crate::provider::claude::api::Renewed;
     pub use crate::provider::claude::paths::live_service;
     pub use crate::provider::claude::slot::{LIVE_SERVICE, dir_hash, service_for_dir};
+    pub use crate::provider::jwt::unsigned as unsigned_token;
     /// The program the integration tests, the model's tests and the fixtures' tests start in
     /// place of `claude`, `codex` and every other program they run, on every system.
     pub use crate::stand_in;

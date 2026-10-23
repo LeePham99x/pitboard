@@ -20,7 +20,7 @@ mod policy;
 pub(crate) mod records;
 mod stores;
 
-pub use accounts::{SiteMenu, WindowAccount, site_menus, window_accounts, window_of_store};
+pub use accounts::{SiteMenu, WindowAccount, site_menus, window_accounts};
 pub(crate) use accounts::{forget_message_on, windows_of_account};
 pub use downloads::{download_destination, download_host, download_question};
 pub use notes::{WindowNoteKind, opening_note, remove_data_alert, window_note};
@@ -31,8 +31,9 @@ pub use pages::{
 pub use policy::{
     Asker, FrameOrigin, NavigationDecision, NavigationPolicy, NavigationRequest, NavigationTarget,
     PageRole, ResponseDecision, ResponseFacts, decide_navigation, decide_response, frame_asker,
-    is_site_page, window_address, window_home,
+    window_home,
 };
+pub(crate) use policy::{is_site_page, window_address};
 pub use stores::store_id;
 
 use pitboard_core::host::Os;
