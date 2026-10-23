@@ -10,7 +10,7 @@ use super::testing::{DANA, Hand, Machine, refusal, status, titled};
 use super::windows::{LINK_SCHEME, WEB_SCHEME};
 use super::{DownloadEnd, EarlierWindowRecords, Intent};
 use crate::account_windows::records::{Entry, Records};
-use crate::account_windows::{WindowNoteKind, store_id};
+use crate::account_windows::{WindowNoteKind, stores::derive};
 use crate::present::testing::account;
 use crate::{
     Account, Choice, DownloadState, LinkPicker, OpenWindow, PickerShown, Question, SiteMenu,
@@ -46,14 +46,14 @@ fn without(label: &str) -> Vec<Account> {
         .collect()
 }
 
-/// The store of the claude.ai window of the account `uuid`, as `store_id` writes it.
+/// The store of the claude.ai window of the account `uuid`.
 fn claude(uuid: &str) -> String {
-    store_id((&pitboard_sites::CLAUDE).into(), uuid.into())
+    derive(pitboard_sites::CLAUDE.store_name, uuid)
 }
 
 /// The store of the chatgpt.com window of the account `uuid`.
 fn chatgpt(uuid: &str) -> String {
-    store_id((&pitboard_sites::CHATGPT).into(), uuid.into())
+    derive(pitboard_sites::CHATGPT.store_name, uuid)
 }
 
 /// `link` handed over as this build's Share extension writes it.
