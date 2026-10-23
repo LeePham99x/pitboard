@@ -48,7 +48,8 @@ test("pitboard use work prints what the Quickstart prints", () => {
 
 test("pitboard watch starts with the line the command line writes", () => {
   const source = joined(repo("crates/pitboard/src/watch.rs"));
-  assert.ok(source.includes("limit of the one in use reaches {}%{}. Stop with Ctrl-C."));
+  assert.ok(source.includes("limit of the one in use reaches {}%{}. {}"));
+  assert.ok(source.includes('"Stop with Ctrl-C."'));
   assert.ok(source.includes('", and warms up {} from {}"'));
   const [start, watching] = text(printed(sessions.watch, "macos"));
   assert.match(

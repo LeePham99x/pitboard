@@ -1455,7 +1455,7 @@ impl Pitboard {
     /// A run the schedule started renews the default home, whatever `PITBOARD_HOME` says
     /// ([`schedule::for_its_run`]): the schedule is that home's alone.
     pub fn renew(&self) -> Result<Vec<(Key, Renewal)>> {
-        let ctx = schedule::for_its_run(&self.ctx);
+        let ctx = schedule::for_its_run(&self.ctx, schedule::Job::Renew);
         let permit = gate(&ctx)?;
         let outcomes = switch::renew_due(&ctx, permit, switch::Due::ToStayAlive);
         for (key, outcome) in &outcomes {
@@ -1489,7 +1489,7 @@ impl Pitboard {
         schedule::uninstall(&self.ctx, self.permit()?)
     }
 
-    // Only where it runs the command line this context names, the app's own; `false` otherwise.
+    // Each job that runs the command line this context names, the app's own; `false` where none.
     pub fn schedule_uninstall_for_app(&self) -> Result<bool> {
         schedule::uninstall_for_app(&self.ctx, self.permit()?)
     }
@@ -1499,6 +1499,25 @@ impl Pitboard {
     /// command line this context names. `true` when it did; nothing changes otherwise.
     pub fn schedule_repair(&self) -> Result<bool> {
         schedule::repair(&self.ctx, self.permit()?)
+    }
+
+    /// Whether `pitboard watch` runs in the background from sign-in on, from the system's own
+    /// service manager.
+    pub fn watch_service(&self) -> crate::watch_service::Installed {
+        crate::watch_service::status(&self.ctx)
+    }
+
+    /// Have the system's own service manager run `pitboard watch` at `at` from now on and at
+    /// each sign-in. Opt-in, as `pitboard watch` in a terminal is. Refused with
+    /// `schedule_not_default_home` where this is not the default home, as the renewal
+    /// schedule is.
+    pub fn watch_service_install(&self, at: Threshold) -> Result<schedule::Location> {
+        crate::watch_service::install(&self.ctx, self.permit()?, at)
+    }
+
+    /// Stop it and take it away. `false` when there was nothing installed.
+    pub fn watch_service_uninstall(&self) -> Result<bool> {
+        crate::watch_service::uninstall(&self.ctx, self.permit()?)
     }
 
     /// Take over a Pitboard directory another machine wrote: keep the accounts, drop the
@@ -3816,7 +3835,7 @@ mod tests {
 
     /// Every change a front end can ask for, by its name. `enroll_signed_in` is asked apart,
     /// since it takes a sign-in made before.
-    const CHANGES: [(&str, Change); 17] = [
+    const CHANGES: [(&str, Change); 19] = [
         ("switch_to", |p, m| {
             p.switch_to(&m.key("there").typed()).err()
         }),
@@ -3839,6 +3858,12 @@ mod tests {
             failed(p.schedule_uninstall_for_app())
         }),
         ("schedule_repair", |p, _| failed(p.schedule_repair())),
+        ("watch_service_install", |p, _| {
+            failed(p.watch_service_install(Threshold::DEFAULT))
+        }),
+        ("watch_service_uninstall", |p, _| {
+            failed(p.watch_service_uninstall())
+        }),
         ("adopt", |p, _| failed(p.adopt())),
         ("repair", |p, _| p.repair().err()),
         ("keep_app_file", |p, _| {

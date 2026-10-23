@@ -1,10 +1,11 @@
-//! Daily renewal on Linux: a systemd user timer, which is that system's answer.
+//! Pitboard's jobs on Linux: a systemd user timer for daily renewal and a systemd user service
+//! for the watch service, which is that system's answer.
 
 use super::super::unix::service::{self, Control};
 use crate::context::Context;
 use crate::error::Result;
 use crate::host::Scheduler;
-use crate::schedule::{EVERY_SECONDS, Location, SCHEDULED_RUN};
+use crate::schedule::{EVERY_SECONDS, Job, Location};
 use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,6 +13,8 @@ use std::sync::Arc;
 const SYSTEMCTL: &str = "systemctl";
 const TIMER: &str = "pitboard-renew.timer";
 const SERVICE: &str = "pitboard-renew.service";
+const WATCH: &str = "pitboard-watch.service";
+const RELOAD: [&str; 2] = ["--user", "daemon-reload"];
 
 #[derive(Debug)]
 pub(super) struct Systemd {
@@ -27,44 +30,75 @@ impl Systemd {
         ctx.home().join(".config/systemd/user")
     }
 
-    // The timer is what says the schedule is installed; the service is what it runs.
-    fn timer_file(ctx: &Context) -> PathBuf {
-        Self::units(ctx).join(TIMER)
+    // The service a job runs Pitboard from.
+    fn service(job: Job) -> &'static str {
+        match job {
+            Job::Renew => SERVICE,
+            Job::Watch => WATCH,
+        }
+    }
+
+    // What says the job is installed: renewal's timer, or the watch service itself.
+    fn installed_by(job: Job) -> &'static str {
+        match job {
+            Job::Renew => TIMER,
+            Job::Watch => WATCH,
+        }
+    }
+
+    fn read(ctx: &Context, job: Job) -> Option<String> {
+        if !Self::units(ctx).join(Self::installed_by(job)).is_file() {
+            return None;
+        }
+        std::fs::read_to_string(Self::units(ctx).join(Self::service(job))).ok()
+    }
+
+    // Each `systemctl --user` call that starts the job, in order.
+    fn starts(job: Job) -> &'static [&'static [&'static str]] {
+        match job {
+            Job::Renew => &[&["--user", "enable", "--now", TIMER]],
+            // `restart` starts a stopped service, and one already running with the new unit.
+            Job::Watch => &[&["--user", "enable", WATCH], &["--user", "restart", WATCH]],
+        }
+    }
+
+    fn start(&self, permit: Permit, job: Job) -> Result<()> {
+        Self::starts(job)
+            .iter()
+            .try_for_each(|args| self.control.start(permit, SYSTEMCTL, args))
     }
 }
 
+// sd_booted(3) asks the same: systemd as init makes this directory as the system starts.
+pub(super) fn started_by_systemd(root: &Path) -> bool {
+    root.join("run/systemd/system").is_dir()
+}
+
 impl Scheduler for Systemd {
-    fn location(&self, ctx: &Context) -> Location {
-        Location::File(Self::timer_file(ctx))
+    fn location(&self, ctx: &Context, job: Job) -> Location {
+        Location::File(Self::units(ctx).join(Self::installed_by(job)))
     }
 
-    fn installed(&self, ctx: &Context) -> bool {
-        Self::timer_file(ctx).is_file()
+    fn installed(&self, ctx: &Context, job: Job) -> bool {
+        Self::units(ctx).join(Self::installed_by(job)).is_file()
     }
 
     /// Read from the service's `ExecStart`, as [`unit_file`] writes it, or as Pitboard wrote
-    /// it before its job carried the marker: `<program> renew`.
-    fn program(&self, ctx: &Context) -> Option<PathBuf> {
-        if !self.installed(ctx) {
-            return None;
-        }
-        let body = std::fs::read_to_string(Self::units(ctx).join(SERVICE)).ok()?;
-        let marked = format!(" {}", SCHEDULED_RUN.join(" "));
-        body.lines()
-            .find_map(|line| {
-                let run = line.strip_prefix("ExecStart=")?;
-                run.strip_suffix(marked.as_str())
-                    .or_else(|| run.strip_suffix(" renew"))
-            })
-            .map(PathBuf::from)
+    /// renewal's before its job carried the marker: `<program> renew`.
+    fn program(&self, ctx: &Context, job: Job) -> Option<PathBuf> {
+        command(&Self::read(ctx, job)?, job).map(|(program, _)| program)
+    }
+
+    fn options(&self, ctx: &Context, job: Job) -> Vec<String> {
+        Self::read(ctx, job)
+            .and_then(|body| command(&body, job))
+            .map(|(_, options)| options)
+            .unwrap_or_default()
     }
 
     /// Read from the service's `Environment=` lines, as [`unit_file`] writes them.
-    fn environment(&self, ctx: &Context) -> Vec<(String, String)> {
-        if !self.installed(ctx) {
-            return Vec::new();
-        }
-        std::fs::read_to_string(Self::units(ctx).join(SERVICE))
+    fn environment(&self, ctx: &Context, job: Job) -> Vec<(String, String)> {
+        Self::read(ctx, job)
             .map(|body| given(&body))
             .unwrap_or_default()
     }
@@ -73,82 +107,140 @@ impl Scheduler for Systemd {
         &self,
         ctx: &Context,
         permit: Permit,
+        job: Job,
         program: &Path,
+        options: &[String],
         environment: &[(String, String)],
     ) -> Result<()> {
-        let unit = Self::units(ctx).join(SERVICE);
-        let timer_path = Self::timer_file(ctx);
+        let unit = Self::units(ctx).join(Self::service(job));
+        let timer_path = Self::units(ctx).join(TIMER);
         let before = (
             std::fs::read_to_string(&unit).ok(),
             std::fs::read_to_string(&timer_path).ok(),
         );
-        service::write(permit, &unit, &unit_file(program, environment))?;
-        service::write(permit, &timer_path, &timer())?;
-        let reload = ["--user", "daemon-reload"];
-        let _ = self.control.run(permit, SYSTEMCTL, &reload);
-        let start = ["--user", "enable", "--now", TIMER];
-        if let Err(refused) = self.control.start(permit, SYSTEMCTL, &start) {
-            service::restore(permit, &unit, before.0.as_deref());
-            service::restore(permit, &timer_path, before.1.as_deref());
-            let _ = self.control.run(permit, SYSTEMCTL, &reload);
-            if before.1.is_some() {
-                let _ = self.control.start(permit, SYSTEMCTL, &start);
-            }
-            return Err(refused);
+        service::write(
+            permit,
+            &unit,
+            &unit_file(job, program, options, environment),
+        )?;
+        if job == Job::Renew {
+            service::write(permit, &timer_path, &timer())?;
         }
-        Ok(())
+        let _ = self.control.run(permit, SYSTEMCTL, &RELOAD);
+        let Err(refused) = self.start(permit, job) else {
+            return Ok(());
+        };
+        let was_there = match job {
+            Job::Renew => before.1.is_some(),
+            Job::Watch => before.0.is_some(),
+        };
+        if job == Job::Watch && !was_there {
+            let _ = self
+                .control
+                .run(permit, SYSTEMCTL, &["--user", "disable", WATCH]);
+        }
+        service::restore(permit, &unit, before.0.as_deref());
+        if job == Job::Renew {
+            service::restore(permit, &timer_path, before.1.as_deref());
+        }
+        let _ = self.control.run(permit, SYSTEMCTL, &RELOAD);
+        if was_there {
+            let _ = self.start(permit, job);
+        }
+        Err(refused)
     }
 
-    fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool> {
-        let timer_path = Self::timer_file(ctx);
-        if !timer_path.is_file() {
+    fn remove(&self, ctx: &Context, permit: Permit, job: Job) -> Result<bool> {
+        let installed_by = Self::units(ctx).join(Self::installed_by(job));
+        if !installed_by.is_file() {
             return Ok(false);
         }
-        let _ = self
-            .control
-            .run(permit, SYSTEMCTL, &["--user", "disable", "--now", TIMER]);
-        service::remove(permit, &timer_path)?;
-        service::remove(permit, &Self::units(ctx).join(SERVICE))?;
-        let _ = self
-            .control
-            .run(permit, SYSTEMCTL, &["--user", "daemon-reload"]);
+        let _ = self.control.run(
+            permit,
+            SYSTEMCTL,
+            &["--user", "disable", "--now", Self::installed_by(job)],
+        );
+        service::remove(permit, &installed_by)?;
+        service::remove(permit, &Self::units(ctx).join(Self::service(job)))?;
+        let _ = self.control.run(permit, SYSTEMCTL, &RELOAD);
         Ok(true)
     }
 
     /// Nothing systemd passes is read here, only what a test says the job is: what it
-    /// passes is not to be relied on ([`SCHEDULED_RUN`]), so the service's runs are told
-    /// apart by the marker its `ExecStart` carries, which the command line started with it
-    /// passes on. A repair on Linux stops nothing either way: it rewrites the units and
-    /// enables the timer again, so a run of the schedule is not in its way.
-    fn started_this_process(&self, said: Option<&str>) -> bool {
-        said == Some(SERVICE)
+    /// passes is not to be relied on ([`crate::schedule::SCHEDULED_RUN`]), so the service's
+    /// runs are told apart by the marker its `ExecStart` carries, which the command line
+    /// started with it passes on. A repair on Linux stops nothing either way: it rewrites the
+    /// units and enables the timer again, so a run of the schedule is not in its way.
+    fn started_this_process(&self, job: Job, said: Option<&str>) -> bool {
+        said == Some(Self::service(job))
     }
+}
+
+/// The program and the options a service's `ExecStart` runs, as [`unit_file`] writes it, or
+/// as Pitboard wrote renewal's before its job carried the marker.
+fn command(body: &str, job: Job) -> Option<(PathBuf, Vec<String>)> {
+    let run = body
+        .lines()
+        .find_map(|line| line.strip_prefix("ExecStart="))?;
+    let marked = format!(" {}", job.marked().join(" "));
+    let (program, options) = run.rsplit_once(marked.as_str()).or_else(|| match job {
+        Job::Renew => run.strip_suffix(" renew").map(|program| (program, "")),
+        Job::Watch => None,
+    })?;
+    let options = options.split_whitespace().map(str::to_owned).collect();
+    Some((PathBuf::from(program), options))
 }
 
 /// systemd's own format. `environment` is as for the launchd job: the service runs with
 /// systemd's environment, so what it is given of the installing Pitboard's,
 /// `PITBOARD_NO_ARGV` and the proxy variables, is written in, one `Environment=` line each.
-/// It runs `<program> renew --scheduled`, the marker a run of the schedule is told apart by,
-/// rather than by what systemd passes it. A Pitboard from before the marker rejects the
-/// flag, so after going back to one the timer fails every day until that Pitboard's
-/// `schedule install` rewrites the unit, which the CHANGELOG says.
-fn unit_file(program: &Path, environment: &[(String, String)]) -> String {
-    format!(
-        "[Unit]\n\
-         Description=Renew Pitboard's parked logins\n\
-         Documentation=https://docs.usepitboard.com\n\
-         \n\
-         [Service]\n\
-         Type=oneshot\n\
-         {}\
-         ExecStart={} {}\n",
-        environment
-            .iter()
-            .map(|(name, value)| assignment(name, value))
-            .collect::<String>(),
-        program.display(),
-        SCHEDULED_RUN.join(" ")
-    )
+/// It runs `<program>` with the job's marker, which a run of the job is told apart by rather
+/// than by what systemd passes it, and `options`. A Pitboard from before renewal's marker
+/// rejects the flag, so after going back to one the timer fails every day until that
+/// Pitboard's `schedule install` rewrites the unit, which the CHANGELOG says.
+///
+/// The watch service starts with the person's systemd, at their first sign-in, and again only
+/// where it was killed by a signal such as a crash's (`on-abnormal`): a run that ended itself
+/// on an error it cannot mend would meet the same error again.
+fn unit_file(
+    job: Job,
+    program: &Path,
+    options: &[String],
+    environment: &[(String, String)],
+) -> String {
+    let environment = environment
+        .iter()
+        .map(|(name, value)| assignment(name, value))
+        .collect::<String>();
+    let run = [job.marked().join(" "), options.join(" ")].join(" ");
+    let run = run.trim_end();
+    match job {
+        Job::Renew => format!(
+            "[Unit]\n\
+             Description=Renew Pitboard's parked logins\n\
+             Documentation=https://docs.usepitboard.com\n\
+             \n\
+             [Service]\n\
+             Type=oneshot\n\
+             {environment}\
+             ExecStart={} {run}\n",
+            program.display(),
+        ),
+        Job::Watch => format!(
+            "[Unit]\n\
+             Description=Switch Claude Code before an account runs out, and warm up accounts\n\
+             Documentation=https://docs.usepitboard.com\n\
+             \n\
+             [Service]\n\
+             {environment}\
+             ExecStart={} {run}\n\
+             Restart=on-abnormal\n\
+             \n\
+             [Install]\n\
+             WantedBy=default.target\n",
+            program.display(),
+        ),
+    }
 }
 
 /// The characters an assignment can hold with no quotes around it: none that systemd reads
@@ -263,6 +355,22 @@ mod tests {
     use crate::schedule::{install, installed_program};
     use std::os::unix::fs::PermissionsExt;
 
+    // As sd_booted(3) tells: a container started without systemd as init has no user manager.
+    #[test]
+    fn only_a_system_systemd_started_offers_its_scheduler() {
+        let root = tempfile::tempdir().expect("a scratch root");
+        assert!(!started_by_systemd(root.path()));
+        std::fs::create_dir_all(root.path().join("run/systemd")).expect("made");
+        std::fs::write(root.path().join("run/systemd/system"), "").expect("a file");
+        assert!(
+            !started_by_systemd(root.path()),
+            "a file is not the directory"
+        );
+        std::fs::remove_file(root.path().join("run/systemd/system")).expect("gone");
+        std::fs::create_dir(root.path().join("run/systemd/system")).expect("made");
+        assert!(started_by_systemd(root.path()));
+    }
+
     /// The pairs a service is given, as `install` hands them over.
     fn pairs(given: &[(&str, &str)]) -> Vec<(String, String)> {
         given
@@ -286,7 +394,7 @@ mod tests {
             ("no_proxy", ""),
             ("NO_PROXY", "*.anthropic.com, localhost"),
         ]);
-        let unit = unit_file(program, &handed);
+        let unit = unit_file(Job::Renew, program, &[], &handed);
         assert!(
             unit.contains(
                 "Type=oneshot\n\
@@ -300,12 +408,12 @@ mod tests {
             "{unit}"
         );
         assert_eq!(given(&unit), handed);
-        assert!(!unit_file(program, &[]).contains("Environment="));
-        assert_eq!(given(&unit_file(program, &[])), Vec::new());
+        assert!(!unit_file(Job::Renew, program, &[], &[]).contains("Environment="));
+        assert_eq!(given(&unit_file(Job::Renew, program, &[], &[])), Vec::new());
 
         // A line break in a value never ends the line it is on.
         let broken = pairs(&[("NO_PROXY", "a\nExecStart=/bin/false\u{85}")]);
-        let unit = unit_file(program, &broken);
+        let unit = unit_file(Job::Renew, program, &[], &broken);
         assert!(
             unit.contains("Environment=\"NO_PROXY=a\\x0aExecStart=/bin/false\\u0085\"\n"),
             "{unit}"
@@ -318,11 +426,35 @@ mod tests {
         assert_eq!(given(&unit), broken);
     }
 
+    // From the person's first sign-in, and again only after a signal such as a crash's.
+    #[test]
+    fn the_watch_service_starts_with_the_users_systemd_and_reads_back_its_share() {
+        let at = ["--at".to_string(), "90".to_string()];
+        let unit = unit_file(Job::Watch, Path::new("/usr/local/bin/pitboard"), &at, &[]);
+        assert!(
+            unit.contains(
+                "[Service]\n\
+                 ExecStart=/usr/local/bin/pitboard watch --scheduled --at 90\n\
+                 Restart=on-abnormal\n\
+                 \n\
+                 [Install]\n\
+                 WantedBy=default.target\n"
+            ),
+            "{unit}"
+        );
+        assert!(!unit.contains("Type=oneshot"), "{unit}");
+        assert_eq!(
+            command(&unit, Job::Watch),
+            Some((PathBuf::from("/usr/local/bin/pitboard"), at.to_vec()))
+        );
+        assert_eq!(command(&unit, Job::Renew), None, "not renewal's");
+    }
+
     /// The service runs one verb, with the marker a run of the schedule is told apart by,
     /// rather than by what systemd passes it.
     #[test]
     fn the_unit_runs_one_verb_and_the_timer_survives_a_machine_being_off() {
-        let unit = unit_file(Path::new("/usr/local/bin/pitboard"), &[]);
+        let unit = unit_file(Job::Renew, Path::new("/usr/local/bin/pitboard"), &[], &[]);
         assert!(
             unit.contains("ExecStart=/usr/local/bin/pitboard renew --scheduled\n"),
             "{unit}"
@@ -377,10 +509,10 @@ mod tests {
         let systemd = Systemd::new(Arc::new(service::Pretend {
             refuse_start: Arc::default(),
         }));
-        assert!(systemd.started_this_process(Some(SERVICE)));
-        assert!(!systemd.started_this_process(Some(TIMER)));
+        assert!(systemd.started_this_process(Job::Renew, Some(SERVICE)));
+        assert!(!systemd.started_this_process(Job::Renew, Some(TIMER)));
         assert!(
-            !systemd.started_this_process(None),
+            !systemd.started_this_process(Job::Renew, None),
             "what systemd passes is not read"
         );
         let _ = std::fs::remove_dir_all(&home);

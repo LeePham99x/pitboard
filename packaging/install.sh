@@ -24,9 +24,16 @@ check_arguments() {
   fi
 }
 
+# On Linux root may act in a home it owns, as on a machine whose only user is root.
 check_user() {
   uid=$(id -u)
-  if [ "$uid" = 0 ] || [ -n "${SUDO_UID:-}" ]; then
+  if [ "$system" = Linux ]; then
+    rooted=$(find -H "${home:-/}" -prune -user 0 2>/dev/null) || rooted=
+    if [ -n "${SUDO_UID:-}" ] || { [ "$uid" = 0 ] && [ -z "$rooted" ]; }; then
+      fail "Pitboard changes nothing when it runs with sudo or as root in another user's home," \
+        "so this installs nothing. Run it as yourself."
+    fi
+  elif [ "$uid" = 0 ] || [ -n "${SUDO_UID:-}" ]; then
     fail "Pitboard changes nothing when it runs as root or with sudo, so this installs nothing." \
       "Run it as yourself."
   fi
@@ -152,11 +159,15 @@ place() {
   rm -f "$2" && cp "$1" "$2" && chmod 644 "$2"
 }
 
-path_hint() {
-  case $bin in
-    "$home"/*) shown=\$HOME/${bin#"$home"/} ;;
-    *) shown=$bin ;;
+in_profile() {
+  case $1 in
+    "$home"/*) printf '%s' "\$HOME/${1#"$home"/}" ;;
+    *) printf '%s' "$1" ;;
   esac
+}
+
+path_hint() {
+  shown=$(in_profile "$bin")
   login=${SHELL:-}
   rc=.profile
   after="open another terminal"
@@ -174,6 +185,14 @@ path_hint() {
   fi
   say "$bin is not on your PATH. To put it there, run this, then $after:"
   say "  $line"
+}
+
+# zsh's own fpath holds no folder under the home.
+zsh_hint() {
+  say "zsh loads the completions once ~/.zshrc has these lines." \
+    "Where it runs compinit already, add only the first, before it:"
+  say "  fpath=(\"$(in_profile "$share")/zsh/site-functions\" \$fpath)"
+  say "  autoload -Uz compinit && compinit"
 }
 
 app_note() {
@@ -199,9 +218,9 @@ main() {
   # Otherwise zsh ties the EXIT trap to main, and an exit under set -e can skip it.
   if [ -n "${ZSH_VERSION-}" ]; then setopt POSIX_TRAPS; fi
   check_arguments "$@"
-  check_user
   find_target
   find_places
+  check_user
   find_tools
 
   tmp=
@@ -245,9 +264,14 @@ main() {
     esac
     say "Your shell runs $found first. Remove that copy, or put $bin before it on PATH."
   fi
+  login=${SHELL:-}
+  if [ "${login##*/}" = zsh ]; then
+    zsh_hint
+  fi
   if [ "$system" = Darwin ]; then
     app_note /Applications/Pitboard.app "$home/Applications/Pitboard.app"
   fi
+  say "Next, run \`pitboard\`: it says what is signed in and how to enrol it."
 }
 
 main "$@"

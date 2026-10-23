@@ -120,6 +120,100 @@ fn an_account_at_the_share_is_switched_from_once() {
     assert_eq!(env.live()["claudeAiOauth"]["refreshToken"], "refresh-b");
 }
 
+/// The app with switching on and the watch service can decide at once from one reading, each
+/// in a process of its own. Pitboard's lock lets one switch through; each other decides again
+/// under it, finds the account switched to in use with room, and switches nothing.
+#[test]
+fn front_ends_that_decide_at_once_from_one_reading_make_one_switch() {
+    let env = two_accounts("watch-at-once");
+    env.an_hour_on();
+    env.measured(&[("alpha", 96.0, 20.0), ("beta", 10.0, 30.0)]);
+
+    let deciding: Vec<Child> = (0..4)
+        .map(|_| {
+            env.command(&["watch", "--once", "--json"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("pitboard starts")
+        })
+        .collect();
+    let events: Vec<Value> = deciding
+        .into_iter()
+        .map(|child| {
+            let out = child.wait_with_output().expect("it ends");
+            let printed = String::from_utf8_lossy(&out.stdout);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{printed}{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            envelope(&printed)["data"]["event"].clone()
+        })
+        .collect();
+
+    assert_eq!(
+        events.iter().filter(|event| **event == "switched").count(),
+        1,
+        "{events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .all(|event| *event == "switched" || *event == "idle"),
+        "{events:?}"
+    );
+    assert_eq!(env.live()["claudeAiOauth"]["refreshToken"], "refresh-b");
+    let (out, _, _) = env.run(&["log", "--json"]);
+    let switches: Vec<Value> = envelope(&out)["data"]["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .filter(|entry| entry["verb"] == "auto-switch")
+        .map(|entry| entry["outcome"].clone())
+        .collect();
+    assert_eq!(switches, [json!("ok")]);
+}
+
+/// No build for tests asks the system's own service manager, which is the person's whatever
+/// home a test gives: `watch install` from the default home is refused with
+/// `schedule_refused`, and nothing is left saying the service is on. From another home it is
+/// refused first, with `schedule_not_default_home`.
+#[test]
+fn no_build_for_tests_installs_the_watch_service() {
+    let env = two_accounts("watch-service");
+    let home = env.root.join("home");
+    std::fs::create_dir_all(&home).expect("a home of the test's own");
+    let (home, default) = if cfg!(windows) {
+        let profile = env.root.join("profile");
+        (
+            profile.clone(),
+            profile.join("AppData").join("Local").join("Pitboard"),
+        )
+    } else {
+        (home.clone(), home.join(".pitboard"))
+    };
+    let (home, default) = (home.display().to_string(), default.display().to_string());
+    let given = [("HOME", home.as_str()), ("PITBOARD_HOME", default.as_str())];
+
+    let (out, _, code) = env.run(&["watch", "install", "--json"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        envelope(&out)["error"]["code"],
+        "schedule_not_default_home",
+        "{out}"
+    );
+
+    let (out, _, code) = env.run_with(&["watch", "install", "--json"], &given);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(envelope(&out)["error"]["code"], "schedule_refused", "{out}");
+    let (out, err, code) = env.run_with(&["watch", "status", "--json"], &given);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(envelope(&out)["data"], json!({"installed": false}), "{out}");
+}
+
 #[test]
 fn below_the_share_nothing_moves_and_the_share_is_the_one_asked_for() {
     let env = two_accounts("watch-below");

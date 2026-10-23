@@ -39,12 +39,16 @@ INSTALLED = {
     "share/zsh/site-functions/_pitboard": "completions/pitboard.zsh",
     "share/fish/vendor_completions.d/pitboard.fish": "completions/pitboard.fish",
 }
-TOOLS = ("chmod", "cp", "gzip", "mkdir", "mktemp", "mv", "rm", "tar")
+TOOLS = ("chmod", "cp", "find", "gzip", "mkdir", "mktemp", "mv", "rm", "tar")
 HASHERS = ("sha256sum", "shasum")
 
 ROOT_REFUSAL = (
     "Pitboard changes nothing when it runs as root or with sudo, so this installs nothing. "
     "Run it as yourself."
+)
+LINUX_ROOT_REFUSAL = (
+    "Pitboard changes nothing when it runs with sudo or as root in another user's home, "
+    "so this installs nothing. Run it as yourself."
 )
 WINDOWS = (
     "This script installs Pitboard on macOS and Linux. For Windows, see "
@@ -69,6 +73,13 @@ APP_NOTE = (
     "The Pitboard app carries its own command line, which updates with the app. This one "
     "updates when you run this installer again, so keep it at the app's version."
 )
+ZSH_HINT = (
+    "zsh loads the completions once ~/.zshrc has these lines. Where it runs compinit already, "
+    "add only the first, before it:\n"
+    '  fpath=("{}/zsh/site-functions" $fpath)\n'
+    "  autoload -Uz compinit && compinit\n"
+)
+NEXT = "Next, run `pitboard`: it says what is signed in and how to enrol it.\n"
 
 WORK = None
 SHELLS = []
@@ -628,12 +639,31 @@ class InstallScript(unittest.TestCase):
 
     def test_root_and_sudo_are_refused(self):
         for shell in self.each_shell():
-            self.assertRefused(self.case().run(GOOD.script, shell, uid="0"), ROOT_REFUSAL)
-            result = self.case().run(GOOD.script, shell, env={"SUDO_UID": "501"})
+            for uname, refusal in ((MAC, ROOT_REFUSAL), (LINUX, LINUX_ROOT_REFUSAL)):
+                result = self.case().run(GOOD.script, shell, uname=uname, env={"SUDO_UID": "501"})
+                self.assertRefused(result, refusal)
+            # "/" is root's, as no test's own home is.
+            result = self.case().run(GOOD.script, shell, uname=MAC, uid="0", env={"HOME": "/"})
             self.assertRefused(result, ROOT_REFUSAL)
             # Set but empty, SUDO_UID says nothing, as Pitboard reads it.
             case = self.case()
             self.assertInstalled(case, case.run(GOOD.script, shell, env={"SUDO_UID": ""}))
+
+    # As on a machine whose only user is root; `su` without `-` keeps the caller's HOME.
+    def test_on_linux_root_installs_in_its_own_home_and_not_in_another_users(self):
+        for shell in self.each_shell():
+            case = self.case()
+            bindir = case.home / ".local" / "bin"
+            result = case.run(
+                GOOD.script,
+                shell,
+                uid="0",
+                env={"HOME": "/", "PITBOARD_INSTALL_DIR": str(bindir)},
+            )
+            self.assertInstalled(case, result)
+            if os.geteuid() != 0:
+                result = self.case().run(GOOD.script, shell, uid="0")
+                self.assertRefused(result, LINUX_ROOT_REFUSAL)
 
     def test_an_argument_is_refused(self):
         for shell in self.each_shell():
@@ -924,6 +954,36 @@ class InstallScript(unittest.TestCase):
                         f"then {after}:\n  {line}\n",
                         result.out,
                     )
+
+    def test_a_zsh_login_hears_the_lines_that_load_the_completions(self):
+        logins = (("/bin/zsh", True), ("/usr/bin/bash", False), ("/bin/sh", False))
+        for shell in self.each_shell():
+            for login, told in logins:
+                for prefix in (".local", "opt/pb"):
+                    with self.subTest(login=login, prefix=prefix):
+                        if seen_by(shell, "SHELL", login) != login:
+                            self.skipTest(
+                                f"{shell[0]} changes SHELL={login!r} before the script runs"
+                            )
+                        case = self.case()
+                        env = {"SHELL": login}
+                        if prefix != ".local":
+                            env["PITBOARD_INSTALL_DIR"] = str(case.home / prefix / "bin")
+                        result = case.run(GOOD.script, shell, env=env)
+                        self.assertInstalled(case, result, prefix=prefix)
+                        hint = ZSH_HINT.format(f"$HOME/{prefix}/share")
+                        self.assertEqual(hint in result.out, told, result.out)
+                        self.assertEqual("fpath" in result.out, told, result.out)
+
+    def test_it_ends_with_the_command_to_run_next(self):
+        for shell in self.each_shell():
+            for target in ("x86_64-unknown-linux-musl", "aarch64-apple-darwin"):
+                with self.subTest(target=target):
+                    case = self.case()
+                    result = case.run(GOOD.script, shell, uname=UNAME[target])
+                    self.assertInstalled(case, result, target)
+                    self.assertTrue(result.out.endswith(NEXT), result.out)
+                    self.assertEqual(result.out.count(NEXT), 1)
 
     def test_no_path_hint_when_the_directory_is_on_path(self):
         for shell in self.each_shell():

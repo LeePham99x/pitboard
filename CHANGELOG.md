@@ -7,10 +7,37 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `pitboard watch install` has the system's own service manager run `pitboard watch` from each
+  sign-in on, and `pitboard watch status` and `pitboard watch uninstall` check and remove it.
+- `pitboard doctor` reports the watch service, and `pitboard uninstall` stops and removes it.
+- `pitboard watch --help` and `pitboard watch install` say that Anthropic's terms may cover
+  automatic switching and warm-ups, and link to what they say.
+- The install script ends with the command to run next and, where your login shell is zsh, the
+  lines that make zsh load Pitboard's completions.
+
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
+- On Linux, Pitboard and its install script work as root in a home root owns, as on a server
+  whose only user is root, and refuse only under `sudo` or as root in another user's home.
+- `pitboard --help` wraps to the terminal, lists the commands in the order you use them and
+  ends with three examples.
+- Where a login file behind the keychain or Credential Manager keeps running Claude Code
+  sessions on their account, `pitboard use` says that `pitboard stow` puts it away, instead of
+  sending you to `pitboard doctor`.
+
+### Fixed
+
+- On a Linux that systemd did not start, as in many containers, `pitboard schedule install`
+  refuses with `schedule_unsupported` and says so, instead of a `home_unwritable` error that
+  named `systemctl`.
+- Shell completions leave out `pitboard renew --scheduled`, which only the daily renewal
+  schedule runs.
+- On Windows, `pitboard doctor` says where Codex keeps its home among Codex's checks, instead
+  of under a second Codex heading above Pitboard's own.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

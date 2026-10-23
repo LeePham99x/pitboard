@@ -657,7 +657,10 @@ mod tests {
         let job = match OS {
             Os::MacOs => "com.datlechin.pitboard.renew".to_string(),
             Os::Linux => "pitboard-renew.service".to_string(),
-            Os::Windows => crate::host::task::path(&crate::host::user::sid().expect("a SID")),
+            Os::Windows => crate::host::task::path(
+                crate::schedule::Job::Renew,
+                &crate::host::user::sid().expect("a SID"),
+            ),
         };
         let job = job.as_str();
         type Told = fn(Context, &str) -> Context;
@@ -763,7 +766,7 @@ mod tests {
         let ctx = Context::new(own)
             .with_memory_stores(MemoryHost::new())
             .started_by_the_schedule();
-        let _ = crate::schedule::for_its_run(&ctx);
+        let _ = crate::schedule::for_its_run(&ctx, crate::schedule::Job::Renew);
     }
 
     /// The failure this module's comments describe and no test could reach: Anthropic has

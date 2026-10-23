@@ -90,12 +90,13 @@ impl Host for Linux {
         None
     }
 
+    // A container started without systemd has no user manager to ask.
     fn scheduler(&self) -> Option<&dyn Scheduler> {
-        Some(&self.scheduler)
+        systemd::started_by_systemd(Path::new("/")).then_some(&self.scheduler as &dyn Scheduler)
     }
 
     fn elevation(&self, ctx: &Context) -> Elevation {
-        user::elevation(ctx.sudo())
+        user::linux_elevation(ctx.sudo(), ctx.home())
     }
 
     fn floor(&self) -> Floor {

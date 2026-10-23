@@ -1,9 +1,8 @@
 use anstream::{ColorChoice, eprint, eprintln, print, println};
 use anstyle::{AnsiColor, Style};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
-use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::error::Error;
 use pitboard_core::provider::{Adoption, SignsIn};
 use pitboard_core::schedule::Location;
@@ -29,10 +28,16 @@ const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
 #[derive(Parser)]
-#[command(name = "pitboard", bin_name = "pitboard", version, about = ABOUT)]
+#[command(
+    name = "pitboard",
+    bin_name = "pitboard",
+    version,
+    about = ABOUT,
+    max_term_width = 100,
+    after_help = examples()
+)]
 struct Cli {
-    /// Machine-readable output: the same versioned JSON envelope for every command,
-    /// whether it succeeds or fails
+    /// Print JSON instead of text
     #[arg(long, global = true)]
     json: bool,
 
@@ -49,24 +54,33 @@ const ABOUT: &str = if cfg!(windows) {
      out, and see what each Claude Code and Codex account has left"
 };
 
+// Styled as clap styles `Commands:` and the commands under it.
+fn examples() -> String {
+    let styles = clap::builder::Styles::styled();
+    let (heading, literal) = (styles.get_header(), styles.get_literal());
+    let mut said = format!("{heading}Examples:{heading:#}");
+    for (typed, does) in [
+        (
+            "pitboard enroll personal",
+            "Add the account Claude Code is signed in to",
+        ),
+        (
+            "pitboard enroll work --sign-in",
+            "Sign in to another account and add it",
+        ),
+        ("pitboard use work", "Switch Claude Code to work"),
+    ] {
+        said.push_str(&format!("\n  {literal}{typed:<30}{literal:#}  {does}"));
+    }
+    said
+}
+
 const LABEL_TO_ENROLL: &str = if cfg!(windows) {
     "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
      account; a bare name means Claude Code"
 } else {
     "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
      account, `desktop/work` a Claude Desktop one; a bare name means Claude Code"
-};
-
-const SIGN_IN: &str = if cfg!(windows) {
-    "Sign in through the tool's own sign-in, without signing out of the account in use: for \
-     the account in use, this puts its new login in use, and for another enrolled label, it \
-     renews its parked login"
-} else {
-    "For Claude Code and Codex, sign in through the tool's own sign-in, without signing out of \
-     the account in use: for the account in use, this puts its new login in use, and for \
-     another enrolled label, it renews its parked login. For Claude Desktop, Pitboard parks the \
-     account in use, leaving Claude signed out, waits while you sign in inside Claude and quit \
-     it, then puts that login in use under the label"
 };
 
 const LABEL_TO_USE: &str = if cfg!(windows) {
@@ -81,14 +95,6 @@ const STOW: &str = if cfg!(windows) {
     "Put away the login Claude Code left in a file behind the keychain, then delete the file"
 };
 
-// On Windows it is under the profile whatever `LOCALAPPDATA` says (`default_pitboard_home`).
-const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
-    "Renew as the daily renewal schedule does: %USERPROFILE%\\AppData\\Local\\Pitboard, \
-     whatever PITBOARD_HOME says"
-} else {
-    "Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says"
-};
-
 #[derive(Subcommand)]
 enum Command {
     /// What is signed in, and how much each Claude Code and Codex account has left (the default)
@@ -100,13 +106,6 @@ enum Command {
         #[arg(long, conflicts_with = "offline")]
         fresh: bool,
     },
-    /// Add an account: the one signed in now, or with --sign-in, another one
-    Enroll {
-        #[arg(value_parser = label_to_enroll, help = LABEL_TO_ENROLL)]
-        label: String,
-        #[arg(long, help = SIGN_IN)]
-        sign_in: bool,
-    },
     /// Switch a tool to an enrolled account
     Use {
         #[arg(help = LABEL_TO_USE)]
@@ -116,6 +115,22 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
+    /// Add an account: the one signed in now, or with --sign-in, another one
+    Enroll {
+        #[arg(value_parser = label_to_enroll, help = LABEL_TO_ENROLL)]
+        label: String,
+        /// Sign in through the tool's own sign-in, without signing out of the account in use
+        #[arg(long)]
+        sign_in: bool,
+    },
+    /// Change the label an account is enrolled under
+    Rename {
+        /// The label it has now
+        from: String,
+        /// The label it should have
+        #[arg(value_parser = new_label)]
+        to: String,
+    },
     /// Drop an account and its parked login
     Forget {
         /// The label to drop
@@ -124,26 +139,35 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    #[command(about = STOW)]
-    Stow {
-        /// Do not ask first; needed without a terminal or with `--json`
-        #[arg(short = 'y', long)]
-        yes: bool,
+    /// Switch Claude Code before the account in use runs out, and warm up accounts
+    #[command(
+        after_help = pitboard_core::words::IS_THIS_ALLOWED,
+        args_conflicts_with_subcommands = true
+    )]
+    Watch {
+        #[command(flatten)]
+        share: watch::Share,
+        /// Decide once whether to switch, from the usage Pitboard last measured, asking no
+        /// service for usage, and stop. Warms nothing up
+        #[arg(long)]
+        once: bool,
+        // Given by `--scheduled`, as `renew`'s is.
+        #[arg(skip)]
+        scheduled: bool,
+        #[command(subcommand)]
+        what: Option<watch::WatchCommand>,
     },
-    /// Give up on an interrupted switch that cannot be finished, keeping every login
-    Abandon,
-    /// Ask the credential store what parked logins are here, and account for every one
-    Repair,
-    /// Take over a Pitboard directory another computer wrote, keeping the accounts
-    Adopt,
+    /// Start an account's five-hour period early, so it resets sooner
+    Warm {
+        #[command(subcommand)]
+        what: Option<warm::WarmCommand>,
+    },
+    /// One line for Claude Code's status bar; reads its session JSON on stdin
+    Statusline,
     /// Renew every parked login that is due, and nothing else
     Renew {
-        // The marker the daily renewal schedule's job runs this with on Linux, where what
-        // systemd passes a job is not to be relied on. Hidden from help and the man page,
-        // since a person has no reason to type it, but clap_complete writes hidden
-        // arguments into every shell's completions, so `RENEWS_THE_DEFAULT` is what they
-        // show, as written: it has no Markdown for that reason.
-        #[arg(long, hide = true, help = RENEWS_THE_DEFAULT)]
+        // Given by `--scheduled`, which only the parser knows (`with_the_jobs_markers`).
+        #[arg(skip)]
         scheduled: bool,
     },
     /// Keep parked logins alive without running anything yourself
@@ -157,48 +181,27 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 20)]
         lines: usize,
     },
-    /// Delete every parked login this Pitboard wrote, the daily renewal schedule and
-    /// Pitboard's own files
+    /// Check that what Pitboard relies on still holds on this machine
+    Doctor,
+    /// Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch
+    /// service and Pitboard's own files
     Uninstall {
         /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    /// Change the label an account is enrolled under
-    Rename {
-        /// The label it has now
-        from: String,
-        /// The label it should have
-        #[arg(value_parser = new_label)]
-        to: String,
+    #[command(about = STOW)]
+    Stow {
+        /// Do not ask first; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
-    /// Check that what Pitboard relies on still holds on this machine
-    Doctor,
-    /// One line for Claude Code's status bar; reads its session JSON on stdin
-    Statusline,
-    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
-    /// while the app or `pitboard watch` runs
-    Warm {
-        #[command(subcommand)]
-        what: Option<warm::WarmCommand>,
-    },
-    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
-    /// up the accounts `pitboard warm on` turned on, for as long as this runs
-    Watch {
-        /// Switch once a limit of the account in use reaches this share, from 50 to 99
-        #[arg(
-            long,
-            value_name = "PERCENT",
-            default_value_t = Threshold::DEFAULT.percent(),
-            value_parser = clap::value_parser!(u8)
-                .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
-        )]
-        at: u8,
-        /// Decide once whether to switch, from the usage Pitboard last measured, asking no
-        /// service for usage, and stop. Warms nothing up
-        #[arg(long)]
-        once: bool,
-    },
+    /// Ask the credential store what parked logins are here, and account for every one
+    Repair,
+    /// Give up on an interrupted switch that cannot be finished, keeping every login
+    Abandon,
+    /// Take over a Pitboard directory another computer wrote, keeping the accounts
+    Adopt,
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
     /// Print the man page
@@ -679,7 +682,7 @@ fn followed(
         Adoption::AtRenewal { file } => (
             None,
             format!(
-                "{} sessions already running {}: {} is there. `pitboard doctor` says more.\n",
+                "{} sessions already running {}: {} is there. `pitboard stow` puts it away.\n",
                 provider.name(),
                 pitboard_core::words::kept_until_renewed(),
                 file.display()
@@ -853,7 +856,7 @@ fn renew(pitboard: &Pitboard) -> Report {
 }
 
 // Where it is, under the key that says what it is: `path` for a file, `task` for Task Scheduler.
-fn located(installed: Value, location: &Location, rest: Value) -> Value {
+pub(crate) fn located(installed: Value, location: &Location, rest: Value) -> Value {
     let mut said = serde_json::Map::new();
     said.insert("installed".into(), installed);
     match location {
@@ -1115,9 +1118,9 @@ fn log(pitboard: &Pitboard, lines: usize) -> Report {
 
 fn uninstall_question(pitboard: &Pitboard) -> String {
     format!(
-        "Delete every parked login this Pitboard wrote, the daily renewal schedule and {}? \
-         Each tool stays signed in to the account in use; the others need signing in again. \
-         [y/N] ",
+        "Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch \
+         service and {}? Each tool stays signed in to the account in use; the others need \
+         signing in again. [y/N] ",
         pitboard.shown(&pitboard.directory())
     )
 }
@@ -1134,6 +1137,9 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                 "Deleted {} folder(s) set aside.\n",
                 removed.set_aside
             ));
+        }
+        if removed.watch_service_removed {
+            human.push_str("Stopped the watch service.\n");
         }
         if removed.schedule_removed {
             human.push_str("Turned off the daily renewal schedule.\n");
@@ -1186,6 +1192,7 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                 "home_kept_by": kept_by,
                 "warming_up": removed.warming_up,
                 "schedule_removed": removed.schedule_removed,
+                "watch_service_removed": removed.watch_service_removed,
                 "set_aside_removed": removed.set_aside,
             }),
             human,
@@ -1252,10 +1259,39 @@ fn agreed(question: &str) -> bool {
     matches!(answer.trim(), "y" | "Y" | "yes")
 }
 
+// `--scheduled`, the marker each job runs `renew` or `watch` with. Only the parser is given it:
+// clap_complete writes even a hidden argument into every shell's completions.
+fn with_the_jobs_markers(cli: clap::Command) -> clap::Command {
+    let marker = clap::Arg::new("scheduled")
+        .long("scheduled")
+        .action(clap::ArgAction::SetTrue)
+        .hide(true);
+    cli.mut_subcommand("renew", |renew| renew.arg(marker.clone()))
+        .mut_subcommand("watch", |watch| watch.arg(marker.conflicts_with("once")))
+}
+
+fn command_line<I, T>(args: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let mut matches = with_the_jobs_markers(Cli::command()).try_get_matches_from(args)?;
+    let marked = matches
+        .subcommand()
+        .is_some_and(|(_, given)| matches!(given.try_get_one::<bool>("scheduled"), Ok(Some(true))));
+    let mut cli =
+        Cli::from_arg_matches_mut(&mut matches).map_err(|e| e.format(&mut Cli::command()))?;
+    if let Some(Command::Renew { scheduled } | Command::Watch { scheduled, .. }) = &mut cli.command
+    {
+        *scheduled = marked;
+    }
+    Ok(cli)
+}
+
 /// A usage error keeps clap's own rendering, unless the caller asked for JSON, which is
 /// promised for every outcome.
 fn parse() -> Result<Cli, ExitCode> {
-    Cli::try_parse().map_err(|e| {
+    command_line(std::env::args_os()).map_err(|e| {
         let wants_json = std::env::args_os().any(|arg| arg == "--json");
         if wants_json && e.use_stderr() {
             let message = e.render().to_string().trim().to_string();
@@ -1286,9 +1322,12 @@ fn main() -> ExitCode {
         return emit(&Report::failed(Some(command.name()), refused), cli.json);
     }
     let ctx = Context::from_env();
-    // The schedule's job on Linux says so by the marker, rather than by what systemd passes.
+    // A job's run says so by its marker, rather than by what the system passes it.
     let ctx = match command {
         Command::Renew { scheduled: true } => ctx.started_by_the_schedule(),
+        Command::Watch {
+            scheduled: true, ..
+        } => ctx.started_by_the_watch_service(),
         _ => ctx,
     };
     let pitboard = Pitboard::new(ctx);
@@ -1306,14 +1345,17 @@ fn main() -> ExitCode {
         Command::Status { offline, fresh } => status(&pitboard, offline, fresh),
         Command::Doctor => doctor(&pitboard),
         Command::Statusline => statusline(&pitboard),
-        Command::Watch { at, once } => {
-            // The parser takes only a share there can be.
-            let threshold = Threshold::new(at).unwrap_or_default();
-            if !once {
-                return watch::run(&pitboard, threshold, cli.json);
-            }
-            watch::once(&pitboard, threshold)
-        }
+        Command::Watch {
+            what: Some(ref what),
+            ..
+        } => watch::service(&pitboard, what),
+        Command::Watch {
+            share,
+            once: false,
+            scheduled,
+            ..
+        } => return watch::run(&pitboard, share.threshold(), scheduled, cli.json),
+        Command::Watch { share, .. } => watch::once(&pitboard, share.threshold()),
         Command::Enroll {
             label,
             sign_in: true,
@@ -1506,7 +1548,7 @@ mod tests {
             follows,
             "Claude Code sessions already running keep the account they are on until their \
              login is next renewed, or until they are started again: \
-             /Users/x/.claude/.credentials.json is there. `pitboard doctor` says more.\n"
+             /Users/x/.claude/.credentials.json is there. `pitboard stow` puts it away.\n"
         );
         assert_eq!(
             adoption,
@@ -1740,8 +1782,8 @@ mod tests {
         let asked = uninstall_question(&pitboard);
         assert!(
             asked.starts_with(&format!(
-                "Delete every parked login this Pitboard wrote, the daily renewal schedule and \
-                 {named}? "
+                "Delete every parked login this Pitboard wrote, the daily renewal schedule, the \
+                 watch service and {named}? "
             )),
             "{asked}"
         );
@@ -1807,84 +1849,74 @@ mod tests {
         }
     }
 
-    /// What the schedule's job runs, as the core writes it into the systemd unit, is a
-    /// command line this one takes, and the marker in it is said only where it is given.
-    /// It is hidden: a person has no reason to type it.
+    // What each job runs, as the core writes it into the job, is a command line this one takes.
     #[test]
-    fn the_schedules_marker_is_a_run_of_renew_this_command_line_takes() {
-        let scheduled = std::iter::once("pitboard").chain(pitboard_core::schedule::SCHEDULED_RUN);
+    fn each_jobs_marker_is_a_run_this_command_line_takes() {
+        let run = |args: &[&str]| {
+            command_line(std::iter::once("pitboard").chain(args.iter().copied()))
+                .expect("parsed")
+                .command
+        };
         assert!(matches!(
-            Cli::try_parse_from(scheduled).expect("parsed").command,
+            run(&pitboard_core::schedule::SCHEDULED_RUN),
             Some(Command::Renew { scheduled: true })
         ));
         assert!(matches!(
-            Cli::try_parse_from(["pitboard", "renew"])
-                .expect("parsed")
-                .command,
+            run(&["renew"]),
             Some(Command::Renew { scheduled: false })
         ));
-        let help = Cli::command()
-            .find_subcommand_mut("renew")
-            .expect("renew")
-            .render_long_help()
-            .to_string();
-        assert!(!help.contains("--scheduled"), "{help}");
+        let watched = [&pitboard_core::schedule::WATCH_RUN[..], &["--at", "90"]].concat();
+        assert!(matches!(
+            run(&watched),
+            Some(Command::Watch {
+                scheduled: true,
+                once: false,
+                what: None,
+                ..
+            })
+        ));
+        assert!(matches!(
+            run(&["watch"]),
+            Some(Command::Watch {
+                scheduled: false,
+                ..
+            })
+        ));
+        assert!(
+            command_line(["pitboard", "watch", "--scheduled", "--once"]).is_err(),
+            "a run of the service watches until it is stopped"
+        );
+        assert!(command_line(["pitboard", "status", "--scheduled"]).is_err());
     }
 
-    /// The shells' completions offer `--scheduled`, as they offer the hidden `manpage`:
-    /// clap_complete writes hidden arguments and commands into every shell's file. Where a
-    /// shell shows a description, it is the marker's help, which says what such a run
-    /// renews, since that is all a person who picks it gets, in plain text, since a shell
-    /// shows Markdown as written.
     #[test]
-    fn the_completions_offer_the_schedules_marker_and_say_what_it_renews() {
+    fn the_jobs_markers_are_in_no_help_or_completions() {
         use clap_complete::Shell;
-        let said = "Renew as the daily renewal schedule does";
-        for (shell, offered, described) in [
-            (Shell::Bash, "--scheduled", false),
-            (Shell::Zsh, "'--scheduled[", true),
-            (Shell::Fish, "-l scheduled", true),
+        for shell in [
+            Shell::Bash,
+            Shell::Zsh,
+            Shell::Fish,
+            Shell::Elvish,
+            Shell::PowerShell,
         ] {
             let mut out = Vec::new();
             clap_complete::generate(shell, &mut Cli::command(), "pitboard", &mut out);
             let file = String::from_utf8(out).expect("text");
-            let line = file
-                .lines()
-                .find(|line| line.contains(offered))
-                .unwrap_or_else(|| panic!("{shell}: {file}"));
-            assert_eq!(line.contains(said), described, "{shell}: {line}");
-            assert!(
-                !line.contains('`'),
-                "{shell} shows Markdown as written: {line}"
-            );
+            assert!(!file.contains("scheduled"), "{shell}: {file}");
             assert!(
                 file.contains("manpage"),
                 "{shell}: as the hidden command is"
             );
-            assert!(!file.contains("systemd"), "{shell}: {file}");
         }
-    }
-
-    #[test]
-    fn the_schedules_marker_names_the_default_folder_as_each_system_does() {
-        let renew = Cli::command();
-        let scheduled = renew
-            .find_subcommand("renew")
-            .and_then(|renew| {
-                renew
-                    .get_arguments()
-                    .find(|arg| arg.get_id() == "scheduled")
-            })
-            .and_then(|arg| arg.get_help())
-            .map(ToString::to_string)
-            .expect("its help");
-        let folder = if cfg!(windows) {
-            r"%USERPROFILE%\AppData\Local\Pitboard"
-        } else {
-            "~/.pitboard"
-        };
-        assert!(scheduled.contains(folder), "{scheduled}");
-        assert!(!scheduled.contains("LOCALAPPDATA"), "{scheduled}");
+        for job in ["renew", "watch"] {
+            let mut cli = with_the_jobs_markers(Cli::command());
+            let help = cli
+                .find_subcommand_mut(job)
+                .expect(job)
+                .render_long_help()
+                .to_string();
+            assert!(!help.contains("scheduled"), "{help}");
+        }
     }
 
     // A file under `path`, as before; Task Scheduler's task under `task`, with no `path`.
@@ -1982,7 +2014,7 @@ mod tests {
     #[test]
     fn every_command_but_a_generated_file_asks_whether_this_build_may_run() {
         let asks = |args: &[&str]| {
-            let cli = Cli::try_parse_from(std::iter::once("pitboard").chain(args.iter().copied()))
+            let cli = command_line(std::iter::once("pitboard").chain(args.iter().copied()))
                 .unwrap_or_else(|e| panic!("{args:?}: {e}"));
             cli.command
                 .unwrap_or(Command::Status {
@@ -2019,8 +2051,13 @@ mod tests {
         assert!(!asks(&["manpage"]));
     }
 
-    // The long help of every command a person can ask about, each under the way it is typed.
+    // The long help of every command a person can ask about, each under the way it is typed,
+    // in a terminal as wide as Pitboard wraps it at.
     fn every_help() -> String {
+        every_help_at(100)
+    }
+
+    fn every_help_at(columns: usize) -> String {
         fn each(command: &mut clap::Command, typed: &str, said: &mut String) {
             said.push_str(&format!("== {typed}\n{}\n", command.render_long_help()));
             let names: Vec<String> = command
@@ -2033,11 +2070,21 @@ mod tests {
                 each(sub, &format!("{typed} {name}"), said);
             }
         }
-        let mut cli = Cli::command();
+        let mut cli = Cli::command().term_width(columns);
         cli.build();
         let mut said = String::new();
         each(&mut cli, "pitboard", &mut said);
         said
+    }
+
+    #[test]
+    fn every_help_fits_an_80_column_terminal() {
+        let every = every_help_at(80);
+        let over: Vec<&str> = every
+            .lines()
+            .filter(|line| ui::columns(line) > 80)
+            .collect();
+        assert!(over.is_empty(), "{over:#?}");
     }
 
     #[test]
@@ -2055,10 +2102,8 @@ mod tests {
         assert!(!every.contains("keychain"), "{every}");
         let read = every.split_whitespace().collect::<Vec<_>>().join(" ");
         for said in [
-            "warm Start the five-hour period of the accounts you choose as soon as the last one \
-             resets, while the app or `pitboard watch` runs",
-            "watch Switch Claude Code to another of your accounts before the one in use runs out, \
-             and warm up the accounts `pitboard warm on` turned on, for as long as this runs",
+            "watch Switch Claude Code before the account in use runs out, and warm up accounts",
+            "warm Start an account's five-hour period early, so it resets sooner",
             "now Start an account's five-hour period now, whatever the span, through one short \
              request Claude Code makes with that account's login",
             "stow Put away the login Claude Code left in a file behind Credential Manager, then \
@@ -2090,14 +2135,11 @@ mod tests {
             let every = every_help();
             assert!(!every.contains("Desktop"), "{every}");
             assert!(!every.contains("desktop/"), "{every}");
-            for said in [
-                "Sign in through the tool's own sign-in, without signing out of the account in \
-                 use: for the account in use, this puts its new login in use, and for another \
-                 enrolled label, it renews its parked login",
-                "`codex/work` names a Codex account; a bare name means Claude Code",
-            ] {
-                assert!(enroll.contains(said), "{said}: {enroll}");
-            }
+            assert!(
+                enroll
+                    .contains("`codex/work` names a Codex account; a bare name means Claude Code"),
+                "{enroll}"
+            );
             assert!(help(Some("use")).contains("such as `work` or `codex/work`"));
             assert!(help(None).contains(
                 "Switch Claude Code and Codex between your own accounts without signing out, \
@@ -2105,18 +2147,13 @@ mod tests {
             ));
             return;
         }
-        for said in [
-            "For Claude Code and Codex, sign in through the tool's own sign-in, without signing \
-             out of the account in use: for the account in use, this puts its new login in use, \
-             and for another enrolled label, it renews its parked login.",
-            "For Claude Desktop, Pitboard parks the account in use, leaving Claude signed out, \
-             waits while you sign in inside Claude and quit it, then puts that login in use \
-             under the label",
-            "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
-             name means Claude Code",
-        ] {
-            assert!(enroll.contains(said), "{said}: {enroll}");
-        }
+        assert!(
+            enroll.contains(
+                "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
+                 name means Claude Code"
+            ),
+            "{enroll}"
+        );
         assert!(help(Some("use")).contains("`desktop/work`"));
         assert!(help(None).contains(
             "Switch Claude Code, Codex and Claude Desktop between your own accounts without \

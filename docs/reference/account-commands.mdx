@@ -245,7 +245,7 @@ After a switch, `use` prints `Switched to work; personal is parked.` and a secon
 | Tool | Second line |
 | --- | --- |
 | Claude Code | `Claude Code sessions already running follow within 33 seconds.` |
-| Claude Code, with a login file behind the keychain or Credential Manager | ``Claude Code sessions already running keep the account they are on until their login is next renewed, or until they are started again: /Users/you/.claude/.credentials.json is there. `pitboard doctor` says more.`` |
+| Claude Code, with a login file behind the keychain or Credential Manager | ``Claude Code sessions already running keep the account they are on until their login is next renewed, or until they are started again: /Users/you/.claude/.credentials.json is there. `pitboard stow` puts it away.`` |
 | Codex | ``Restart any running `codex` for this to take effect. It will not pick the switch up on its own.`` |
 | Claude Desktop | `Claude opens signed in to it.` |
 
@@ -354,7 +354,7 @@ Renamed wrong to right (me@company.com).
 ## `warm`
 
 ```text
-Usage: pitboard warm [COMMAND]
+Usage: pitboard warm [OPTIONS] [COMMAND]
 ```
 
 | Form | What it does |
@@ -391,6 +391,7 @@ Warmed up personal: its 5-hour period runs until 22:50.
 
 ```text
 Usage: pitboard watch [OPTIONS]
+       pitboard watch <COMMAND>
 ```
 
 | Option | Description |
@@ -400,7 +401,7 @@ Usage: pitboard watch [OPTIONS]
 
 `watch` switches Claude Code only. [Switch before an account runs out](/guides/automatic-switching) gives the rules it follows. It also warms up the accounts [`warm on`](#warm) turned on, as [Warm up accounts](/guides/warm-up) describes.
 
-It runs in the foreground until you press Control-C, whether the app's **Switch Claude Code automatically** setting is on or off. Nothing installs it, and it starts nothing that outlives it.
+It runs in the foreground until you press Control-C, whether the app's **Switch Claude Code automatically** setting is on or off. [The watch service](#the-watch-service) runs it in the background instead.
 
 While it runs, `watch`:
 
@@ -450,3 +451,36 @@ pitboard watch --once
 ```text
 Watching work: 62% of its 5-hour limit, as of 14:00.
 ```
+
+### The watch service
+
+| Command | What it does | Output begins |
+| --- | --- | --- |
+| `install` | Hands `pitboard watch` to the system's own service manager and starts it, with its own `--at`, replacing one already there. | `Pitboard watches Claude Code in the background from now on, and at each sign-in.`, then where the job is |
+| `status` | Checks that the job is there, not whether it runs. | `Pitboard watches Claude Code in the background` or `Nothing watches Claude Code in the background here.` |
+| `uninstall` | Stops the job and deletes what `install` wrote. | `Stopped watching Claude Code in the background.` or `Nothing was watching Claude Code in the background.` |
+
+The service starts at each sign-in and runs `watch` at the share `install` was given. Its first line ends `` Stop it with `pitboard watch uninstall`. `` in place of `Stop with Ctrl-C.` On Linux, its lines go to your user's journal. On macOS and Windows, nothing keeps them. [`pitboard log`](/reference/maintenance-commands#log) records each switch and warm-up either way. [Watch service](/reference/files#watch-service) lists where each system keeps it.
+
+Where `watch` ends on an error, the service starts again at your next sign-in, or with `pitboard watch install`. On macOS and Linux, the system also starts it again after a crash.
+
+`install` follows the rules of [`schedule install`](/reference/maintenance-commands#schedule):
+
+- It watches the accounts in Pitboard's own directory, whatever `PITBOARD_HOME` it is given. While `PITBOARD_HOME` names another directory, `install` refuses with `schedule_not_default_home`.
+- It gives the service each proxy variable it was started with. Run `install` again after your proxy changes.
+- Where Pitboard may change nothing, it refuses with `elevated` or `system_too_old`.
+
+The app and the service can both switch Claude Code: as with `pitboard watch` in a terminal, they never make two switches from one reading.
+
+```sh
+pitboard watch install --at 90
+```
+
+```text
+Pitboard watches Claude Code in the background from now on, and at each sign-in. It switches once a limit of the account in use reaches 90%, and warms up the accounts `pitboard warm on` turned on.
+/Users/me/Library/LaunchAgents/com.datlechin.pitboard.watch.plist
+
+Anthropic's terms may cover automatic switching and warm-ups: https://docs.usepitboard.com/concepts/limits#is-this-allowed
+```
+
+On Windows, the second line is the task's path, such as `\Pitboard\Watch S-1-5-21-…`.

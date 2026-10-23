@@ -107,6 +107,8 @@ pub(crate) struct Facts {
     pub desktop: Option<DesktopFacts>,
     /// The daily renewal schedule, where this home has one installed.
     pub(crate) schedule: Option<ScheduleFact>,
+    // The watch service, where this home has one installed.
+    pub(crate) watch_service: Option<WatchServiceFact>,
     /// How Pitboard's requests leave this machine, as its environment says.
     pub(crate) network: NetworkFact,
     /// Whether this is the app's doctor, whose environment is the one the system started the
@@ -202,6 +204,16 @@ pub(crate) struct ScheduleFact {
     /// Whether its runs send requests another way than this run does: through another proxy
     /// or none, with another user name or password, or with other hosts exempt.
     pub(crate) network_differs: bool,
+}
+
+// The watch service as it is installed, read from what Pitboard wrote.
+pub(crate) struct WatchServiceFact {
+    pub(crate) location: crate::schedule::Location,
+    pub(crate) program: Option<PathBuf>,
+    pub(crate) program_found: bool,
+    pub(crate) at: Option<crate::duty::autoswitch::Threshold>,
+    // Task Scheduler's word on its runs and its settings; none from launchd or systemd.
+    pub(crate) task: Option<Task>,
 }
 
 /// What is read about Codex CLI on this machine.
@@ -549,6 +561,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         interrupted: switch::interrupted(ctx),
         service,
         schedule: schedule_fact(ctx),
+        watch_service: watch_service_fact(ctx),
         network: network_fact(&ctx.proxy),
         in_the_app: ctx.caller == "app",
         elevation: ctx.host().elevation(ctx),
@@ -655,9 +668,28 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
         location,
-        task: crate::schedule::task(ctx),
+        task: crate::schedule::task(ctx, crate::schedule::Job::Renew),
         network: network_fact(&proxies),
         network_differs: !proxies.same_way(&ctx.proxy),
+    })
+}
+
+// The watch service, where this home has one.
+fn watch_service_fact(ctx: &Context) -> Option<WatchServiceFact> {
+    if !crate::schedule::serves(ctx) {
+        return None;
+    }
+    let crate::watch_service::Installed::Yes { location, at } = crate::watch_service::status(ctx)
+    else {
+        return None;
+    };
+    let program = crate::watch_service::installed_program(ctx);
+    Some(WatchServiceFact {
+        program_found: program.as_deref().is_some_and(std::path::Path::is_file),
+        program,
+        location,
+        at,
+        task: crate::watch_service::task(ctx),
     })
 }
 
@@ -949,24 +981,6 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
             ),
         ));
     }
-    let codex = |folder: &std::path::Path| folder.join(".codex");
-    if let Some(profile) = windows
-        .profile
-        .as_deref()
-        .filter(|_| !windows.codex_home_set)
-        && !same(&codex(profile), &codex(&windows.home))
-    {
-        checks.push(warn(
-            "codex_installer_home",
-            "Codex's home",
-            format!(
-                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
-                codex(profile).display(),
-                codex(&windows.home).display()
-            ),
-            "Set CODEX_HOME, so both use one folder.",
-        ));
-    }
     if windows.roams {
         checks.push(warn(
             "roaming_profile",
@@ -978,6 +992,25 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
         ));
     }
     checks
+}
+
+// Codex's home is in the known folder Profile, install.ps1's under `USERPROFILE`.
+fn judge_codex_installer_home(facts: &Facts) -> Option<Check> {
+    let windows = facts.windows.as_ref().filter(|w| !w.codex_home_set)?;
+    let codex = |folder: &std::path::Path| folder.join(".codex");
+    let profile = windows.profile.as_deref()?;
+    (!Os::Windows.same_path(&codex(profile), &codex(&windows.home))).then(|| {
+        warn(
+            "codex_installer_home",
+            "Codex's home",
+            format!(
+                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
+                codex(profile).display(),
+                codex(&windows.home).display()
+            ),
+            "Set CODEX_HOME, so both use one folder.",
+        )
+    })
 }
 
 // What changes what Pitboard or a tool does on Windows, each only where it is so.
@@ -1706,6 +1739,7 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     checks.push(judge_pending(facts));
     checks.extend(judge_schedule(facts));
     checks.extend(judge_schedule_proxy(facts));
+    checks.extend(judge_watch_service(facts));
     checks.push(judge_claude_version(facts));
     checks.extend(judge_status_line(facts.status_line.as_ref()));
     checks.push(judge_auth(facts));
@@ -1719,6 +1753,7 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     // Only where there is a Codex to say something about. A machine without it reads exactly
     // as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
+        checks.extend(judge_codex_installer_home(facts));
         checks.extend(judge_codex(
             facts.os,
             facts.sid.as_deref(),
@@ -2716,6 +2751,46 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
             "renewal schedule",
             format!("{runs}  ·  not run yet"),
         ),
+    })
+}
+
+// Nothing is said where there is no service. A Pitboard gone from its path or a last run that
+// failed stops every switch it would make, where nobody looks.
+fn judge_watch_service(facts: &Facts) -> Option<Check> {
+    let service = facts.watch_service.as_ref()?;
+    let again = "Install it again with `pitboard watch install`.";
+    let Some(program) = &service.program else {
+        return Some(warn(
+            "watch_service",
+            "watch service",
+            format!("{} does not say which Pitboard it runs", service.location),
+            again,
+        ));
+    };
+    if !service.program_found {
+        return Some(fail(
+            "watch_service",
+            "watch service",
+            format!("runs {}, which is not there any more", program.display()),
+            again,
+        ));
+    }
+    let runs = match service.at {
+        Some(at) => format!(
+            "from sign-in  ·  switches at {}%  ·  runs {}",
+            at.percent(),
+            program.display()
+        ),
+        None => format!("from sign-in  ·  runs {}", program.display()),
+    };
+    Some(match service.task.as_ref().and_then(Task::failed) {
+        Some(result) => warn(
+            "watch_service",
+            "watch service",
+            format!("{runs}, and its last run ended {}", ended(result)),
+            "Run `pitboard watch` to see what it says.",
+        ),
+        None => ok("watch_service", "watch service", runs),
     })
 }
 
@@ -4666,6 +4741,7 @@ mod tests {
             desktop: None,
             claude_present: true,
             schedule: None,
+            watch_service: None,
             network: direct(),
             in_the_app: false,
             elevation: crate::host::Elevation::Normal,
@@ -5796,6 +5872,64 @@ mod tests {
         let unread = check(&checks, "schedule");
         assert_eq!(unread.level, Level::Warn);
         assert!(!unread.advice.is_empty());
+    }
+
+    #[test]
+    fn the_watch_service_is_judged_by_its_pitboard_and_its_last_run() {
+        let mut f = facts();
+        assert!(
+            evaluate(&f).iter().all(|c| c.code != "watch_service"),
+            "nothing is said where there is no service"
+        );
+        let service = |program: Option<&str>, task: Option<Task>| WatchServiceFact {
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.watch.plist",
+            )),
+            program: program.map(PathBuf::from),
+            program_found: true,
+            at: crate::duty::autoswitch::Threshold::new(90),
+            task,
+        };
+
+        f.watch_service = Some(service(Some("/opt/homebrew/bin/pitboard"), None));
+        let checks = evaluate(&f);
+        let found = check(&checks, "watch_service");
+        assert_eq!(found.level, Level::Ok);
+        assert_eq!(
+            found.detail,
+            "from sign-in  ·  switches at 90%  ·  runs /opt/homebrew/bin/pitboard"
+        );
+        assert_eq!(found.name, "watch service");
+        assert_eq!(section("watch_service"), None, "Pitboard's own");
+
+        f.watch_service.as_mut().expect("set above").program_found = false;
+        let checks = evaluate(&f);
+        let gone = check(&checks, "watch_service");
+        assert_eq!(gone.level, Level::Fail, "it switches nothing from now on");
+        assert_eq!(
+            gone.advice,
+            "Install it again with `pitboard watch install`."
+        );
+
+        f.watch_service = Some(service(None, None));
+        assert_eq!(check(&evaluate(&f), "watch_service").level, Level::Warn);
+
+        let ran = Task {
+            last_run: Some(NOW - 60),
+            last_result: Some(1),
+            drifted: Vec::new(),
+        };
+        f.watch_service = Some(service(Some(r"C:\bin\pitboard.exe"), Some(ran)));
+        let checks = evaluate(&f);
+        let failed = check(&checks, "watch_service");
+        assert_eq!(failed.level, Level::Warn);
+        assert!(
+            failed
+                .detail
+                .ends_with("and its last run ended with exit code 1"),
+            "{}",
+            failed.detail
+        );
     }
 
     #[test]
@@ -8859,7 +8993,8 @@ mod tests {
             let mut facts = facts();
             facts.windows = windows;
             judge_windows_homes(&facts)
-                .iter()
+                .into_iter()
+                .chain(judge_codex_installer_home(&facts))
                 .map(|check| (check.code, check.level))
                 .collect::<Vec<_>>()
         };
@@ -8896,6 +9031,48 @@ mod tests {
             ..measured()
         };
         assert_eq!(codes(Some(roams)), [("roaming_profile", Level::Warn)]);
+    }
+
+    // The command line heads a tool's checks where they start, so each tool's come together.
+    #[test]
+    fn where_codex_keeps_its_home_on_windows_is_one_of_codexs_checks() {
+        let home = PathBuf::from("C:").join("Users").join("x");
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.codex = with_codex();
+        facts.windows = Some(WindowsHomes {
+            home: home.clone(),
+            default_pitboard_home: Os::Windows.default_pitboard_home(&home),
+            local_app_data: Some(home.join("AppData").join("Local")),
+            profile: Some(PathBuf::from("C:").join("Users").join("y")),
+            codex_home_set: false,
+            roams: true,
+        });
+        let checks = evaluate(&facts);
+        let codes: Vec<&str> = checks.iter().map(|c| c.code).collect();
+        let installer = codes
+            .iter()
+            .position(|code| *code == "codex_installer_home")
+            .expect("said");
+        assert!(
+            codes[..installer]
+                .iter()
+                .all(|code| section(code).is_none()),
+            "{codes:?}"
+        );
+        assert!(
+            codes[installer..]
+                .iter()
+                .all(|code| section(code) == Some(ProviderId::Codex)),
+            "{codes:?}"
+        );
+        facts.codex = no_codex();
+        let codes: Vec<&str> = evaluate(&facts).iter().map(|c| c.code).collect();
+        assert!(codes.contains(&"roaming_profile"), "{codes:?}");
+        assert!(
+            codes.iter().all(|code| section(code).is_none()),
+            "a machine with no Codex has no Codex heading: {codes:?}"
+        );
     }
 
     /// With neither tool present, a new machine is told what to do first, as it always was.
