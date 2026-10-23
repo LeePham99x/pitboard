@@ -159,11 +159,15 @@ place() {
   rm -f "$2" && cp "$1" "$2" && chmod 644 "$2"
 }
 
-path_hint() {
-  case $bin in
-    "$home"/*) shown=\$HOME/${bin#"$home"/} ;;
-    *) shown=$bin ;;
+in_profile() {
+  case $1 in
+    "$home"/*) printf '%s' "\$HOME/${1#"$home"/}" ;;
+    *) printf '%s' "$1" ;;
   esac
+}
+
+path_hint() {
+  shown=$(in_profile "$bin")
   login=${SHELL:-}
   rc=.profile
   after="open another terminal"
@@ -181,6 +185,14 @@ path_hint() {
   fi
   say "$bin is not on your PATH. To put it there, run this, then $after:"
   say "  $line"
+}
+
+# zsh's own fpath holds no folder under the home.
+zsh_hint() {
+  say "zsh loads the completions once ~/.zshrc has these lines." \
+    "Where it runs compinit already, add only the first, before it:"
+  say "  fpath=(\"$(in_profile "$share")/zsh/site-functions\" \$fpath)"
+  say "  autoload -Uz compinit && compinit"
 }
 
 app_note() {
@@ -252,9 +264,14 @@ main() {
     esac
     say "Your shell runs $found first. Remove that copy, or put $bin before it on PATH."
   fi
+  login=${SHELL:-}
+  if [ "${login##*/}" = zsh ]; then
+    zsh_hint
+  fi
   if [ "$system" = Darwin ]; then
     app_note /Applications/Pitboard.app "$home/Applications/Pitboard.app"
   fi
+  say "Next, run \`pitboard\`: it says what is signed in and how to enrol it."
 }
 
 main "$@"
