@@ -667,6 +667,7 @@ fn put_in(
     let live = live_store(ctx, tool)?;
     let gone = going_out(ctx, &state, tool, &live, going)?;
     let incoming = park::load(ctx, tool, key, &held)?;
+    kept(ctx, tool, &to, &incoming)?;
     let (held, incoming) =
         prove_incoming(ctx, permit, &mut state, tool, key, target, held, incoming)?;
 
@@ -906,6 +907,7 @@ fn switch_from(
         return Err(Error::ParkedLoginExpired { label: to });
     }
     let incoming = park::load(ctx, tool, key, &held)?;
+    kept(ctx, tool, &to, &incoming)?;
     // Asked before the tool's lock is taken, like the outgoing question, so the round trip
     // does not hold up its writes.
     let (held, incoming) =
@@ -1423,6 +1425,22 @@ fn prove_incoming(
     };
     let document = park::load(ctx, tool, key, &fresh)?;
     Ok((fresh, document))
+}
+
+// Refused before anything moves where the tool would sign `document` out or leave it unused.
+pub(super) fn kept(
+    ctx: &Context,
+    tool: &'static dyn Provider,
+    label: &str,
+    document: &Value,
+) -> Result<()> {
+    tool.refuses(ctx, document).map_or(Ok(()), |reason| {
+        Err(Error::LoginRestricted {
+            tool: tool.id(),
+            label: label.to_owned(),
+            reason,
+        })
+    })
 }
 
 /// After a failed install, whether the copy just parked is the outgoing account's only login.

@@ -390,6 +390,16 @@ pub enum Error {
     LiveStoreUnsupported { tool: ProviderId, reason: String },
 
     #[error(
+        "{} would not keep `{label}`'s login: {reason}. Pitboard changed nothing.",
+        tool.name()
+    )]
+    LoginRestricted {
+        tool: ProviderId,
+        label: String,
+        reason: String,
+    },
+
+    #[error(
         "no account is enrolled as `{label}`.{enrolled} Run `pitboard enroll {label} \
          --sign-in` to add it."
     )]
@@ -1005,6 +1015,7 @@ impl Error {
             ClaudeConfigNotJson { .. } => "claude_config_not_json",
             LiveCredentialAbsent { .. } => "live_credential_absent",
             LiveStoreUnsupported { .. } => "live_store_unsupported",
+            LoginRestricted { .. } => "login_restricted",
             LiveCredentialElsewhere { .. } => "live_credential_elsewhere",
             LiveCredentialShapeUnexpected { .. } => "live_credential_shape_unexpected",
             AccountUnknown { .. } => "account_unknown",
@@ -1153,6 +1164,7 @@ impl Error {
             // what exit 3 means: not a failure of the attempt, a refusal to attempt.
             LiveCredentialShapeUnexpected { .. }
             | LiveStoreUnsupported { .. }
+            | LoginRestricted { .. }
             | ClaudeConfigNotJson { .. }
             | SwitchCorrupted { .. }
             | SwitchUnverified { .. }

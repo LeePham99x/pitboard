@@ -290,6 +290,11 @@ impl Provider for Claude {
             .collect()
     }
 
+    // No setting read yet has Claude Code refuse a login it is given.
+    fn refuses(&self, _ctx: &Context, _document: &Value) -> Option<String> {
+        None
+    }
+
     fn behind(&self, ctx: &Context) -> Option<Behind> {
         let held = match live::behind(ctx)? {
             Ok(held) if live::login_in(&held).is_some() => Held::Login,

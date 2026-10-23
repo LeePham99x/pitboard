@@ -1,7 +1,7 @@
 ---
 title: "Fix Codex accounts"
 sidebarTitle: "Codex"
-description: "Fix a Codex login store Pitboard refuses, a signed-out Codex or an API key, and Codex keeping the old account."
+description: "Fix a Codex login store or setting Pitboard refuses, a signed-out Codex or an API key, and Codex keeping the old account."
 ---
 
 [Use Pitboard with Codex](/guides/codex) says what Codex needs and how to restart it after a switch.
@@ -21,6 +21,18 @@ On Windows, the file is `.codex\config.toml` in your user folder, as [Codex file
 Then run `codex login` and sign in with ChatGPT.
 
 A store set in `requirements.toml`, `managed_config.toml` or a managed preference overrides yours, and only an administrator can change it. [Codex files](/reference/files#codex-files) says where each other store keeps the login, and lists every place Codex reads the setting from.
+
+## Codex settings rule out an account
+
+Pitboard refuses with `login_restricted` to put in use a Codex login that Codex's own settings rule out, because Codex would sign out of it and delete it, or leave it unused. The message names the setting, where it is set and the login's workspace. The `Codex login restrictions` line of `pitboard doctor` lists every such setting and the accounts it rules out.
+
+If the setting is in your own `config.toml`, add the account's workspace to `forced_chatgpt_workspace_id`, or remove the line:
+
+```toml title="~/.codex/config.toml"
+forced_chatgpt_workspace_id = ["workspace-a", "workspace-b"]
+```
+
+A setting in the system's `config.toml`, `managed_config.toml`, `requirements.toml` or a managed preference is an administrator's to change. [Codex files](/reference/files#codex-files) lists the settings.
 
 ## Codex is signed out or uses an API key
 

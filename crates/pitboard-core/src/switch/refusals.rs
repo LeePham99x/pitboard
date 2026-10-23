@@ -788,3 +788,42 @@ fn a_replacement_of_a_login_with_no_refresh_token_killed_before_its_write_is_und
     );
     assert!(!journal::pending(&m.ctx));
 }
+
+// Codex 0.164.0 signs out of a login from a workspace `forced_chatgpt_workspace_id` leaves out
+// as it starts, deleting it (`codex_login_restrictions`), and a Codex park is the only copy.
+#[test]
+fn a_codex_login_its_settings_rule_out_is_refused_before_anything_moves() {
+    let m = harness::codex_machine("restricted");
+    let config = m.ctx_home().join(".codex").join("config.toml");
+    let there = || {
+        state::load(&m.ctx)
+            .expect("state")
+            .get(&m.key("there"))
+            .and_then(|account| account.parked.clone())
+    };
+    let (live, vault, parked) = (m.live(), m.mem.vault().services(), there());
+    for (holds, set) in [
+        (
+            "forced_chatgpt_workspace_id = \"here\"\n",
+            "forced_chatgpt_workspace_id",
+        ),
+        ("forced_login_method = \"api\"\n", "forced_login_method"),
+    ] {
+        std::fs::write(&config, holds).expect("a config");
+        let refused = switch(settled(&m), &m.key("there")).expect_err(set);
+        assert_eq!(refused.code(), "login_restricted", "{refused:?}");
+        assert_eq!(refused.exit_code(), 3);
+        let said = refused.to_string();
+        assert!(said.contains(set) && said.contains("config.toml"), "{said}");
+        assert_eq!(m.live(), live, "{set}: the login in use stays");
+        assert_eq!(m.mem.vault().services(), vault, "{set}");
+        assert_eq!(there(), parked, "{set}: and so does the park");
+    }
+
+    std::fs::write(
+        &config,
+        "forced_chatgpt_workspace_id = [\"here\", \"there\"]\n",
+    )
+    .expect("a config");
+    switch(settled(&m), &m.key("there")).expect("a workspace it allows");
+}

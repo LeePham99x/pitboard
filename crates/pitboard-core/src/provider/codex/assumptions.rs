@@ -201,6 +201,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
     PerSystem {
+        name: "codex_login_restrictions",
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
+        windows: Read("0.164.0"),
+    },
+    PerSystem {
         name: "codex_windows_system_proxy",
         macos: NotRead(
             "Pitboard says nothing of a system proxy on macOS, where Codex fills in the one System \
@@ -801,6 +807,46 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_login_restrictions",
+        fact: "Codex reads `forced_login_method`, `\"chatgpt\"` or `\"api\"`, and \
+               `forced_chatgpt_workspace_id`, a workspace id or a list of them, from the layers \
+               that choose its store (codex_store_layers, codex_windows_store_layers), and \
+               `allowed_login_methods` and `allowed_chatgpt_workspaces`, lists, from its \
+               requirements; the highest layer that sets each wins. It trims each workspace \
+               and drops an empty one: an empty `forced_chatgpt_workspace_id` is no \
+               restriction, an empty `allowed_chatgpt_workspaces` allows none, and one string \
+               holding a comma, or a value of another kind, stops it from starting. As the TUI \
+               starts, a ChatGPT login that the forced two leave out, by its method or its ID \
+               token's `chatgpt_account_id`, is signed out of in every store and deleted, with \
+               no revoke. A login the requirements leave out, by its `tokens.account_id` \
+               first, is left unused. A trusted project's config and an enterprise's cloud \
+               configuration can set the forced two as well, and are not read, as for the store",
+        read_from: "enforce_login_restrictions_with_agent_identity_authapi_base_url, \
+                    logout_with_message, logout_all_stores, AuthConfig and \
+                    validate_auth_restrictions in codex-rs/login/src/auth/manager.rs, \
+                    ManagedAuthPolicy in codex-rs/config/src/auth_policy.rs, \
+                    ForcedChatgptWorkspaceIds in codex-rs/config/src/config_toml.rs, \
+                    ConfigRequirementsToml and managed_auth_policy in \
+                    codex-rs/config/src/config_requirements.rs, the trimming in \
+                    codex-rs/core/src/config/mod.rs, and where \
+                    codex-rs/tui/src/startup_orchestration.rs runs \
+                    enforce_login_restrictions, at tag rust-v0.164.0, read on 2026-10-23. The \
+                    darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds of 0.164.0 hold \
+                    every probe",
+        verified_against: "0.164.0",
+        depends: "provider::codex::layers's Restrictions, the refusal of a Codex switch or \
+                  sign-in with login_restricted, and doctor's codex_login_restrictions",
+        probe: &[
+            "forced_chatgpt_workspace_id",
+            "forced_login_method",
+            "allowed_chatgpt_workspaces",
+            "allowed_login_methods",
+            "Login is restricted to workspace(s) ",
+            "API key login is required, but ChatGPT is currently being used. Logging out.",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_windows_system_proxy",
         fact: "on Windows Codex sends its requests through the proxy the variables name, and \
                where `HTTPS_PROXY` and `https_proxy` are unset or empty, its https requests \
@@ -893,6 +939,7 @@ mod tests {
                 "codex_login_prints_its_address",
                 "codex_windows_store_layers",
                 "codex_login_takes_a_store_override",
+                "codex_login_restrictions",
                 "codex_windows_system_proxy",
             ]
         );

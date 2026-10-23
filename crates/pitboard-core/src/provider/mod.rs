@@ -645,6 +645,10 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// shell environment at all, gets the same answer as the command line.
     fn overridden_by(&self, ctx: &Context) -> Vec<String>;
 
+    // Why this tool, as this machine configures it, would sign `document` out or leave it
+    // unused once in place, as a sentence with no full stop. A move-only park is the only copy.
+    fn refuses(&self, ctx: &Context, document: &Value) -> Option<String>;
+
     /// The file behind the store in use, wherever a look says it is there, whatever it
     /// holds. `None` where there is none, and where whether there is one cannot be told: the
     /// store in use cannot be read, which reading the login in it says as well, or the file

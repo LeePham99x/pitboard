@@ -7,10 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `pitboard doctor`, **This Mac** and **This PC** name each Codex setting that limits which logins
+  Codex keeps, such as `forced_chatgpt_workspace_id`, and the accounts it rules out.
+
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
+- **Breaking:** Pitboard refuses with `login_restricted` to switch Codex to a login that Codex's
+  `forced_login_method`, `forced_chatgpt_workspace_id`, `allowed_login_methods` or
+  `allowed_chatgpt_workspaces` rules out, since Codex would sign out of it and delete it. Switch
+  to an account those settings allow, or change them.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

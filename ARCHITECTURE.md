@@ -54,7 +54,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
       names where a running `codex` can be, and what makes each take a switch.
       `provider/codex/layers.rs` reads which store Codex keeps its login in from every layer
       of configuration Codex reads outside a project, in Codex's order, for a switch and for
-      a sign-in. `provider/printed.rs` reads what a tool printed as a terminal does: the
+      a sign-in, and which logins Codex keeps (`Restrictions`), which `Provider::refuses`
+      asks of a login before it goes in. `provider/printed.rs` reads what a tool printed as a terminal does: the
       text it shows, and where each hyperlink goes. Behind npm's `.cmd` shim,
       `provider::command` starts the program the shim would: the `claude.exe` it names, or
       the `codex.exe` its `codex.js` starts, with what that sets, and the `.cmd` itself only
@@ -3681,6 +3682,14 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     on macOS and Linux (`cfg!(windows)` in 0.160.0). A requirement may name that table
     `[feature_requirements]` too, as `ConfigRequirementsToml` does; a configuration
     layer's table of that name sets nothing.
+- Read from 0.164.0's source on 23 October 2026 (`codex_login_restrictions`):
+  `forced_login_method` and `forced_chatgpt_workspace_id` come from the same layers as the
+  store, and `allowed_login_methods` and `allowed_chatgpt_workspaces` from the requirements.
+  As the TUI starts, Codex signs out of a login the forced two rule out, in every store, and
+  deletes it with no revoke; one the requirements rule out it leaves unused. A Codex park is
+  the only copy, so a switch, and a sign-in that would replace the login in use, ask
+  `Provider::refuses` of the login going in before anything moves, and stop with
+  `login_restricted`. `doctor` names each setting and the accounts it rules out.
 - Read from 0.163.0's config loader on 16 October 2026 (`codex_windows_store_layers`): on
   Windows this machine's `config.toml` and `requirements.toml` are in `OpenAI\Codex` under
   `FOLDERID_ProgramData`, or under `C:\ProgramData` where Windows cannot say that folder.

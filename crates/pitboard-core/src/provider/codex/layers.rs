@@ -44,6 +44,9 @@
 //! as a layer Codex cannot read is: 0.160.0 refuses every such line, and 0.99.0 holds the
 //! error "config profile \`<name>\` not found". A project's layer may set neither the line
 //! nor a table (`PROJECT_LOCAL_CONFIG_DENYLIST`).
+//!
+//! Which ChatGPT logins Codex keeps is read from the same layers at tag `rust-v0.164.0`,
+//! [`Restrictions`] (`codex_login_restrictions`).
 
 use super::paths::Backend;
 use crate::context::Context;
@@ -545,6 +548,34 @@ fn highest<'a, T>(
         })
 }
 
+type Read = Vec<(Layer, Says)>;
+
+// The requirements, then the configuration, each lowest first.
+fn read_layers(os: Os, read: &dyn Fn(Layer) -> Administered) -> (Read, Read) {
+    let read_all = |layers: &[Layer]| -> Read {
+        layers
+            .iter()
+            .map(|&layer| (layer, Says::of(read(layer))))
+            .collect()
+    };
+    (
+        read_all(requirement_layers(os)),
+        read_all(config_layers(os)),
+    )
+}
+
+// The highest layer Codex cannot read, which stops it from starting.
+fn broken(required: &Read, config: &Read) -> Option<(Layer, String)> {
+    required
+        .iter()
+        .rev()
+        .chain(config.iter().rev())
+        .find_map(|(layer, says)| match says {
+            Says::Broken(why) => Some((*layer, why.clone())),
+            Says::Nothing | Says::Table(_) => None,
+        })
+}
+
 // `system` and `own`, the person's `config.toml`, are for the words.
 pub(crate) fn resolve(
     os: Os,
@@ -552,16 +583,7 @@ pub(crate) fn resolve(
     own: &Path,
     read: &dyn Fn(Layer) -> Administered,
 ) -> Store {
-    let read_all = |layers: &[Layer]| -> Vec<(Layer, Says)> {
-        layers
-            .iter()
-            .map(|&layer| (layer, Says::of(read(layer))))
-            .collect()
-    };
-    let (required, config) = (
-        read_all(requirement_layers(os)),
-        read_all(config_layers(os)),
-    );
+    let (required, config) = read_layers(os, read);
     let store = |backend, chosen_by, mode, secrets_by, unknown| Store {
         backend,
         chosen_by,
@@ -582,16 +604,7 @@ pub(crate) fn resolve(
     };
 
     // A layer Codex cannot read stops it from starting, whatever the others say.
-    if let Some((layer, why)) =
-        required
-            .iter()
-            .rev()
-            .chain(config.iter().rev())
-            .find_map(|(layer, says)| match says {
-                Says::Broken(why) => Some((*layer, why.clone())),
-                Says::Nothing | Says::Table(_) => None,
-            })
-    {
+    if let Some((layer, why)) = broken(&required, &config) {
         return unknown(layer, why, Then::Stops);
     }
 
@@ -662,6 +675,299 @@ pub(crate) fn resolve(
     };
     let secrets_by = secrets_by.filter(|_| backend == Backend::Secrets);
     store(backend, chosen_by, mode, secrets_by, None)
+}
+
+const FORCED_METHOD: &str = "forced_login_method";
+const FORCED_WORKSPACES: &str = "forced_chatgpt_workspace_id";
+const ALLOWED_METHODS: &str = "allowed_login_methods";
+const ALLOWED_WORKSPACES: &str = "allowed_chatgpt_workspaces";
+
+// As `ForcedLoginMethod` spells a way to sign in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Method {
+    Chatgpt,
+    Api,
+}
+
+impl Method {
+    fn named(word: &str) -> Option<Method> {
+        match word {
+            "chatgpt" => Some(Method::Chatgpt),
+            "api" => Some(Method::Api),
+            _ => None,
+        }
+    }
+
+    fn word(self) -> &'static str {
+        match self {
+            Method::Chatgpt => "chatgpt",
+            Method::Api => "api",
+        }
+    }
+}
+
+// Which ChatGPT logins this machine's Codex keeps (`codex_login_restrictions`). What the
+// configuration forces, Codex signs out of and deletes as it starts; what the requirements
+// leave out, it leaves unused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Restrictions {
+    method: Option<(Layer, Method)>,
+    workspaces: Option<(Layer, Vec<String>)>,
+    allowed_methods: Option<(Layer, Vec<Method>)>,
+    allowed_workspaces: Option<(Layer, Vec<String>)>,
+    // What Codex cannot take, which stops it from starting.
+    unreadable: Option<(Layer, String)>,
+    system: PathBuf,
+    own: PathBuf,
+}
+
+impl Restrictions {
+    // Why Codex would not keep a ChatGPT login of the workspace its ID token names, `claimed`,
+    // and its `tokens.account_id` names, `stored`, as a sentence with no full stop.
+    pub(crate) fn refuses(&self, claimed: Option<&str>, stored: Option<&str>) -> Option<String> {
+        if let Some((layer, why)) = &self.unreadable {
+            return Some(format!(
+                "{} {why}, so Codex does not start, and which logins it keeps cannot be told",
+                self.place(*layer)
+            ));
+        }
+        let signs_out = "so Codex signs out of it as it starts, and deletes it";
+        let unused = "so Codex does not use it";
+        let of = |ids: &[String], workspace: Option<&str>| {
+            (!workspace.is_some_and(|id| ids.iter().any(|allowed| allowed == id))).then(|| {
+                format!(
+                    "{}, and this login is {}",
+                    listed(ids),
+                    workspace
+                        .map_or_else(|| "of no workspace".to_owned(), |id| format!("of `{id}`"))
+                )
+            })
+        };
+        if let Some((layer, Method::Api)) = self.method {
+            return Some(format!(
+                "{} sets `{FORCED_METHOD} = \"api\"`, {signs_out}",
+                self.place(layer)
+            ));
+        }
+        if let Some((layer, ids)) = &self.workspaces
+            && let Some(outside) = of(ids, claimed)
+        {
+            return Some(format!(
+                "{} sets `{FORCED_WORKSPACES}` to {outside}, {signs_out}",
+                self.place(*layer)
+            ));
+        }
+        if let Some((layer, methods)) = &self.allowed_methods
+            && !methods.contains(&Method::Chatgpt)
+        {
+            return Some(format!(
+                "{} sets `{ALLOWED_METHODS}` to {}, which leaves out a ChatGPT sign-in, {unused}",
+                self.place(*layer),
+                listed(&methods.iter().map(|m| m.word()).collect::<Vec<_>>())
+            ));
+        }
+        if let Some((layer, ids)) = &self.allowed_workspaces
+            && let Some(outside) = of(ids, stored.or(claimed))
+        {
+            return Some(format!(
+                "{} sets `{ALLOWED_WORKSPACES}` to {outside}, {unused}",
+                self.place(*layer)
+            ));
+        }
+        None
+    }
+
+    // Each restriction and where it is set, for `doctor`.
+    pub(crate) fn said(&self) -> Vec<String> {
+        let set = |layer: Layer, key: &str, to: String| {
+            format!("`{key}` set to {to} in {}", self.place(layer))
+        };
+        let methods =
+            |methods: &[Method]| listed(&methods.iter().map(|m| m.word()).collect::<Vec<_>>());
+        if let Some((layer, why)) = &self.unreadable {
+            return vec![format!("{} {why}", self.place(*layer))];
+        }
+        self.method
+            .map(|(layer, method)| set(layer, FORCED_METHOD, listed(&[method.word()])))
+            .into_iter()
+            .chain(
+                self.workspaces
+                    .as_ref()
+                    .map(|(layer, ids)| set(*layer, FORCED_WORKSPACES, listed(ids))),
+            )
+            .chain(
+                self.allowed_methods
+                    .as_ref()
+                    .map(|(layer, allowed)| set(*layer, ALLOWED_METHODS, methods(allowed))),
+            )
+            .chain(
+                self.allowed_workspaces
+                    .as_ref()
+                    .map(|(layer, ids)| set(*layer, ALLOWED_WORKSPACES, listed(ids))),
+            )
+            .collect()
+    }
+
+    pub(crate) fn unreadable(&self) -> bool {
+        self.unreadable.is_some()
+    }
+
+    fn place(&self, layer: Layer) -> String {
+        layer.place(&self.system, &self.own)
+    }
+}
+
+fn listed<T: AsRef<str>>(items: &[T]) -> String {
+    if items.is_empty() {
+        return "an empty list".into();
+    }
+    items
+        .iter()
+        .map(|item| format!("`{}`", item.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+// The restrictions this machine's Codex keeps to, read for the home `ctx` names.
+pub(crate) fn restrictions_of(ctx: &Context, own: &Path) -> Restrictions {
+    let system = system_dir_of(ctx);
+    restrictions(crate::host::OS, &system, own, &|layer| {
+        read(ctx, &system, layer, Some(own), None)
+    })
+}
+
+fn restrictions(
+    os: Os,
+    system: &Path,
+    own: &Path,
+    read: &dyn Fn(Layer) -> Administered,
+) -> Restrictions {
+    let (required, config) = read_layers(os, read);
+    let mut found = Restrictions {
+        method: None,
+        workspaces: None,
+        allowed_methods: None,
+        allowed_workspaces: None,
+        unreadable: broken(&required, &config),
+        system: system.to_path_buf(),
+        own: own.to_path_buf(),
+    };
+    if found.unreadable.is_some() {
+        return found;
+    }
+    let mut wrong = None;
+    found.method = taken(&config, method_in, &mut wrong);
+    // Codex reads an empty list as no restriction here, and as none allowed in a requirement.
+    found.workspaces = taken(
+        &config,
+        |table| workspaces_in(table, FORCED_WORKSPACES),
+        &mut wrong,
+    )
+    .filter(|(_, ids)| !ids.is_empty());
+    found.allowed_methods = taken(&required, methods_in, &mut wrong);
+    found.allowed_workspaces = taken(
+        &required,
+        |table| workspaces_in(table, ALLOWED_WORKSPACES),
+        &mut wrong,
+    );
+    found.unreadable = wrong;
+    found
+}
+
+// What the highest of `layers` to set it sets, where Codex takes it. One it cannot take goes in
+// `wrong`, the first such.
+fn taken<T>(
+    layers: &Read,
+    get: impl Fn(&toml::Table) -> Set<T>,
+    wrong: &mut Option<(Layer, String)>,
+) -> Option<(Layer, T)> {
+    match highest(layers.iter(), get)? {
+        (layer, Ok(value)) => Some((layer, value)),
+        (layer, Err(said)) => {
+            wrong.get_or_insert((layer, format!("sets {said}")));
+            None
+        }
+    }
+}
+
+fn method_in(table: &toml::Table) -> Set<Method> {
+    match table.get(FORCED_METHOD) {
+        None => Set::Unset,
+        Some(toml::Value::String(word)) => Method::named(word).map_or_else(
+            || {
+                Set::Refused(format!(
+                    "`{FORCED_METHOD}` to `\"{word}\"`, which is not a way Codex signs in"
+                ))
+            },
+            Set::To,
+        ),
+        Some(other) => Set::Refused(format!(
+            "`{FORCED_METHOD}` to {}, where Codex takes `\"chatgpt\"` or `\"api\"`",
+            kind(other)
+        )),
+    }
+}
+
+fn methods_in(table: &toml::Table) -> Set<Vec<Method>> {
+    match table.get(ALLOWED_METHODS) {
+        None => Set::Unset,
+        Some(toml::Value::Array(items)) => items
+            .iter()
+            .map(|item| item.as_str().and_then(Method::named))
+            .collect::<Option<Vec<_>>>()
+            .map_or_else(
+                || {
+                    Set::Refused(format!(
+                        "`{ALLOWED_METHODS}` to a list with something in it other than \
+                         `\"chatgpt\"` and `\"api\"`"
+                    ))
+                },
+                Set::To,
+            ),
+        Some(other) => Set::Refused(format!(
+            "`{ALLOWED_METHODS}` to {}, where Codex takes a list",
+            kind(other)
+        )),
+    }
+}
+
+// Trimmed, the empty ones dropped, as Codex reads both settings. Only `forced_chatgpt_workspace_id`
+// takes one workspace on its own, and never several in one string.
+fn workspaces_in(table: &toml::Table, key: &str) -> Set<Vec<String>> {
+    let trimmed = |ids: Vec<&str>| {
+        Set::To(
+            ids.into_iter()
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        )
+    };
+    match table.get(key) {
+        None => Set::Unset,
+        Some(toml::Value::String(id)) if key == FORCED_WORKSPACES && !id.contains(',') => {
+            trimmed(vec![id.as_str()])
+        }
+        Some(toml::Value::Array(items)) => items
+            .iter()
+            .map(toml::Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .map_or_else(
+                || {
+                    Set::Refused(format!(
+                        "`{key}` to a list with something in it other than workspace ids"
+                    ))
+                },
+                trimmed,
+            ),
+        Some(toml::Value::String(_)) if key == FORCED_WORKSPACES => Set::Refused(format!(
+            "`{key}` to workspace ids apart by commas in one string, where Codex takes a list"
+        )),
+        Some(other) => Set::Refused(format!(
+            "`{key}` to {}, where Codex takes a list of workspace ids",
+            kind(other)
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -1485,6 +1791,171 @@ mod tests {
             assert_eq!(
                 system_dir(os, Some(data.clone())),
                 PathBuf::from("/etc/codex")
+            );
+        }
+    }
+
+    fn restricted(os: Os, holds: &[(Layer, &str)]) -> Restrictions {
+        let holds: HashMap<Layer, Administered> = holds
+            .iter()
+            .map(|&(layer, text)| (layer, Administered::Set(text.to_string())))
+            .collect();
+        restrictions(os, &system_dir(os, None), Path::new(OWN), &|layer| {
+            holds.get(&layer).cloned().unwrap_or(Administered::Unset)
+        })
+    }
+
+    // Codex 0.164.0's enforce_login_restrictions holds the ID token's workspace to what the
+    // configuration forces, trimmed, and signs out of any other.
+    #[test]
+    fn codex_signs_out_of_a_workspace_its_configuration_leaves_out() {
+        let none = restricted(Os::Linux, &[]);
+        assert_eq!(none.refuses(Some("a"), Some("a")), None);
+        assert!(none.said().is_empty());
+
+        let one = restricted(
+            Os::Linux,
+            &[(Layer::Own, "forced_chatgpt_workspace_id = \" a \"\n")],
+        );
+        assert_eq!(one.refuses(Some("a"), Some("a")), None);
+        assert_eq!(
+            one.refuses(Some("b"), Some("b")).as_deref(),
+            Some(
+                "/Users/someone/.codex/config.toml sets `forced_chatgpt_workspace_id` to `a`, and \
+                 this login is of `b`, so Codex signs out of it as it starts, and deletes it"
+            )
+        );
+        assert!(
+            one.refuses(None, Some("a"))
+                .is_some_and(|said| said.contains("this login is of no workspace")),
+            "the ID token's workspace is the one held to it"
+        );
+
+        let two = restricted(
+            Os::Linux,
+            &[(Layer::Own, "forced_chatgpt_workspace_id = [\"a\", \"b\"]\n")],
+        );
+        assert_eq!(two.refuses(Some("b"), Some("b")), None);
+        assert!(two.refuses(Some("c"), Some("c")).is_some());
+
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let replaced = restricted(
+                os,
+                &[
+                    (Layer::System, "forced_chatgpt_workspace_id = \"a\"\n"),
+                    (Layer::Own, "forced_chatgpt_workspace_id = []\n"),
+                ],
+            );
+            assert_eq!(
+                replaced.refuses(Some("b"), Some("b")),
+                None,
+                "{os:?}: an empty list over another is no restriction"
+            );
+        }
+        let managed = [
+            (Layer::Own, "forced_chatgpt_workspace_id = \"a\"\n"),
+            (Layer::Managed, "forced_chatgpt_workspace_id = \"b\"\n"),
+        ];
+        assert!(
+            restricted(Os::Linux, &managed)
+                .refuses(Some("a"), Some("a"))
+                .is_some()
+        );
+        assert_eq!(
+            restricted(Os::Windows, &managed).refuses(Some("a"), Some("a")),
+            None,
+            "Windows reads no managed_config.toml"
+        );
+
+        let api = restricted(
+            Os::MacOs,
+            &[(Layer::System, "forced_login_method = \"api\"\n")],
+        );
+        assert!(
+            api.refuses(Some("a"), Some("a"))
+                .is_some_and(|said| said.contains("`forced_login_method = \"api\"`"))
+        );
+        let chatgpt = restricted(
+            Os::MacOs,
+            &[(Layer::System, "forced_login_method = \"chatgpt\"\n")],
+        );
+        assert_eq!(chatgpt.refuses(Some("a"), Some("a")), None);
+        assert_eq!(
+            chatgpt.said(),
+            [format!(
+                "`forced_login_method` set to `chatgpt` in {}",
+                etc("config.toml")
+            )]
+        );
+    }
+
+    // Codex 0.164.0's AuthManager leaves unused a login its requirements leave out, looking at
+    // `tokens.account_id` first, and an empty list of workspaces allows none.
+    #[test]
+    fn codex_leaves_unused_what_its_requirements_leave_out() {
+        let required = |text: &str| restricted(Os::Linux, &[(Layer::Required, text)]);
+        let workspaces = required("allowed_chatgpt_workspaces = [\"a\"]\n");
+        assert_eq!(workspaces.refuses(Some("b"), Some("a")), None);
+        assert!(
+            workspaces.refuses(Some("a"), Some("b")).is_some_and(
+                |said| said.ends_with("this login is of `b`, so Codex does not use it")
+            )
+        );
+        assert!(
+            required("allowed_chatgpt_workspaces = []\n")
+                .refuses(Some("a"), Some("a"))
+                .is_some()
+        );
+        assert!(
+            required("allowed_login_methods = [\"api\"]\n")
+                .refuses(Some("a"), Some("a"))
+                .is_some()
+        );
+        assert_eq!(
+            required("allowed_login_methods = [\"api\", \"chatgpt\"]\n")
+                .refuses(Some("a"), Some("a")),
+            None
+        );
+        assert!(
+            restricted(
+                Os::Linux,
+                &[(Layer::Own, "allowed_chatgpt_workspaces = [\"a\"]\n")]
+            )
+            .refuses(Some("b"), Some("b"))
+            .is_none(),
+            "a requirement in a file of configuration is none of Codex's"
+        );
+        let preference = restricted(
+            Os::MacOs,
+            &[
+                (Layer::Required, "allowed_chatgpt_workspaces = [\"a\"]\n"),
+                (
+                    Layer::RequiredByPreference,
+                    "allowed_chatgpt_workspaces = [\"b\"]\n",
+                ),
+            ],
+        );
+        assert_eq!(preference.refuses(Some("b"), Some("b")), None);
+    }
+
+    // Codex 0.164.0 does not start over any of these, so which logins it keeps is not known.
+    #[test]
+    fn a_restriction_codex_cannot_take_refuses_every_login() {
+        for (layer, text) in [
+            (Layer::Own, "forced_chatgpt_workspace_id = \"a,b\"\n"),
+            (Layer::Own, "forced_chatgpt_workspace_id = 7\n"),
+            (Layer::System, "forced_login_method = \"sso\"\n"),
+            (Layer::Required, "allowed_login_methods = \"chatgpt\"\n"),
+            (Layer::Required, "allowed_chatgpt_workspaces = [1]\n"),
+            (Layer::Required, "allowed_chatgpt_workspaces = [\n"),
+        ] {
+            let found = restricted(Os::Linux, &[(layer, text)]);
+            assert!(found.unreadable(), "{text}");
+            assert!(
+                found
+                    .refuses(Some("a"), Some("a"))
+                    .is_some_and(|said| said.contains("so Codex does not start")),
+                "{text}"
             );
         }
     }

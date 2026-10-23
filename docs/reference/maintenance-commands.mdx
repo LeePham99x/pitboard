@@ -337,6 +337,7 @@ On macOS, Claude Desktop's checks read the folders in `~/.pitboard/parks`, open 
   | `network` | `network` | Direct, or which proxy and which variable named it. Warns for a variable holding no proxy address Pitboard can read. Warns for a SOCKS proxy, which Pitboard does not use, where `NO_PROXY` leaves a host it calls. |
   | `dormant_account` | `account <label>` | Only for a Claude Code account not switched to for 30 days or more. An account enrolled with `--sign-in` and never switched to gets none. Always warns. |
   | `codex_backend` | `Codex login store` | Where Codex keeps its login. Pitboard switches only the file store, `auth.json`. |
+  | `codex_login_restrictions` | `Codex login restrictions` | Only when a setting limits which ChatGPT logins Codex keeps, such as `forced_chatgpt_workspace_id`. Names each setting and where it is set. Warns when it rules out an enrolled account, which Pitboard then does not put in use. Fails when Codex cannot read one. |
   | `codex_auth_file` | `Codex login file` | File store only. `auth.json` exists, and only you can read it. |
   | `codex_login` | `Codex login` | File store only. The login in `auth.json` is a ChatGPT sign-in Pitboard can read. |
   | `codex_credential_manager` | `Codex in Credential Manager` | Windows only, file store only, when Credential Manager holds Codex's `cli\|` or `secrets\|` items. Counts them. Always `ok`. |

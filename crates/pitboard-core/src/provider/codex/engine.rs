@@ -373,6 +373,17 @@ impl Provider for Codex {
         Vec::new()
     }
 
+    fn refuses(&self, ctx: &Context, document: &Value) -> Option<String> {
+        let tokens = &document["tokens"];
+        let claimed = tokens["id_token"]
+            .as_str()
+            .and_then(jwt::claims)
+            .and_then(|claims| {
+                jwt::claim(&claims, &[OPENAI, "chatgpt_account_id"]).map(str::to_owned)
+            });
+        paths::restrictions(ctx).refuses(claimed.as_deref(), tokens["account_id"].as_str())
+    }
+
     /// Codex keeps its login in one store, with nothing behind it.
     fn behind(&self, _ctx: &Context) -> Option<Behind> {
         None

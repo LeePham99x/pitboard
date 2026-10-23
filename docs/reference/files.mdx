@@ -129,7 +129,7 @@ Each place was read in Codex 0.160.0, and in 0.163.0 on Windows.
 | Path | What Pitboard does with it |
 | --- | --- |
 | `~/.codex/auth.json` | The login in use. A switch reads and replaces it. |
-| `~/.codex/config.toml` | Read for the settings that choose Codex's login store. Never written. |
+| `~/.codex/config.toml` | Read for the settings that choose Codex's login store and the logins it keeps. Never written. |
 
 On Windows, Codex's home is `.codex` in the profile folder Windows names for your account, whatever `USERPROFILE` says, as read in Codex 0.162.1.
 
@@ -160,6 +160,8 @@ The system's `requirements.toml`, in `/etc/codex` or in `%ProgramData%\OpenAI\Co
 The `Codex login store` line of `pitboard doctor` names the place that chose. Codex does not start while one of them is there and unreadable. Pitboard then refuses with `live_store_unsupported`.
 
 Pitboard reads a `profile = "<name>"` line as choosing the `[profiles.<name>]` table, which never sets the store. It refuses a line that names a profile no table defines.
+
+As read in Codex 0.164.0, four settings limit which ChatGPT logins Codex keeps. Codex reads `forced_login_method` and `forced_chatgpt_workspace_id` from the same places as the store. As it starts, it signs out of a login they rule out and deletes it. It reads `allowed_login_methods` and `allowed_chatgpt_workspaces` from the requirements that pin the store, and leaves a login they rule out unused. Pitboard puts no such login in use, and refuses with `login_restricted`. The `Codex login restrictions` line of `pitboard doctor` names each setting and the accounts it rules out.
 
 Pitboard does not read three places Codex also reads:
 

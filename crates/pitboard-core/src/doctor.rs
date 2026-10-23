@@ -248,6 +248,11 @@ pub(crate) struct CodexFacts {
     // Credential Manager's `cli|` and `secrets|` items of Codex's, counted by name while it
     // keeps its login in the file (`codex_windows_stores`).
     pub(crate) stored_elsewhere: (usize, usize),
+    // Each setting that limits which logins Codex keeps, and where.
+    pub(crate) restrictions: Vec<String>,
+    pub(crate) restrictions_unreadable: bool,
+    // The enrolled accounts whose logins Codex would sign out or leave unused.
+    pub(crate) ruled_out: Vec<String>,
 }
 
 // What Windows says of the account's folders, beside the home Pitboard reads them from.
@@ -731,6 +736,24 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
     // an app started from Finder has no shell `PATH` and passes the login shell's, and a
     // test names a program of its own.
     let program = crate::provider::program_of(ctx, ProviderId::Codex);
+    // A layer Codex cannot read is the store's line to say.
+    let restrictions = (backend != codex::Backend::Unknown).then(|| codex::restrictions(ctx));
+    let unreadable = restrictions
+        .as_ref()
+        .is_some_and(|found| found.unreadable());
+    let ruled_out = state.filter(|_| !unreadable).map_or_else(Vec::new, |s| {
+        s.accounts
+            .iter()
+            .filter(|a| a.provider() == ProviderId::Codex)
+            .filter_map(|a| {
+                let workspace = Some(a.owner().organization_uuid).filter(|id| !id.is_empty());
+                restrictions
+                    .as_ref()?
+                    .refuses(workspace.as_deref(), workspace.as_deref())
+                    .map(|_| format!("`{}`", s.typed(&a.key())))
+            })
+            .collect()
+    });
     CodexFacts {
         present: home.is_dir(),
         enrolled: state.map_or(0, |s| {
@@ -769,6 +792,9 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
         } else {
             (0, 0)
         },
+        restrictions: restrictions.map_or_else(Vec::new, |found| found.said()),
+        restrictions_unreadable: unreadable,
+        ruled_out,
         auth_file,
         home,
     }
@@ -2977,6 +3003,34 @@ fn judge_codex(
         ),
     });
 
+    if !facts.restrictions.is_empty() {
+        let name = "Codex login restrictions";
+        let said = facts.restrictions.join("; ");
+        checks.push(if facts.restrictions_unreadable {
+            broken(
+                "codex_login_restrictions",
+                name,
+                said,
+                "Codex does not start until that is put right, and Pitboard switches no Codex \
+                 account while which logins Codex keeps cannot be told."
+                    .into(),
+            )
+        } else if facts.ruled_out.is_empty() {
+            ok("codex_login_restrictions", name, said)
+        } else {
+            warn(
+                "codex_login_restrictions",
+                name,
+                said,
+                format!(
+                    "Codex signs out of or does not use the logins of {}, so Pitboard does not \
+                     put them in use.",
+                    words::listed(facts.ruled_out.clone())
+                ),
+            )
+        });
+    }
+
     // The file and what is in it are only worth a word where the file is the store: a
     // keychain store deletes it on purpose.
     if file {
@@ -4716,6 +4770,9 @@ mod tests {
             version: None,
             running: Some(Vec::new()),
             stored_elsewhere: (0, 0),
+            restrictions: Vec::new(),
+            restrictions_unreadable: false,
+            ruled_out: Vec::new(),
         }
     }
 
@@ -7261,6 +7318,61 @@ mod tests {
             );
             assert!(checks.iter().all(|c| c.code != "codex_login"));
         }
+    }
+
+    // Codex 0.164.0 signs out of a login from a workspace its configuration leaves out
+    // (`codex_login_restrictions`), so the setting is named with the accounts it rules out.
+    #[test]
+    fn codexs_login_restrictions_are_named_with_the_accounts_they_rule_out() {
+        use crate::switch::harness::codex_account;
+        let host = crate::host::memory::MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        let mut state = State::default();
+        state.accounts.push(codex_account("here", "here", None));
+        state.accounts.push(codex_account("there", "there", None));
+        let judged = || codex_checks(&codex_facts(&ctx, Some(&state)));
+        assert!(
+            judged()
+                .iter()
+                .all(|c| c.code != "codex_login_restrictions")
+        );
+
+        let config = crate::provider::codex::layers::system_file(&ctx, "config.toml");
+        host.administers(config.clone(), "forced_chatgpt_workspace_id = \"here\"\n");
+        let checks = judged();
+        let found = check(&checks, "codex_login_restrictions");
+        assert_eq!(found.level, Level::Warn);
+        assert_eq!(
+            found.detail,
+            format!(
+                "`forced_chatgpt_workspace_id` set to `here` in {}",
+                config.display()
+            )
+        );
+        assert_eq!(
+            found.advice,
+            "Codex signs out of or does not use the logins of `codex/there`, so Pitboard does \
+             not put them in use."
+        );
+
+        host.administers(
+            config.clone(),
+            "forced_chatgpt_workspace_id = [\"here\", \"there\"]\n",
+        );
+        assert_eq!(
+            check(&judged(), "codex_login_restrictions").level,
+            Level::Ok
+        );
+
+        host.administers(config, "forced_login_method = \"sso\"\n");
+        let checks = judged();
+        let found = check(&checks, "codex_login_restrictions");
+        assert_eq!(found.level, Level::Fail, "Codex accounts are enrolled");
+        assert!(
+            found.advice.starts_with("Codex does not start"),
+            "{}",
+            found.advice
+        );
     }
 
     /// What this machine's folder of Codex's configuration and the person's own config say is
