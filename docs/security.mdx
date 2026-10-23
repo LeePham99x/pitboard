@@ -47,7 +47,7 @@ GitHub redirects each release download to `release-assets.githubusercontent.com`
 
 A [warm-up](/guides/warm-up#what-a-warm-up-sends) is Claude Code's own request, made with the account's access token and never a refresh token. On Windows, the token goes in the run's environment, and some programs Claude Code starts get it too. Another process running as you can read it there while the run lasts, at most 2 minutes.
 
-Pitboard's own requests verify TLS against your system's trust store and time out after 5 seconds. A [proxy](/reference/environment-variables#proxies) sees each request's host, not what it carries. A company proxy whose root certificate your system trusts can decrypt each request, tokens included.
+Pitboard's own requests verify TLS against your system's trust store and time out after 5 seconds. Each names Pitboard in its `User-Agent`, `pitboard/<version>`. A [proxy](/reference/environment-variables#proxies) sees each request's host, not what it carries. A company proxy whose root certificate your system trusts can decrypt each request, tokens included.
 
 ## Large logins on macOS
 
