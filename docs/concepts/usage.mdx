@@ -7,7 +7,9 @@ description: "Where Pitboard's usage numbers come from, how often it asks, and h
 
 Pitboard asks Anthropic about Claude Code accounts and OpenAI about OpenAI's Codex CLI accounts, all at once, with the login in use or the account's [parked login](/concepts/switching#parked-logins). An answer counts the account's work on every machine. For OpenAI, Pitboard sends Codex's own usage request, which spends no limit (read in Codex 0.154.0).
 
-Pitboard asks nothing with a login it cannot read or [identify](/concepts/identity), since the numbers could land on the wrong account.
+Pitboard asks nothing with a login it cannot read or [identify](/concepts/identity), since the numbers could land on the wrong account. It takes no numbers from an OpenAI answer that names another account than the login asked about.
+
+As read in Codex 0.164.0, OpenAI's answer also gives a model's own limits. Pitboard shows each under the model's name, as it shows a Claude Code model's weekly limit.
 
 ## How often Pitboard asks
 
@@ -24,7 +26,7 @@ The command line, the app and the [status line](/reference/integration-commands#
 Where an answer may leave a limit out, Pitboard keeps that limit until it resets:
 
 - An Anthropic answer without its list of limits, or with a row Pitboard cannot read.
-- Every OpenAI answer. Either of its two periods can be empty, for a reason not known.
+- Every OpenAI answer. Either of its two periods can be empty. A Pro plan's answer gives no five-hour period: OpenAI's [Codex pricing](https://developers.openai.com/codex/pricing) said on 23 October 2026 that Pro plans have no five-hour limit. For other plans the reason is not known.
 
 ## When a period starts
 

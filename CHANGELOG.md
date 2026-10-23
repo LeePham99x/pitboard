@@ -9,6 +9,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `pitboard status`, its `--json` and the app show a Codex account's limits for one model under
+  the model's name, as they show Claude Code's.
 - `pitboard doctor`, **This Mac** and **This PC** name each Codex setting that limits which logins
   Codex keeps, such as `forced_chatgpt_workspace_id`, and the accounts it rules out.
 
@@ -25,6 +27,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Pitboard renews a parked Codex login at the issuer and as the client Codex 0.164.0 records in
   it, instead of always as Codex's own client.
+- Pitboard takes no numbers from an OpenAI usage answer that names another account than the
+  Codex login it asked about.
 - Pitboard keeps a parked Codex login that OpenAI refuses to renew as another client than its
   own, and says why, instead of dropping it.
 

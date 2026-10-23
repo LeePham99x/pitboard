@@ -226,10 +226,23 @@ impl Provider for Codex {
         let access = tokens["access_token"]
             .as_str()
             .ok_or_else(|| shape("it has no tokens.access_token"))?;
-        let account = tokens["account_id"]
+        let account_id = tokens["account_id"]
             .as_str()
             .ok_or_else(|| shape("it has no tokens.account_id"))?;
-        api::usage(ctx, access, account, ctx.now())
+        let claims = tokens["id_token"].as_str().and_then(jwt::claims);
+        let user_id = claims.as_ref().and_then(|claims| {
+            jwt::claim(claims, &[OPENAI, "chatgpt_user_id"])
+                .or_else(|| jwt::claim(claims, &[OPENAI, "user_id"]))
+        });
+        api::usage(
+            ctx,
+            access,
+            api::Login {
+                account_id,
+                user_id,
+            },
+            ctx.now(),
+        )
     }
 
     // At the issuer and as the client the login records, every field kept (`codex_renewal`).

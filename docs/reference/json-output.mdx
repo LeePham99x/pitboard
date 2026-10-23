@@ -213,7 +213,7 @@ Each object in `windows` is one limit:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `kind` | string | The limit, such as `session` or `five_hour` for a five-hour limit and `weekly_all` or `seven_day` for a weekly one. |
-| `scope` | string or null | The model or surface a narrower limit applies to, by the name Anthropic gives it. `null` for the account's own limit, and always for Codex. |
+| `scope` | string or null | The model or surface a narrower limit applies to, by the name Anthropic or OpenAI gives it. `null` for the account's own limit. |
 | `percent` | number | How much of the limit is used. Over 100 when the limit is exceeded. |
 | `resets_at` | integer or null | When the limit resets. |
 | `is_active` | boolean | Anthropic's own `is_active` for the limit. Always `true` for Codex. |

@@ -3784,6 +3784,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - The usage answer's shape was read from a live answer. A parser written from the source
   looked for the windows in the wrong place, and returned nothing while the request
   succeeded.
+- Read from 0.164.0's source on 23 October 2026 (`codex_model_limits`), not from a live
+  answer: `additional_rate_limits` lists a model's own `rate_limit` under its `limit_name`,
+  which Pitboard reads as windows scoped to that name, as Anthropic's model limits are. The
+  answer names `account_id` and `user_id`; where either names another than the login asked
+  about, `api::answered_for` takes no numbers from it, as Codex's app server shows nothing
+  bound to the account.
 - `CODEX_HOME` moves everything Codex keeps, and an empty one means unset. Pitboard's own
   sign-in, the one `enroll --sign-in` runs, sets it to a directory that exists, and runs
   `codex login` from inside it.

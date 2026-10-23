@@ -822,22 +822,24 @@ impl Env {
                 "reset_at": reset_at,
             })
         };
+        self.codex_usage_answer(&serde_json::json!({
+            "plan_type": "pro",
+            "rate_limit": {
+                "allowed": true,
+                "limit_reached": false,
+                "primary_window": window(five_hour, 18_000, 1_789_990_000),
+                "secondary_window": window(weekly, 604_800, 1_790_500_000),
+            },
+        }));
+    }
+
+    // OpenAI's usage endpoint answers `answer` to every login.
+    pub(crate) fn codex_usage_answer(&mut self, answer: &serde_json::Value) {
         let mock = self
             .server
             .mock("GET", "/wham/usage")
             .with_status(200)
-            .with_body(
-                serde_json::json!({
-                    "plan_type": "pro",
-                    "rate_limit": {
-                        "allowed": true,
-                        "limit_reached": false,
-                        "primary_window": window(five_hour, 18_000, 1_789_990_000),
-                        "secondary_window": window(weekly, 604_800, 1_790_500_000),
-                    },
-                })
-                .to_string(),
-            )
+            .with_body(answer.to_string())
             .create();
         self.mocks.push(mock);
     }

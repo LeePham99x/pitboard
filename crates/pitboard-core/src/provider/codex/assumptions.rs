@@ -212,6 +212,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
     read_from_0_164_0("codex_login_restrictions"),
+    read_from_0_164_0("codex_model_limits"),
     PerSystem {
         name: "codex_windows_system_proxy",
         macos: NotRead(
@@ -891,6 +892,29 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_model_limits",
+        fact: "`wham/usage` also answers `additional_rate_limits`, a list of `{limit_name, \
+               metered_feature, rate_limit}` whose `rate_limit` holds a `primary_window` and \
+               a `secondary_window` shaped as the account's own; Codex shows each under its \
+               `limit_name`, after the account's own. The answer names `account_id` and \
+               `user_id`, which Codex's app server holds to the login's `tokens.account_id` \
+               and its ID token's `chatgpt_user_id` before it shows anything bound to the \
+               account; an older answer names neither",
+        read_from: "RateLimitStatusWithResetCredits and AdditionalRateLimitWithNormalModel in \
+                    codex-rs/backend-client/src/types.rs, rate_limit_snapshots_from_payload in \
+                    codex-rs/backend-client/src/client.rs, AdditionalRateLimitDetails in \
+                    codex-rs/codex-backend-openapi-models, compose_rate_limit_data_many in \
+                    codex-rs/tui/src/status/rate_limits.rs and the account check in \
+                    codex-rs/app-server/src/request_processors/account_processor.rs, at tag \
+                    rust-v0.164.0, read on 2026-10-23. Not measured from a live answer, as \
+                    codex_usage_endpoint's windows were",
+        verified_against: "0.164.0",
+        depends: "provider::codex::api's snapshot, which scopes a model's limits to its name, \
+                  and answered_for, which takes no numbers from another account's answer",
+        probe: &["additional_rate_limits", "metered_feature"],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_windows_system_proxy",
         fact: "on Windows Codex sends its requests through the proxy the variables name, and \
                where `HTTPS_PROXY` and `https_proxy` are unset or empty, its https requests \
@@ -984,6 +1008,7 @@ mod tests {
                 "codex_windows_store_layers",
                 "codex_login_takes_a_store_override",
                 "codex_login_restrictions",
+                "codex_model_limits",
                 "codex_windows_system_proxy",
             ]
         );
