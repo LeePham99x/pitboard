@@ -279,7 +279,7 @@ $env:RUSTFLAGS = "-D warnings -C target-feature=+crt-static"
 cargo clippy --workspace --all-targets --locked
 cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
 cargo nextest run --locked
-cargo nextest run --locked -p pitboard-ffi --features fixture
+cargo nextest run --locked -p pitboard-ffi --features fixture -E 'test(/^fixture::/)'
 ```
 
 `RUSTFLAGS` replaces each target's own rustflags, so it names the static C runtime releases

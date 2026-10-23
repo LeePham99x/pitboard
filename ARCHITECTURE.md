@@ -1256,7 +1256,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and an app may make them where it likes: `check_name` and `downloads_quit_question`,
   which read only what they are given; `sites_for` and `site_names`, which are
   `pitboard-sites`' and read only what they are given too;
-  the account windows' rules, such as `store_id`, `window_accounts`, `decide_navigation` and
+  the account windows' rules, such as `decide_navigation`, `decide_response` and
   `window_note`, which read only what they are given as well, so a web view's delegate asks
   them as it is asked; `download_destination`, which asks the file system whether each name
   it tries is taken; `app_command_line`, which only joins paths; `can_run`, which asks the
@@ -2254,7 +2254,7 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 
 - One store per account, derived from the account's `id`, which never changes. A window's
   store is a version 5 UUID of `<store name>:<account id>` in a fixed namespace, which
-  `store_id` writes in lower case.
+  `stores.rs` writes in lower case.
   It is also the window's value, so there is one window per account, and a rename keeps its
   sign-in. The namespace and the store names, `claude` and `codex`, never change: a change
   would leave every window without its data, and the next sweep would delete that data.

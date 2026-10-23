@@ -326,7 +326,6 @@ pub fn decide_response(
     }
 }
 
-// Only such a page is kept as the window's last.
 pub(crate) fn is_site_page(policy: &NavigationPolicy, url: &str) -> bool {
     policy.is_site(&WebAddress::parse(url))
 }

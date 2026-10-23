@@ -28,9 +28,6 @@ public sealed class AccountWindowsTests
         var menus = PitboardFfiMethods.SiteMenus(accounts);
 
         Assert.AreEqual("7e15c34f-69ec-55b4-9542-f1c1fe3d7085", windows[0].Store);
-        Assert.AreEqual(
-            windows[0].Store,
-            PitboardFfiMethods.StoreId(PitboardFfiMethods.SitesFor("claude").Single(), "4f3c2a10-8b7e-4d2a-9c1e-5a6b7c8d9e0f"));
         var one = Assert.IsInstanceOfType<SiteMenu.One>(menus[0]);
         Assert.AreEqual("Open claude.ai as work", one.Title);
         var several = Assert.IsInstanceOfType<SiteMenu.Several>(menus[1]);

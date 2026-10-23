@@ -18,7 +18,7 @@ mod notes;
 mod pages;
 mod policy;
 pub(crate) mod records;
-mod stores;
+pub(crate) mod stores;
 
 pub use accounts::{SiteMenu, WindowAccount, site_menus, window_accounts};
 pub(crate) use accounts::{forget_message_on, windows_of_account};
@@ -34,7 +34,6 @@ pub use policy::{
     window_home,
 };
 pub(crate) use policy::{is_site_page, window_address};
-pub use stores::store_id;
 
 use pitboard_core::host::Os;
 

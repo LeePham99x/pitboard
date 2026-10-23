@@ -14,8 +14,8 @@ pub struct WindowAccount {
     pub site: Site,
     pub label: String,
     pub email: String,
-    /// The store that keeps the window's data, as `store_id` derives it, and the window's
-    /// identity too: one window per account. Compare one without regard to case.
+    /// The store that keeps the window's data, and the window's identity too: one window per
+    /// account. Compare one without regard to case.
     pub store: String,
     /// Whether the account is the one its tool is signed in to now.
     pub in_use: bool,

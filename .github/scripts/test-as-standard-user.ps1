@@ -7,6 +7,8 @@
 param(
     # Cargo's options for the build, as `cargo nextest list` takes them.
     [string] $Cargo,
+    # A nextest filterset for the run of what -Cargo built.
+    [string] $Filter,
     # Self-contained test programs, such as a published Microsoft.Testing.Platform one, inside
     # the workspace.
     [string[]] $Dotnet,
@@ -30,6 +32,9 @@ if (-not $Cargo -and -not $Dotnet -and -not $Exe) {
 }
 if (-not $Probe -and ($Cargo -or $Dotnet)) {
     throw 'the tests need -Probe for the leak check'
+}
+if ($Filter -match '[\s"]') {
+    throw "-Filter $Filter holds a space or a quote, which Start-Process would pass to nextest split"
 }
 
 # A GitHub-hosted runner is thrown away after the job.
@@ -374,6 +379,7 @@ try {
     # Start-Process joins its arguments with spaces and quotes nothing, and none of these holds one.
     if ($Cargo) {
         $arguments = @('nextest', 'run', '--profile', 'ci', '--binaries-metadata', $binariesFile, '--cargo-metadata', $cargoMetadataFile)
+        if ($Filter) { $arguments += @('-E', $Filter) }
         $run = Start-AsUser $userNextest $arguments $runDir $userEnv 'nextest'
         Show-Run $run
         if ($run.Exit -ne 0) { $failed.Add("nextest exited $($run.Exit)") }

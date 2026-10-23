@@ -52,7 +52,7 @@ fn is(name: &std::ffi::OsStr, variable: &str) -> bool {
 }
 
 pub(crate) fn started_in() -> pitboard_core::context::Context {
-    pitboard_core::context::Context::for_command_line(&Environment::of_this_process())
+    pitboard_core::context::Context::from_env()
 }
 
 pub(crate) fn real_slots() -> [String; 2] {

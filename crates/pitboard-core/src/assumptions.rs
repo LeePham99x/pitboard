@@ -128,7 +128,7 @@ pub struct Assumption {
     ///
     /// These are a cheap and shallow check. A literal being present does not prove the
     /// behaviour around it is unchanged; a literal disappearing does prove something moved.
-    /// Read from the builds `read_on` names, and only from those.
+    /// Read from the build [`verified_on`] names for each system, and only from those.
     pub probe: &'static [&'static str],
     /// Literals whose *arrival* would disprove the fact.
     ///

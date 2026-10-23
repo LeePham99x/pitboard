@@ -106,8 +106,7 @@ impl Default for Environment {
 }
 
 impl Environment {
-    /// This process's own.
-    pub fn of_this_process() -> Environment {
+    pub(crate) fn of_this_process() -> Environment {
         std::env::vars_os().collect()
     }
 
