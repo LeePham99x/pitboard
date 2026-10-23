@@ -27,8 +27,9 @@ use crate::account_windows::{
     window_address, window_home,
 };
 use crate::present::{DownloadState, PageLoad, StoreDeletion};
-use crate::{LinkRefusal, SiteLink, Status};
+use crate::{SiteLink, Status};
 use pitboard_core::host::Os;
+use pitboard_sites::LinkRefusal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -569,9 +570,7 @@ impl Windows {
         self.arrivals += 1;
         self.arrival = Some(Arrival {
             id: self.arrivals,
-            link: pitboard_sites::read_pitboard_link(text, &self.link_scheme)
-                .map(SiteLink::from)
-                .map_err(LinkRefusal::from),
+            link: pitboard_sites::read_pitboard_link(text, &self.link_scheme).map(SiteLink::from),
         });
     }
 
@@ -603,7 +602,7 @@ impl Windows {
         self.last_chosen
             .insert(link.site.host.clone(), store.clone());
         self.arrival = None;
-        let url = window_address(self.policy(account), link);
+        let url = window_address(&self.policy(account), &link);
         match self
             .open
             .iter_mut()
@@ -783,7 +782,7 @@ fn window_of(status: &Status, store: &str) -> Option<WindowAccount> {
 /// Whether `url` is a page a window may open on again: one of the site's own, and not its
 /// sign-in, which would sign the window in again with whatever it carried.
 fn restorable(policy: &NavigationPolicy, url: &str) -> bool {
-    if !is_site_page(policy.clone(), url.to_owned()) {
+    if !is_site_page(policy, url) {
         return false;
     }
     let path = pitboard_sites::WebAddress::parse(url);

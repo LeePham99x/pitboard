@@ -3,11 +3,11 @@
 //! An app makes one `PitboardModel`, sends it what was asked of it, and shows the snapshots
 //! its listener is told of. Nothing the model exports waits on the core: `launch.rs` makes
 //! the core from what the app was started with, and only the model's own threads call it.
-//! Beside the model and the records its snapshots carry, the bindings export the sites and
-//! the links from outside (`sites.rs`), the account windows' rules (`account_windows`),
-//! `check_name` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
-//! and `fixture_page`, and three free functions the macOS app asks of its bundle and its
-//! environment, `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
+//! Beside the model and the records its snapshots carry, the bindings export the sites
+//! (`sites.rs`), the account windows' rules (`account_windows`), `check_name` and
+//! `downloads_quit_question` of `present`, the fixtures' `fixture_names` and `fixture_page`,
+//! and three free functions the macOS app asks of its bundle and its environment,
+//! `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
 //! `windows_records_key`, `launch_refusal` and `unschedule_app`. The snapshot carries what an
 //! app shows of the accounts and the machine, such as a limit's names or how long an account
 //! lasts, made by `present` and the model, so no free function says it again. The free
@@ -36,10 +36,7 @@ use std::path::{Path, PathBuf};
 uniffi::setup_scaffolding!();
 
 mod sites;
-pub use sites::{
-    Conjunction, LinkRefusal, Site, SiteLink, read_pitboard_link, site_link, site_names, sites,
-    sites_for,
-};
+pub use sites::{Conjunction, Site, SiteLink, site_names, sites_for};
 
 mod model;
 pub use model::{
@@ -72,9 +69,8 @@ pub use account_windows::{
     NavigationTarget, PagePermission, PageRole, ProcessEnded, ResponseDecision, ResponseFacts,
     SignInWindowSize, SiteMenu, WindowAccount, WindowNoteKind, after_content_process_ended,
     decide_navigation, decide_response, dialog_title, download_destination, download_host,
-    download_question, frame_asker, is_site_page, opening_note, page_may_close, page_may_use,
-    remove_data_alert, sign_in_window_size, site_menus, store_id, window_accounts, window_address,
-    window_home, window_note, window_of_store,
+    download_question, frame_asker, opening_note, page_may_close, page_may_use, remove_data_alert,
+    sign_in_window_size, site_menus, store_id, window_accounts, window_home, window_note,
 };
 
 // The core the model's lanes call, made from what the app was started with, and what it

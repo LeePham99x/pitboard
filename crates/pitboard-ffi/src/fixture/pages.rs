@@ -5,7 +5,7 @@
 //! FixtureWeb.swift, and they are the same pages, link for link, so its UI tests find what
 //! they look for.
 
-use crate::sites::{Site, sites};
+use crate::Site;
 use pitboard_sites::WebAddress;
 
 /// The scheme the stand-ins are served under. WebKit does not let an app serve `https`
@@ -23,7 +23,7 @@ const ARTIFACT_HOST: &str = "artifact.fixture";
 pub(crate) fn page(url: &str) -> String {
     let address = WebAddress::parse(url);
     let host = address.host().unwrap_or_default().to_ascii_lowercase();
-    let sites = sites();
+    let sites = pitboard_sites::ALL.map(Site::from);
     if let Some(site) = sites.iter().find(|site| site.host == host) {
         return site_page(site, address.path());
     }
