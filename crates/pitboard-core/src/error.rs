@@ -117,7 +117,7 @@ impl Cause {
             P::Refused { refusal, .. } if matches!(refusal.status, 404 | 405) => {
                 Cause::AnswerNotUnderstood
             }
-            P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
+            P::Refused { .. } | P::OnHold { .. } | P::OtherClient { .. } => Cause::Refused,
             P::Unnamed { error } => Cause::of_provider(error),
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }

@@ -30,6 +30,17 @@ const fn everywhere(name: &'static str, build: &'static str) -> PerSystem {
     }
 }
 
+// Read from the source at `rust-v0.164.0`, whose darwin-arm64, linux-x64, win32-x64 and
+// win32-arm64 builds hold every literal the entry probes for.
+const fn read_from_0_164_0(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
+        windows: Read("0.164.0"),
+    }
+}
+
 /// A fact read on macOS and Linux from the build its entry names, whose Windows reading
 /// waits on the Windows work.
 const fn later_on_windows(
@@ -72,12 +83,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("where Linux's login is, is codex_login_location's"),
         windows: Read(WINDOWS_VERIFIED_AGAINST),
     },
-    everywhere("codex_login_shape", VERIFIED_AGAINST),
+    read_from_0_164_0("codex_login_shape"),
     everywhere("codex_identity_is_local", VERIFIED_AGAINST),
-    everywhere("codex_renewal", VERIFIED_AGAINST),
+    read_from_0_164_0("codex_renewal"),
     everywhere("codex_usage_endpoint", VERIFIED_AGAINST),
     everywhere("codex_revokes_on_its_own_sign_out", VERIFIED_AGAINST),
-    everywhere("codex_never_follows_a_switch", VERIFIED_AGAINST),
+    read_from_0_164_0("codex_never_follows_a_switch"),
     later_on_windows(
         "codex_runs_inside_the_chatgpt_app",
         "26.928.31416",
@@ -200,12 +211,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         ),
     },
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
-    PerSystem {
-        name: "codex_login_restrictions",
-        macos: Read("0.164.0"),
-        linux: Read("0.164.0"),
-        windows: Read("0.164.0"),
-    },
+    read_from_0_164_0("codex_login_restrictions"),
     PerSystem {
         name: "codex_windows_system_proxy",
         macos: NotRead(
@@ -304,13 +310,29 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "codex_login_shape",
         fact: "the document is `{auth_mode, OPENAI_API_KEY, tokens{id_token, access_token, \
-               refresh_token, account_id}, last_refresh}`, and `last_refresh` is an RFC 3339 \
-               string. Codex matches on it being present at all: without it a login it would \
-               otherwise accept reads as `Token data is not available`",
-        read_from: "the AuthDotJson struct and get_token_data's pattern",
-        verified_against: VERIFIED_AGAINST,
-        depends: "provider::codex::engine's renew, which writes it on every renewal",
-        probe: &["last_refresh", "Token data is not available"],
+               refresh_token, oauth_provenance{issuer, client_id}, login_owner_id, \
+               account_id}, last_refresh}`, with `agent_identity`, `personal_access_token`, \
+               `bedrock_api_key` and `bedrock_access_keys` beside them for other sign-ins. \
+               `oauth_provenance` and `login_owner_id` are left out where a login has none, as \
+               one made before 0.164.0 has; `login_owner_id` names one completed login and \
+               renewal keeps it. `last_refresh` is an RFC 3339 string, and Codex matches on it \
+               being present at all: without it a login it would otherwise accept reads as \
+               `Token data is not available`. The access token is a JWT that names the client \
+               it was issued to, `client_id` or `azp`, which Codex reads only as a hint",
+        read_from: "AuthDotJson in codex-rs/login/src/auth/storage.rs, TokenData and \
+                    AccountOAuthProvenance in codex-rs/login/src/token_data.rs, \
+                    get_token_data in codex-rs/login/src/auth/manager.rs and OAuthSource in \
+                    codex-rs/login/src/auth/source.rs, at tag rust-v0.164.0, read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::engine's renew, which keeps every field and writes \
+                  `last_refresh` on every renewal, and reads the access token's client where \
+                  OpenAI refuses a renewal",
+        probe: &[
+            "last_refresh",
+            "Token data is not available",
+            "oauth_provenance",
+            "login_owner_id",
+        ],
         absent: &[],
     },
     Assumption {
@@ -328,14 +350,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "codex_renewal",
-        fact: "a refresh chain is exchanged at `https://auth.openai.com/oauth/token` with a \
-               JSON body `{client_id, grant_type, refresh_token}` and client id \
-               `app_EMoamEEZ73f0CkXaXp7hrann`. The answer's `id_token`, `access_token` and \
-               `refresh_token` are each written only if present, so rotation is optional",
-        read_from: "the auth manager's refresh path",
-        verified_against: VERIFIED_AGAINST,
-        depends: "provider::codex::api::renew",
-        probe: &["app_EMoamEEZ73f0CkXaXp7hrann", "auth.openai.com"],
+        fact: "a refresh chain is exchanged with a JSON body `{client_id, grant_type, \
+               refresh_token}`, and an optional `refresh_reason`, at `<issuer>/oauth/token` as \
+               `client_id`, the two `tokens.oauth_provenance` records, the issuer's last `/` \
+               dropped. A login that records none is renewed at \
+               `https://auth.openai.com/oauth/token` as `app_EMoamEEZ73f0CkXaXp7hrann`, \
+               unless `CODEX_APP_SERVER_LOGIN_CLIENT_ID` names another client; \
+               `CODEX_REFRESH_TOKEN_URL_OVERRIDE` moves every renewal. The answer's \
+               `id_token`, `access_token` and `refresh_token` are each written only if \
+               present, so rotation is optional",
+        read_from: "refresh_and_persist_chatgpt_token, refresh_token_endpoint, oauth_client_id \
+                    and request_chatgpt_token_refresh in codex-rs/login/src/auth/manager.rs, \
+                    and OAuthClient::refresh in codex-rs/login/src/oauth/client.rs, at tag \
+                    rust-v0.164.0, read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::api::renew and its Authority, which reads neither \
+                  variable",
+        probe: &[
+            "app_EMoamEEZ73f0CkXaXp7hrann",
+            "auth.openai.com",
+            "oauth_provenance",
+            "CODEX_APP_SERVER_LOGIN_CLIENT_ID",
+        ],
         absent: &[],
     },
     Assumption {
@@ -371,16 +407,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "codex_never_follows_a_switch",
         fact: "a running Codex caches its login in memory for the life of the process with no \
                expiry and no file watcher, and refuses a reload whose account id has changed, \
-               so a switch is invisible until it is started again. A refresh already under \
-               way when the file changes writes its own account's tokens over whatever is \
-               there, keeping the account id it finds, which leaves one login naming two \
-               accounts",
-        read_from: "the auth manager's cache and reload_if_account_id_matches",
-        verified_against: VERIFIED_AGAINST,
-        depends: "Adoption::RestartRequired for Codex, and what a switch tells the person",
+               so a switch is invisible until it is started again. A refresh it makes after \
+               the file changed writes nothing there unless the file holds the same login, by \
+               `login_owner_id`, `account_id` and `chatgpt_user_id`, and refuses with \
+               `Account credentials changed during refresh.`; it has spent the refresh token \
+               it sent all the same. Until 0.163.0 it wrote its own account's tokens over \
+               whatever was there, keeping the account id it found, which left one login \
+               naming two accounts",
+        read_from: "the auth manager's cache, reload_if_account_id_matches, persist_tokens, \
+                    same_login_for_persistence and same_account_login in \
+                    codex-rs/login/src/auth, at tag rust-v0.164.0, read on 2026-10-23, and \
+                    persist_tokens at rust-v0.163.0",
+        verified_against: "0.164.0",
+        depends: "Adoption::RestartRequired for Codex, what a switch tells the person, and \
+                  the refusal to park a login naming two accounts, which an older Codex leaves",
         probe: &[
             "Skipping auth reload due to account id mismatch",
             "since logged out or signed in to another account",
+            "Account credentials changed during refresh.",
         ],
         absent: &[],
     },

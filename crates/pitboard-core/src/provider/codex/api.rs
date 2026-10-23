@@ -14,12 +14,48 @@ use serde_json::Value;
 /// client can only be renewed as it.
 pub(crate) const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
+const ISSUER: &str = "https://auth.openai.com";
 pub(crate) const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub(crate) const USAGE_BASE: &str = "https://chatgpt.com/backend-api";
 
-fn token_url(ctx: &Context) -> String {
+// Where a login is renewed and as which client (`codex_renewal`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Authority {
+    issuer: String,
+    pub(crate) client_id: String,
+}
+
+impl Authority {
+    // What `tokens.oauth_provenance` records, else Codex's own. Only over https, since the
+    // refresh token goes there.
+    pub(crate) fn of(tokens: &Value) -> Result<Authority, String> {
+        let Some(recorded) = tokens.get("oauth_provenance").filter(|v| !v.is_null()) else {
+            return Ok(Authority {
+                issuer: ISSUER.into(),
+                client_id: CLIENT_ID.into(),
+            });
+        };
+        match (recorded["issuer"].as_str(), recorded["client_id"].as_str()) {
+            (Some(issuer), Some(client_id))
+                if issuer.starts_with("https://") && !client_id.is_empty() =>
+            {
+                Ok(Authority {
+                    issuer: issuer.into(),
+                    client_id: client_id.into(),
+                })
+            }
+            _ => Err("its tokens.oauth_provenance names no https issuer and client".into()),
+        }
+    }
+
+    pub(crate) fn token_url(&self) -> String {
+        format!("{}/oauth/token", self.issuer.trim_end_matches('/'))
+    }
+}
+
+fn token_url(ctx: &Context, authority: &Authority) -> String {
     test_base(ctx).map_or_else(
-        || TOKEN_URL.to_string(),
+        || authority.token_url(),
         |base| format!("{base}/oauth/token"),
     )
 }
@@ -79,6 +115,7 @@ pub(crate) trait OpenAi: Send + Sync + std::fmt::Debug {
         ctx: &Context,
         permit: Permit,
         refresh_token: &str,
+        authority: &Authority,
     ) -> Result<Fresh, ProviderError>;
 }
 
@@ -102,8 +139,9 @@ impl OpenAi for Network {
         ctx: &Context,
         permit: Permit,
         refresh_token: &str,
+        authority: &Authority,
     ) -> Result<Fresh, ProviderError> {
-        ask_renew(ctx, permit, refresh_token)
+        ask_renew(ctx, permit, refresh_token, authority)
     }
 }
 
@@ -112,8 +150,9 @@ pub(crate) fn renew(
     ctx: &Context,
     permit: Permit,
     refresh_token: &str,
+    authority: &Authority,
 ) -> Result<Fresh, ProviderError> {
-    ctx.openai().renew(ctx, permit, refresh_token)
+    ctx.openai().renew(ctx, permit, refresh_token, authority)
 }
 
 pub(crate) fn usage(
@@ -125,14 +164,19 @@ pub(crate) fn usage(
     ctx.openai().usage(ctx, access_token, account_id, now)
 }
 
-fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, ProviderError> {
+fn ask_renew(
+    ctx: &Context,
+    _: Permit,
+    refresh_token: &str,
+    authority: &Authority,
+) -> Result<Fresh, ProviderError> {
     let body = serde_json::json!({
-        "client_id": CLIENT_ID,
+        "client_id": authority.client_id,
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     });
     let mut response = agent(ctx)
-        .post(token_url(ctx))
+        .post(token_url(ctx, authority))
         .header("Content-Type", "application/json")
         .send(body.to_string())
         .map_err(|e| network(e.to_string()))?;
@@ -172,27 +216,23 @@ fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, Pro
     }
 }
 
-/// Whether a failed exchange means the refresh chain is finished, read the way Codex reads
-/// it.
-///
-/// A 401 always does. A 400 does only when it says so: `invalid_grant`, which is how the
-/// current server reports a token that was spent or revoked, or one of the older codes that
-/// named which (`refresh_token_expired`, `refresh_token_reused`,
-/// `refresh_token_invalidated`). Any other 400 is a request the server did not like, and
-/// reading that as a dead login would drop a park that works. The code can be the `error`
-/// string, `error.code`, or a top-level `code`.
+// Read as Codex reads it (`codex_refusal_is_invalid_grant`): a 401, `invalid_grant` with a
+// 400, or one of the older codes. A refusal of the client is never one: it says nothing of
+// the login, and the park may be its only copy.
 fn refused_for_good(status: u16, body: &str) -> bool {
+    let body = serde_json::from_str::<Value>(body).ok();
+    let code = body.as_ref().and_then(|body| {
+        body.get("error")
+            .and_then(Value::as_str)
+            .or_else(|| body.pointer("/error/code").and_then(Value::as_str))
+            .or_else(|| body.get("code").and_then(Value::as_str))
+    });
+    if matches!(code, Some("invalid_client" | "unauthorized_client")) {
+        return false;
+    }
     if status == 401 {
         return true;
     }
-    let Ok(body) = serde_json::from_str::<Value>(body) else {
-        return false;
-    };
-    let code = body
-        .get("error")
-        .and_then(Value::as_str)
-        .or_else(|| body.pointer("/error/code").and_then(Value::as_str))
-        .or_else(|| body.get("code").and_then(Value::as_str));
     match code {
         Some("refresh_token_expired" | "refresh_token_reused" | "refresh_token_invalidated") => {
             true
@@ -344,8 +384,43 @@ mod tests {
             assert!(refused_for_good(400, &format!(r#"{{"code":"{code}"}}"#)));
         }
         assert!(!refused_for_good(400, r#"{"error":"invalid_request"}"#));
+        assert!(
+            !refused_for_good(401, r#"{"error":"invalid_client"}"#),
+            "a refusal of the client says nothing of the login"
+        );
+        assert!(!refused_for_good(400, r#"{"error":"unauthorized_client"}"#));
         assert!(!refused_for_good(400, "not json"));
         assert!(!refused_for_good(403, r#"{"error":"invalid_grant"}"#));
+    }
+
+    // Codex 0.164.0's refresh_token_endpoint and the client id beside it.
+    #[test]
+    fn a_login_is_renewed_where_its_provenance_says_it_was_issued() {
+        let codex = Authority::of(&serde_json::json!({"refresh_token": "r"})).expect("Codex's");
+        assert_eq!(codex.token_url(), TOKEN_URL);
+        assert_eq!(codex.client_id, CLIENT_ID);
+        let recorded = Authority::of(&serde_json::json!({"oauth_provenance": {
+            "issuer": "https://auth.example.com/", "client_id": "app_other"
+        }}))
+        .expect("recorded");
+        assert_eq!(recorded.client_id, "app_other");
+        assert_eq!(
+            token_url(
+                &Context::new(std::path::PathBuf::from("/nowhere")),
+                &recorded
+            ),
+            "https://auth.example.com/oauth/token"
+        );
+        for refused in [
+            serde_json::json!({"issuer": "http://auth.example.com", "client_id": "app_other"}),
+            serde_json::json!({"issuer": "https://auth.example.com"}),
+            serde_json::json!("https://auth.example.com"),
+        ] {
+            assert!(
+                Authority::of(&serde_json::json!({"oauth_provenance": refused})).is_err(),
+                "{refused}"
+            );
+        }
     }
 
     #[test]

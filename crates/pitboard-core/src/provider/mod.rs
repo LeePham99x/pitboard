@@ -308,6 +308,9 @@ pub(crate) enum ProviderError {
     /// Refused for good: revoked, or already spent somewhere else.
     #[error("{service} no longer accepts this login")]
     InvalidGrant { service: &'static str },
+    // Refused as another client than the login's own, which says nothing of the login.
+    #[error("{detail}")]
+    OtherClient { detail: String },
     /// The credential is not the shape this provider stores.
     #[error("the stored login is not the shape {provider} keeps: {detail}")]
     ShapeUnexpected {

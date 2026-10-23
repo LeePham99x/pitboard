@@ -232,25 +232,28 @@ impl Provider for Codex {
         api::usage(ctx, access, account, ctx.now())
     }
 
-    /// Fresh tokens, folded back in the way Codex stores its own.
-    ///
-    /// `last_refresh` is written on every renewal, not only when the refresh token rotated.
-    /// Codex matches on the field being present at all: without it, a login it would
-    /// otherwise accept reads as "Token data is not available". It is an RFC 3339 string,
-    /// not a number of milliseconds.
+    // At the issuer and as the client the login records, every field kept (`codex_renewal`).
+    // `last_refresh` is written each time, as Codex reads a login without it as having no
+    // token data.
     fn renew(
         &self,
         ctx: &Context,
         permit: Permit,
         credential: &Credential,
     ) -> Result<Credential, ProviderError> {
-        let refresh = credential.raw["tokens"]["refresh_token"]
+        let shape = |detail: String| ProviderError::ShapeUnexpected {
+            provider: ProviderId::Codex,
+            detail,
+        };
+        let tokens = &credential.raw["tokens"];
+        let refresh = tokens["refresh_token"]
             .as_str()
-            .ok_or_else(|| ProviderError::ShapeUnexpected {
-                provider: ProviderId::Codex,
-                detail: "it has no tokens.refresh_token".into(),
-            })?;
-        let fresh = api::renew(ctx, permit, refresh)?;
+            .ok_or_else(|| shape("it has no tokens.refresh_token".into()))?;
+        let authority = api::Authority::of(tokens).map_err(shape)?;
+        let fresh = api::renew(ctx, permit, refresh, &authority).map_err(|e| match e {
+            ProviderError::InvalidGrant { .. } => other_client(tokens, &authority).unwrap_or(e),
+            other => other,
+        })?;
         let mut next = credential.raw.clone();
         let tokens =
             next["tokens"]
@@ -468,8 +471,8 @@ impl Provider for Codex {
             });
         }
         // A login whose tokens belong to one account and whose account id names another is
-        // not one account's login. Codex leaves exactly that when a session still running
-        // from before a switch refreshes during one: it re-reads the file, keeps the account
+        // not one account's login. Codex until 0.163.0 leaves exactly that when a session still
+        // running from before a switch refreshes during one: it re-reads the file, keeps the account
         // id it finds and writes its own account's tokens over the rest. Parking it, or
         // taking it as proof a switch held, would file one account's tokens under the other.
         let stored = live["tokens"]["account_id"].as_str();
@@ -515,6 +518,20 @@ impl Provider for Codex {
             refresh_expires_at: None,
         }
     }
+}
+
+// Where OpenAI refused a login for good and its access token names another client than the
+// one asked, which only a login that records none can be renewed as.
+fn other_client(tokens: &Value, asked: &api::Authority) -> Option<ProviderError> {
+    let claims = jwt::claims(tokens["access_token"].as_str()?)?;
+    let named = jwt::claim(&claims, &["client_id"]).or_else(|| jwt::claim(&claims, &["azp"]))?;
+    (named != asked.client_id).then(|| ProviderError::OtherClient {
+        detail: format!(
+            "OpenAI refused to renew it as the client `{}`, and its access token names the \
+             client `{named}`",
+            asked.client_id
+        ),
+    })
 }
 
 /// An instant as Codex writes `last_refresh`: RFC 3339, UTC.

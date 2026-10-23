@@ -3722,8 +3722,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - A running Codex holds its login in memory for the life of the process and watches no file.
   It refuses a reload whose account id has changed (`Adoption::RestartRequired`), so it
   never picks up a switch.
-- A Codex refresh already under way when the file changes writes its own account's tokens
-  under whatever account id it finds there.
+- Read from 0.164.0's source on 23 October 2026 (`codex_never_follows_a_switch`): a refresh
+  a running Codex makes after the file changed writes nothing there unless the file holds
+  the same login, by `login_owner_id`, `account_id` and `chatgpt_user_id`, and fails with
+  `Account credentials changed during refresh.` It has spent the refresh token it sent, the
+  one Pitboard parked. Until 0.163.0 it wrote its own account's tokens under whatever
+  account id it found there, which is why a login naming two accounts is never parked.
 - Codex writes `auth.json` with no lock of any kind, so there is none for Pitboard to share.
 - Measured on 2026-10-01 from the process list of a Mac running each of them:
   - OpenAI's ChatGPT app for macOS 26.928.31416, bundle id `com.openai.codex`, runs a codex
@@ -3759,9 +3763,17 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   `chatgpt_account_id` and `chatgpt_user_id`. A Team or Business workspace shares one
   `chatgpt_account_id`, and `chatgpt_user_id` is the person.
 - Pitboard identifies a Codex account by that pair, with no network call.
-- Renewal is `POST https://auth.openai.com/oauth/token` with a JSON body
-  `{client_id, grant_type, refresh_token}` and client id `app_EMoamEEZ73f0CkXaXp7hrann`.
-  Each token in the answer is written only if present.
+- Renewal is a `POST` of a JSON body `{client_id, grant_type, refresh_token}`. Read from
+  0.164.0's source on 23 October 2026 (`codex_renewal`, `codex_login_shape`), it goes to
+  `<issuer>/oauth/token` as the client `tokens.oauth_provenance` records, and for a login
+  that records none to `https://auth.openai.com/oauth/token` as
+  `app_EMoamEEZ73f0CkXaXp7hrann`. `api::Authority` reads the record, and only an https
+  issuer, since the refresh token goes there. Each token in the answer is written only if
+  present, and every other field, `login_owner_id` included, is kept.
+- A refusal for good while the access token names another client than the one asked, and a
+  refusal of the client itself (`invalid_client`, `unauthorized_client`), keep the park and
+  say why (`ProviderError::OtherClient`): they say nothing of the login, and a Codex park is
+  its only copy.
 - `last_refresh` must be in the login, as an RFC 3339 string, or Codex reads the login as
   having no token data.
 - A spent or revoked refresh token answers 400 `invalid_grant`, or one of the older

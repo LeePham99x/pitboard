@@ -573,3 +573,88 @@ fn an_interrupted_switch_is_recovered_only_where_it_ran() {
     settle(&m.ctx, Permit::for_a_test(), None).expect("recovered where it ran");
     hold(&m, "after recovering where the switch ran");
 }
+
+// Plants `document` in place of the park `label` holds, under the same refresh token.
+fn replant(m: &harness::Machine, label: &str, document: &Value) {
+    let state = state::load(&m.ctx).expect("state");
+    let park = state
+        .get(&m.key(label))
+        .and_then(|account| account.parked.clone())
+        .expect("a park");
+    m.mem.vault().plant(&park.service, &document.to_string());
+}
+
+// Codex 0.164.0 renews a login at the issuer and as the client its `tokens.oauth_provenance`
+// records, and keeps `login_owner_id` (`codex_renewal`, `codex_login_shape`).
+#[test]
+fn a_codex_park_is_renewed_where_its_login_was_issued() {
+    let m = codex_machine("provenance");
+    let mut there = codex_login("there", "there-refresh");
+    let provenance =
+        serde_json::json!({"issuer": "https://auth.example.com/", "client_id": "app_other"});
+    there["tokens"]["oauth_provenance"] = provenance.clone();
+    there["tokens"]["login_owner_id"] = Value::from("login-1");
+    there["not_read_by_pitboard"] = serde_json::json!({"kept": true});
+    replant(&m, "there", &there);
+    m.api
+        .token_trouble(&codex_access("there-refresh"), Trouble::Unauthorized);
+    m.api.codex_renews(
+        "there-refresh",
+        Fresh {
+            id_token: None,
+            access_token: Some(codex_access("there-renewed")),
+            refresh_token: Some("there-renewed".into()),
+            at: Some(NOW),
+        },
+    );
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover")
+        .0;
+    switch(settled, &m.key("there")).expect("switched");
+
+    assert_eq!(
+        m.api.codex_renewed_as(),
+        [(
+            "https://auth.example.com/oauth/token".to_string(),
+            "app_other".to_string()
+        )]
+    );
+    let live = m.live().expect("a live login");
+    assert_eq!(live["tokens"]["refresh_token"], "there-renewed");
+    assert_eq!(live["tokens"]["oauth_provenance"], provenance);
+    assert_eq!(live["tokens"]["login_owner_id"], "login-1");
+    assert_eq!(
+        live["not_read_by_pitboard"],
+        serde_json::json!({"kept": true})
+    );
+}
+
+// A login Codex made before 0.164.0 as another client records none, so Pitboard renews it as
+// Codex's own, and OpenAI refusing that says nothing of whether the login works.
+#[test]
+fn a_codex_park_refused_as_another_client_than_its_own_is_kept() {
+    let m = codex_machine("other-client");
+    let mut there = codex_login("there", "there-refresh");
+    there["tokens"]["access_token"] = Value::from(provider::jwt::unsigned(
+        &serde_json::json!({"exp": NOW - 60, "client_id": "app_other"}),
+    ));
+    replant(&m, "there", &there);
+    m.api
+        .codex_renew_trouble("there-refresh", Trouble::InvalidGrant);
+    let before = m.live();
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover")
+        .0;
+    let refused = switch(settled, &m.key("there")).expect_err("not renewed");
+
+    assert_eq!(refused.code(), "renewal_failed", "{refused:?}");
+    assert!(refused.to_string().contains("`app_other`"), "{refused}");
+    assert_eq!(m.live(), before);
+    let state = state::load(&m.ctx).expect("state");
+    assert!(
+        state.get(&m.key("there")).unwrap().parked.is_some(),
+        "its only copy is kept"
+    );
+}

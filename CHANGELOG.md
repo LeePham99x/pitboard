@@ -21,6 +21,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `allowed_chatgpt_workspaces` rules out, since Codex would sign out of it and delete it. Switch
   to an account those settings allow, or change them.
 
+### Fixed
+
+- Pitboard renews a parked Codex login at the issuer and as the client Codex 0.164.0 records in
+  it, instead of always as Codex's own client.
+- Pitboard keeps a parked Codex login that OpenAI refuses to renew as another client than its
+  own, and says why, instead of dropping it.
+
 ## [1.0.0-beta.5] - 2026-10-23
 
 ### Changed
