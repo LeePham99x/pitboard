@@ -97,6 +97,9 @@ protected like `main` and cut from the last 0.x tag. A release runs the `release
 commit it tags, so that tag must hold the release kinds above: release a 0.x with them
 before 1.0.0-beta.1.
 
+On `release/0.15`, `pitboard-core` takes the next patch crates.io does not hold, past the
+0.15.1 to 0.15.3 the 1.0 betas published, and the `semver` job checks it against 0.15.0.
+
 0.15 gets security fixes for three months after 1.0.0 is published. Then take its row out of
 Supported versions in `SECURITY.md`, with the sentence on 0.15 releases under it.
 

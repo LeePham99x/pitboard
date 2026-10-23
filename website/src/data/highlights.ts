@@ -5,6 +5,7 @@ export const highlights: Record<string, string> = {
   "1.0.0-beta.3": "Claude Desktop accounts switch again with Claude 2.42304.0.",
   "1.0.0-beta.2": "The Windows app turns on daily renewal of parked logins.",
   "1.0.0-beta.1": "Pitboard runs on Windows 11 24H2 and later, in beta.",
+  "0.15.1": "Claude Desktop accounts switch again with Claude 3.",
   "0.15.0": "**Add Account** says what to install when a tool is missing.",
   "0.14.0": "Pitboard switches Claude Desktop accounts on macOS.",
   "0.13.0": "Warm-up starts a five-hour period once the last one resets.",
