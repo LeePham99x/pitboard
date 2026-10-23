@@ -29,6 +29,8 @@ struct ActivityPane: View {
             }
             .width(min: 80, ideal: 110)
         }
+        .scrollContentBackground(.hidden)
+        .background(PitWall.board)
         .overlay {
             if let empty = activity.empty {
                 ContentUnavailableView(

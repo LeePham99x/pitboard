@@ -3,11 +3,36 @@ import SwiftUI
 
 struct LimitsSettings: View {
     let model: AppModel
+    let alerts: LimitAlerts
+    @AppStorage(DefaultsKey.limitAlertOn) private var alertOn = true
+    @AppStorage(DefaultsKey.limitAlertAt) private var alertAt = LimitAlerts.defaultThreshold
 
     var body: some View {
         let auto = model.machine.autoSwitch
         let warm = model.machine.warm
         Form {
+            Section {
+                Toggle("Alert at the notch", isOn: $alertOn)
+                    .accessibilityIdentifier("settings.limitAlert")
+                Stepper(
+                    "Alert at \(alertAt)% used",
+                    value: $alertAt, in: LimitAlerts.thresholds
+                )
+                .accessibilityIdentifier("settings.limitAlertAt")
+                .disabled(!alertOn)
+                LabeledContent("Island") {
+                    Button("Show Preview") { alerts.rehearse(model) }
+                        .accessibilityIdentifier("settings.limitAlertPreview")
+                }
+            } header: {
+                Text("Limit alert")
+            } footer: {
+                Text(
+                    "When an account in use passes this share of a limit, and again when it runs out, an island grows from the notch with the account that has the most left to switch to."
+                )
+                .footnote()
+            }
+
             Section {
                 Toggle(
                     "Switch Claude Code automatically",

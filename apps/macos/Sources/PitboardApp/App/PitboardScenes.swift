@@ -10,6 +10,7 @@ public struct PitboardScenes: Scene {
     let openAtLogin: OpenAtLogin
     let commandLineLink: CommandLineLink
     let defaults: UserDefaults
+    let alerts: LimitAlerts
     let updates: any Updates
 
     public init(delegate: AppDelegate, updates: any Updates) {
@@ -19,6 +20,7 @@ public struct PitboardScenes: Scene {
         openAtLogin = delegate.openAtLogin
         commandLineLink = delegate.commandLineLink
         defaults = delegate.defaults
+        alerts = delegate.alerts
         self.updates = updates
     }
 
@@ -28,16 +30,16 @@ public struct PitboardScenes: Scene {
 
     @SceneBuilder private var scenes: some Scene {
         MenuBarExtra {
-            MenuBarContent(model: model, windows: windows, updates: updates)
+            PitWallPanel(model: model, windows: windows, updates: updates)
         } label: {
-            MenuBarLabel(model: model, windows: windows, requests: requests)
+            MenuBarLabel(model: model, windows: windows, requests: requests, alerts: alerts)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
 
         Window("Pitboard", id: MainWindow.id) {
             MainWindow(model: model, windows: windows, requests: requests)
         }
-        .defaultSize(width: 760, height: 560)
+        .defaultSize(width: 1040, height: 620)
         .commands {
             // The standard item shows a beta's CFBundleShortVersionString, its X.Y.Z alone.
             CommandGroup(replacing: .appInfo) {
@@ -72,7 +74,7 @@ public struct PitboardScenes: Scene {
         Settings {
             SettingsView(
                 model: model, openAtLogin: openAtLogin, commandLineLink: commandLineLink,
-                presence: windows.presence, updates: updates
+                presence: windows.presence, updates: updates, alerts: alerts
             )
         }
         // A taller pane grows the window downward, so it opens at the top of the screen,

@@ -13,6 +13,9 @@ struct Dependencies {
     let loginItem: any LoginItem
     let commandLineTool: CommandLineTool
     let web: WebEnvironment
+    /// What posts the core's notices, which the island at the notch shows as well. None in
+    /// a fixture, whose core posts nothing.
+    let notifications: MacNotifications?
     /// What is done as the app quits, once the model has stopped.
     let quitting: @MainActor () -> Void
 
@@ -47,6 +50,7 @@ struct Dependencies {
             loginItem: MainAppLoginItem(),
             commandLineTool: CommandLineTool(bundle: bundle),
             web: .live(),
+            notifications: notifications,
             quitting: {
                 earlier.forgetOnceKept()
                 earlier.forgetWindowsOnceKept()

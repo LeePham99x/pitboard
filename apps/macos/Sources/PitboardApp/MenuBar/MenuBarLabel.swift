@@ -10,6 +10,7 @@ struct MenuBarLabel: View {
     let model: AppModel
     let windows: AccountWindows
     let requests: WindowRequests
+    let alerts: LimitAlerts
     @Environment(\.openWindow) private var openWindow
     @AppStorage(DefaultsKey.menuBarShows) private var shows = MenuBarShows.nameAndUsage
 
@@ -34,6 +35,9 @@ struct MenuBarLabel: View {
             windows.presence.activate()
             openWindow(id: MainWindow.id)
         }
+        // Alive from launch to quit, so the island hears of every change to the accounts.
+        .onChange(of: model.sections, initial: true) { alerts.check(model) }
+        .onChange(of: model.switchUnderWay) { alerts.check(model) }
         .onChange(of: windows.requested) {
             for store in windows.takeRequests() {
                 windows.presence.activate()

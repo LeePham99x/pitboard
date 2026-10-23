@@ -11,12 +11,8 @@ struct MainWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            List(WindowPane.allCases, selection: selection) { pane in
-                Label(pane.title, systemImage: pane.symbol)
-                    .tag(pane)
-                    .accessibilityIdentifier("sidebar.\(pane.rawValue)")
-            }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 220)
+            PitWallSidebar(pane: $pane, model: model)
+                .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
         } detail: {
             switch pane {
             case .accounts: AccountsPane(model: model, windows: windows)
@@ -24,7 +20,8 @@ struct MainWindow: View {
             case .machine: MachinePane(model: model)
             }
         }
-        .frame(minWidth: 640, minHeight: 440)
+        .frame(minWidth: 960, minHeight: 460)
+        .preferredColorScheme(.dark)
         .appWindow(windows.presence)
         // The model keeps the sheet; this one goes however it goes, and the model is told.
         .sheet(
@@ -41,12 +38,6 @@ struct MainWindow: View {
         .onChange(of: model.windowRequest.serial, initial: true) {
             pane = requests.pane(for: model.windowRequest, from: pane)
         }
-    }
-
-    /// The sidebar's selection. A list selects nothing when its selection is cleared, and a
-    /// window with no pane shows nothing, so clearing it keeps the pane shown.
-    private var selection: Binding<WindowPane?> {
-        Binding(get: { pane }, set: { if let chosen = $0 { pane = chosen } })
     }
 }
 

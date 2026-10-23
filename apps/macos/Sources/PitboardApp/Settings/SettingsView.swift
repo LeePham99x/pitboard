@@ -7,6 +7,7 @@ struct SettingsView: View {
     let commandLineLink: CommandLineLink
     let presence: AppPresence
     let updates: any Updates
+    let alerts: LimitAlerts
 
     // `DefaultsKey.settingsTab` keeps the pane last shown by these names, so none may change.
     enum Tab: String, CaseIterable {
@@ -28,7 +29,7 @@ struct SettingsView: View {
             GeneralSettings(openAtLogin: openAtLogin)
                 .tabItem { Label("General", systemImage: Symbol.general) }
                 .tag(Tab.general)
-            LimitsSettings(model: model)
+            LimitsSettings(model: model, alerts: alerts)
                 .tabItem { Label("Limits", systemImage: Symbol.limits) }
                 .tag(Tab.limits)
             RenewalSettings(model: model)

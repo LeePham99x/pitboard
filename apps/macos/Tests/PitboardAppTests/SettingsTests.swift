@@ -114,7 +114,7 @@ private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloa
             CommandLineTool(helper: nil, link: "/nowhere/pitboard", execute: { _ in nil }),
             model: model),
         presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}),
-        updates: NoUpdates())
+        updates: NoUpdates(), alerts: LimitAlerts(defaults: defaults))
     return NSHostingView(rootView: settings.defaultAppStorage(defaults)).fittingSize.height
 }
 

@@ -20,6 +20,8 @@ struct MachinePane: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(PitWall.board)
         .overlay {
             if let waiting = checks.waiting {
                 ProgressView(waiting)

@@ -12,45 +12,32 @@ struct AccountsPane: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        content
-            .navigationTitle("Accounts")
-            .navigationSubtitle(model.updatedWindow)
-            .toolbar {
-                ToolbarItemGroup {
-                    Button {
-                        model.send(.refresh(asked: true))
-                    } label: {
-                        Label("Refresh", systemImage: Symbol.refresh)
-                    }
-                    .help("Read every account’s usage again")
-                    .disabled(model.reading)
-                    // Command-N is the window's own command, so it works from every pane.
-                    Button {
-                        model.send(.presentSheet(sheet: .add(provider: nil)))
-                    } label: {
-                        Label("Add Account", systemImage: Symbol.add)
-                    }
-                    .help("Sign in to another account and park its login")
-                }
+        VStack(spacing: 0) {
+            TimingHeader(model: model)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(PitWall.board)
+        .navigationTitle("Accounts")
+        .navigationSubtitle(model.updatedWindow)
+        .focusedSceneValue(
+            \.refresh,
+            RefreshCommand(title: "Refresh", disabled: model.reading) {
+                model.send(.refresh(asked: true))
             }
-            .focusedSceneValue(
-                \.refresh,
-                RefreshCommand(title: "Refresh", disabled: model.reading) {
-                    model.send(.refresh(asked: true))
-                }
-            )
-            .task { model.send(.paneShown(pane: .accounts)) }
-            .alert(
-                asking?.question.title ?? "",
-                isPresented: Binding(
-                    get: { asking != nil }, set: { if !$0 { asking = nil } }),
-                presenting: asking
-            ) { asked in
-                Button(asked.question.confirm, role: .destructive) { model.send(asked.intent) }
-                Button("Cancel", role: .cancel) {}
-            } message: { asked in
-                Text(asked.question.message)
-            }
+        )
+        .task { model.send(.paneShown(pane: .accounts)) }
+        .alert(
+            asking?.question.title ?? "",
+            isPresented: Binding(
+                get: { asking != nil }, set: { if !$0 { asking = nil } }),
+            presenting: asking
+        ) { asked in
+            Button(asked.question.confirm, role: .destructive) { model.send(asked.intent) }
+            Button("Cancel", role: .cancel) {}
+        } message: { asked in
+            Text(asked.question.message)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -99,22 +86,30 @@ struct AccountsPane: View {
         List(selection: $selection) {
             ForEach(model.notices, id: \.id) { notice in
                 NoticeRow(notice: notice) { send($0.intent, askingFirst: $0.confirm) }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 4)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(PitWall.amber.opacity(0.06))
                     .selectionDisabled()
             }
             if let step = model.setup {
                 SetupTip(step: step, footing: model.footing) { model.send($0) }
+                    .padding(.horizontal, 18)
+                    .listRowInsets(EdgeInsets())
             }
             ForEach(model.sections, id: \.id) { section in
-                // A heading per tool once there is more than one, and no section at all
-                // before: a section with no heading still takes a heading's room.
-                if let heading = section.heading {
-                    Section(heading) { rows(of: section) }
-                } else {
-                    rows(of: section)
-                }
+                let columns = TowerColumns.of(section)
+                TowerHeader(section: section, columns: columns)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .selectionDisabled()
+                rows(of: section, columns: columns)
             }
         }
-        .listStyle(.inset)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .contextMenu(forSelectionType: String.self) { ids in
             if let item = ids.first.flatMap(model.item) {
                 menu(for: item)
@@ -129,10 +124,16 @@ struct AccountsPane: View {
         }
     }
 
-    private func rows(of section: AccountSection) -> some View {
-        ForEach(section.accounts, id: \.id) { item in
-            AccountRow(item: item) { model.send($0) }
-                .tag(item.id)
+    private func rows(of section: AccountSection, columns: [String]) -> some View {
+        ForEach(PitWallOrder.tower(section.accounts), id: \.item.id) { entry in
+            AccountRow(
+                item: entry.item, position: entry.position, columns: columns,
+                status: model.status
+            ) { model.send($0) }
+            .tag(entry.item.id)
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
     }
 
@@ -234,5 +235,44 @@ private struct SetupTip: View {
     private var symbol: String {
         if case .unnamed = footing { return "tag" }
         return Symbol.switchAccount
+    }
+}
+
+/// The accounts pane's header: the reset the tool in use counts down to, when the numbers
+/// were read, and the pane's two commands.
+private struct TimingHeader: View {
+    let model: AppModel
+
+    var body: some View {
+        let headline = PitWallHeadline.of(model)
+        HStack(alignment: .bottom, spacing: 22) {
+            VStack(alignment: .leading, spacing: 2) {
+                PitWallCaption("Accounts")
+                Text("TIMING")
+                    .font(PitWall.mono(20, .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(PitWall.ink)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                PitWallCaption(headline?.caption ?? "No reset yet")
+                PitWallCountdown(headline: headline, size: 28)
+            }
+            Spacer()
+            PitWallUpdated(model: model)
+            Button("↻ REFRESH") { model.send(.refresh(asked: true)) }
+                .buttonStyle(BoxButtonStyle(lit: false))
+                .help("Read every account’s usage again")
+                .disabled(model.reading)
+                .accessibilityLabel("Refresh")
+            // Command-N is the window's own command, so it works from every pane.
+            Button("+ ADD") { model.send(.presentSheet(sheet: .add(provider: nil))) }
+                .buttonStyle(BoxButtonStyle())
+                .help("Sign in to another account and park its login")
+                .accessibilityLabel("Add Account")
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) { PitWall.rule.frame(height: 1) }
     }
 }

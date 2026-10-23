@@ -91,6 +91,8 @@ final class MacNotifications: NSObject, Notifications, UNUserNotificationCenterD
     private let centre: UNUserNotificationCenter?
     /// Asked to switch to the account a Switch button names, its label with its tool.
     @MainActor var onSwitch: ((String) -> Void)?
+    /// Handed each notice as it is posted, permitted or not, on the main thread.
+    @MainActor var onNotice: ((RunOutNotice) -> Void)?
 
     /// Claims the delegate and the category with its Switch button, which asks nothing of
     /// anyone and has to happen at launch: a notification left in Notification Center and
@@ -128,6 +130,9 @@ final class MacNotifications: NSObject, Notifications, UNUserNotificationCenterD
     /// a prompt arrives before the app has shown what it is for. Refused is not an error: the
     /// window says the same either way.
     func post(notice: RunOutNotice) throws {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.onNotice?(notice) }
+        }
         guard let centre else { return }
         let request = UNNotificationRequest(
             identifier: notice.id, content: Self.content(of: notice), trigger: nil)

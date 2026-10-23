@@ -1,6 +1,10 @@
 enum DefaultsKey {
     static let menuBarShows = "menuBarShows"
     static let settingsTab = "settingsTab"
+    /// Whether the island at the notch says when an account in use is nearly out.
+    static let limitAlertOn = "limitAlertOn"
+    /// The share used, in percent, past which it says so.
+    static let limitAlertAt = "limitAlertAt"
 
     /// Where this app kept what the model now keeps in `app.json`, read once to hand over.
     enum Earlier {

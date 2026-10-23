@@ -22,9 +22,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   automatic switching and warm-ups, and link to what they say.
 - The install script ends with the command to run next and, where your login shell is zsh, the
   lines that make zsh load Pitboard's completions.
+- On macOS, an island grows out of the notch when an account in use passes a share of a limit
+  you choose in **Settings › Limits** (85% at first), and again when it runs out, with the
+  account that has the most left and a Switch button. It shows Pitboard's own run-out and
+  automatic-switch notices as well, and **Show Preview** shows how it looks.
 
 ### Changed
 
+- On macOS, the menu bar item opens a timing tower in place of a menu: for each tool, the
+  account in use, then the others ranked by what they have left, each limit as a row of LEDs,
+  the reset counted down, and BOX to switch. The accounts window shows the same tower, with a
+  column for each limit, the pace and the reset, and its sidebar shows the auto-switch and
+  alert settings.
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
 - **Breaking:** Pitboard refuses with `login_restricted` to switch Codex to a login that Codex's

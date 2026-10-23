@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     let commandLineLink: CommandLineLink
     let windowRequests = WindowRequests()
     let defaults: UserDefaults
+    let alerts: LimitAlerts
     private let quitting: @MainActor () -> Void
     private var watching: [NSObjectProtocol] = []
 
@@ -25,6 +26,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         openAtLogin = OpenAtLogin(dependencies.loginItem)
         commandLineLink = CommandLineLink(dependencies.commandLineTool, model: model)
         quitting = dependencies.quitting
+        let alerts = LimitAlerts(defaults: dependencies.defaults)
+        self.alerts = alerts
+        dependencies.notifications?.onNotice = { alerts.receive($0) }
         super.init()
     }
 

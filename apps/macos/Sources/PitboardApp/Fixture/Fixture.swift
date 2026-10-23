@@ -57,6 +57,7 @@
                 loginItem: FixtureLoginItem(),
                 commandLineTool: commandLineTool(in: folder),
                 web: .fixture(folder: folder),
+                notifications: nil,
                 quitting: {})
         }
 
