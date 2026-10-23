@@ -12,6 +12,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard says to open Claude when a Claude Desktop change finds Claude's Reset App Data
   waiting to delete its data folder, instead of asking you to update Pitboard.
 
+### Fixed
+
+- Pitboard adds and switches Claude Desktop accounts with Claude 3.1623.0 and later, and
+  leaves the names it does not move where Claude keeps them, such as `SharedStorage` and
+  `design`, instead of refusing each name it has not read.
+
 ## [1.0.0-beta.4] - 2026-10-20
 
 ### Added

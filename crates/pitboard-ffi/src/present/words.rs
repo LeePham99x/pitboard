@@ -2531,7 +2531,9 @@ mod tests {
         ] {
             errors.push(Error::LoginFolderUnknown {
                 tool,
-                what: "holds `Network`, which this Pitboard has not read".into(),
+                what:
+                    "holds `Cookies-wal`, a part of the account's data this Pitboard has not read"
+                        .into(),
                 then,
             });
         }
