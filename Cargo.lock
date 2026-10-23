@@ -1349,6 +1349,7 @@ dependencies = [
 name = "pitboard-core"
 version = "0.16.1"
 dependencies = [
+ "base64",
  "core-foundation",
  "core-foundation-sys",
  "hex",

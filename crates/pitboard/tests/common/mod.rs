@@ -1318,12 +1318,7 @@ pub(crate) fn codex_login(account: &str, email: &str, refresh: &str) -> serde_js
         "auth_mode": "chatgpt",
         "OPENAI_API_KEY": null,
         "tokens": {
-            "id_token": format!(
-                "{}.{}.{}",
-                base64url(br#"{"alg":"RS256"}"#),
-                base64url(claims.to_string().as_bytes()),
-                base64url(b"not a real signature"),
-            ),
+            "id_token": pitboard_core::testing::unsigned_token(&claims),
             "access_token": format!("codex-access-{refresh}"),
             "refresh_token": refresh,
             "account_id": account,
@@ -1382,24 +1377,6 @@ fn npm_shim(interpreter: &str, target: &str) -> String {
     .iter()
     .map(|line| format!("{line}\r\n"))
     .collect()
-}
-
-/// Unpadded base64url, which is how every part of a JWT is written.
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let mut held = 0u32;
-        for (at, byte) in chunk.iter().enumerate() {
-            held |= u32::from(*byte) << (16 - 8 * at);
-        }
-        for at in 0..(chunk.len() * 8).div_ceil(6) {
-            out.push(char::from(
-                ALPHABET[((held >> (18 - 6 * at)) & 0x3f) as usize],
-            ));
-        }
-    }
-    out
 }
 
 /// A credential shaped like Claude Code's, keyed so the fake Anthropic can tell who owns it.
