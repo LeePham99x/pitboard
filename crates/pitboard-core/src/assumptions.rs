@@ -44,9 +44,8 @@ pub enum Platform {
 }
 
 impl Platform {
-    /// Every system, in the order a report lists them. Kept private: a fact's systems are
-    /// the ones its line in [`PerSystem`] reads it on, and no list of systems stands in for
-    /// that.
+    // Private: a fact's systems are the ones its line in `PerSystem` reads it on.
+    #[cfg(any(test, feature = "test-support"))]
     const EACH: [Platform; 3] = [Platform::MacOs, Platform::Linux, Platform::Windows];
 
     /// Stable, lower case, as a report names it.
@@ -177,7 +176,8 @@ pub fn on(provider: ProviderId, name: &str, platform: Platform) -> Option<OnSyst
         .map(|line| line.on(platform))
 }
 
-/// The systems whose builds one of a provider's facts is read from.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
 pub fn read_on(provider: ProviderId, name: &str) -> Vec<Platform> {
     Platform::EACH
         .into_iter()

@@ -13,5 +13,8 @@ clap.workspace = true
 pitboard-core.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+pitboard-core = { workspace = true, features = ["test-support"] }
+
 [lints]
 workspace = true
