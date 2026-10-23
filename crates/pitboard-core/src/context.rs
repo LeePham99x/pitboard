@@ -111,8 +111,7 @@ impl Default for Environment {
 }
 
 impl Environment {
-    /// This process's own.
-    pub fn of_this_process() -> Environment {
+    pub(crate) fn of_this_process() -> Environment {
         std::env::vars_os().collect()
     }
 
@@ -400,10 +399,9 @@ pub struct Context {
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
-    /// Whether this process was started with the marker the schedule's job carries where
-    /// what the system says of the job it started is not to be relied on
-    /// ([`crate::schedule::SCHEDULED_RUN`]), as the front end it was started as read it.
-    pub(crate) marked_as_scheduled: bool,
+    /// The job of Pitboard's whose marker this process was started with, as the front end it
+    /// was started as read it ([`crate::schedule::Job::marked`]).
+    pub(crate) started_by: Option<crate::schedule::Job>,
     /// Whether this process was started under sudo, which sets `SUDO_UID`. Part of what the
     /// host answers when the one gate every change passes asks whether this process runs as
     /// the person themselves.
@@ -523,7 +521,7 @@ impl Context {
             git_bash: None,
             wsl_distro: None,
             scheduled_job: None,
-            marked_as_scheduled: false,
+            started_by: None,
             sudo: false,
             clock: Arc::new(SystemClock),
             locks: crate::lock::Locks::CLAUDE_CODE,
@@ -719,13 +717,22 @@ impl Context {
     /// renews the default home whatever `PITBOARD_HOME` says
     /// ([`crate::schedule::SCHEDULED_RUN`]).
     pub fn started_by_the_schedule(mut self) -> Context {
-        self.marked_as_scheduled = true;
+        self.started_by = Some(crate::schedule::Job::Renew);
         self
     }
 
-    /// Whether this process was started with the schedule's marker.
-    pub(crate) fn marked_as_scheduled(&self) -> bool {
-        self.marked_as_scheduled
+    /// The context a run of the watch service watches in, as the marker its job is started
+    /// with says: the command line does this for `pitboard watch --scheduled`. It watches the
+    /// default home whatever `PITBOARD_HOME` says, given the variables its job's file keeps
+    /// where the system hands the job none, as a run of the renewal schedule renews.
+    pub fn started_by_the_watch_service(mut self) -> Context {
+        self.started_by = Some(crate::schedule::Job::Watch);
+        crate::schedule::for_its_run(&self, crate::schedule::Job::Watch)
+    }
+
+    /// The job whose marker this process was started with.
+    pub(crate) fn started_by(&self) -> Option<crate::schedule::Job> {
+        self.started_by
     }
 
     // `given` over this context's own proxy variables, as a job's are given over the system's.
@@ -924,7 +931,7 @@ impl Context {
                 .filter(|_| env.os() == Os::Linux)
                 .map(|named| named.to_string_lossy().into_owned()),
             scheduled_job: None,
-            marked_as_scheduled: false,
+            started_by: None,
             sudo: env.set("SUDO_UID"),
             clock: Arc::new(SystemClock),
             locks: crate::lock::Locks::CLAUDE_CODE,

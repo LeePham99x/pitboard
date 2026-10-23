@@ -1,16 +1,18 @@
 //! `pitboard watch`: switching Claude Code by itself, and warming up the accounts turned on
-//! for it, for as long as somebody leaves it running in a terminal, as the app does.
+//! for it, for as long as somebody leaves it running in a terminal, as the app does, or from
+//! each sign-in on, where `pitboard watch install` had the system's own service manager run it
+//! ([`pitboard_core::watch_service`]).
 //!
-//! A program in the foreground, which stops with its terminal or with Ctrl-C. Nothing
-//! installs it and it starts nothing that outlives it: running it is the opt-in. What it
-//! decides, and what it never does, is [`pitboard_core::duty::autoswitch`]'s and
-//! [`pitboard_core::duty::warm`]'s.
+//! In a terminal it stops with the terminal or with Ctrl-C, and starts nothing that outlives
+//! it: running it, or installing it, is the opt-in. What it decides, and what it never does, is
+//! [`pitboard_core::duty::autoswitch`]'s and [`pitboard_core::duty::warm`]'s.
 //!
 //! It asks the services about every account as often as the app does, and looks at what the
 //! status lines and the other front ends record as often as the app looks, so it costs
 //! Anthropic no more than the app would.
 
-use crate::{Report, emit, followed, ui};
+use crate::{Report, emit, followed, located, ui};
+use clap::Subcommand;
 use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::duty::warm::{Overview, Standing};
@@ -33,6 +35,131 @@ const LOOK_EVERY: Duration = Duration::from_secs(2);
 /// account is asked only as often as its budget allows whichever front end asks.
 const READ_EVERY: i64 = 300;
 
+/// The share `watch` and its service switch at.
+#[derive(clap::Args)]
+pub(crate) struct Share {
+    /// Switch once a limit of the account in use reaches this share, from 50 to 99
+    #[arg(
+        long,
+        value_name = "PERCENT",
+        default_value_t = Threshold::DEFAULT.percent(),
+        value_parser = clap::value_parser!(u8)
+            .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
+    )]
+    at: u8,
+}
+
+impl Share {
+    // The parser takes only a share there can be.
+    pub(crate) fn threshold(&self) -> Threshold {
+        Threshold::new(self.at).unwrap_or_default()
+    }
+}
+
+#[derive(Subcommand)]
+pub(crate) enum WatchCommand {
+    /// Have this computer's own service manager run `pitboard watch` from now on and at each
+    /// sign-in
+    Install {
+        #[command(flatten)]
+        share: Share,
+    },
+    /// Say whether it is installed
+    Status,
+    /// Stop it and take it away
+    Uninstall,
+}
+
+/// Installs, reports or takes away the watch service, as `schedule` does the renewal schedule.
+pub(crate) fn service(pitboard: &Pitboard, what: &WatchCommand) -> Report {
+    use pitboard_core::watch_service::Installed;
+    let default = pitboard.shown(&pitboard.default_directory());
+    let watches_only = format!(
+        "The watch service watches only the accounts in {default}, not those in the directory \
+         PITBOARD_HOME names."
+    );
+    let this_home = pitboard.schedule_renews_this_home();
+    match what {
+        WatchCommand::Install { share } => {
+            let threshold = share.threshold();
+            match pitboard.watch_service_install(threshold) {
+                Err(error) => Report::failed(Some("watch"), error),
+                Ok(location) => Report::done(
+                    "watch",
+                    located(
+                        json!(true),
+                        &location,
+                        json!({ "threshold": threshold.percent() }),
+                    ),
+                    format!(
+                        "Pitboard watches Claude Code in the background from now on, and at each \
+                         sign-in. It switches once a limit of the account in use reaches {}%, \
+                         and warms up the accounts `pitboard warm on` turned on.\n{location}\n\n\
+                         {}\n",
+                        threshold.percent(),
+                        words::IS_THIS_ALLOWED
+                    ),
+                ),
+            }
+        }
+        WatchCommand::Status => {
+            let (data, human) = match pitboard.watch_service() {
+                Installed::Yes { location, at } => (
+                    located(
+                        json!(true),
+                        &location,
+                        json!({ "threshold": at.map(Threshold::percent) }),
+                    ),
+                    format!(
+                        "Pitboard watches Claude Code in the background{}.\n{location}\n{}",
+                        at.map(|at| format!(
+                            ", and switches once a limit of the account in use reaches {}%",
+                            at.percent()
+                        ))
+                        .unwrap_or_default(),
+                        if this_home {
+                            String::new()
+                        } else {
+                            format!("{watches_only}\n")
+                        }
+                    ),
+                ),
+                Installed::No => (
+                    json!({ "installed": false }),
+                    format!(
+                        "Nothing watches Claude Code in the background here.\n{}\n",
+                        if this_home {
+                            "Run `pitboard watch install` to change that.".to_string()
+                        } else {
+                            format!(
+                                "{watches_only} To install it for {default}, unset \
+                                 PITBOARD_HOME, then run `pitboard watch install`."
+                            )
+                        }
+                    ),
+                ),
+                Installed::Unsupported => (
+                    json!({ "installed": false, "supported": false }),
+                    "This computer has no scheduler Pitboard knows how to write.\n".to_string(),
+                ),
+            };
+            Report::done("watch", data, human)
+        }
+        WatchCommand::Uninstall => match pitboard.watch_service_uninstall() {
+            Err(error) => Report::failed(Some("watch"), error),
+            Ok(removed) => Report::done(
+                "watch",
+                json!({ "installed": false, "removed": removed }),
+                if removed {
+                    "Stopped watching Claude Code in the background.\n".to_string()
+                } else {
+                    "Nothing was watching Claude Code in the background.\n".to_string()
+                },
+            ),
+        },
+    }
+}
+
 /// Decides once from the usage Pitboard last measured, and says what it came to. Nobody is
 /// asked for usage; a decision under the lock may ask Anthropic whose login Claude Code has
 /// stored, as a switch does.
@@ -42,8 +169,14 @@ pub(crate) fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
 
 /// Watches until it is stopped, saying the account it watches whenever its last line said
 /// something else, every switch, and each thing that stops one once. A refusal is asked again
-/// no sooner than the core waits after as many failed attempts, as the app does.
-pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
+/// no sooner than the core waits after as many failed attempts, as the app does. `scheduled`
+/// is a run of the watch service, which no Ctrl-C stops.
+pub(crate) fn run(
+    pitboard: &Pitboard,
+    threshold: Threshold,
+    scheduled: bool,
+    as_json: bool,
+) -> ExitCode {
     if let Err(refused) = pitboard.permit() {
         return emit(&Report::failed(Some("watch"), refused), as_json);
     }
@@ -54,9 +187,14 @@ pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> E
             watching_json(threshold, warming.as_ref()),
             format!(
                 "Watching Claude Code. Pitboard switches to another of your accounts once a \
-                 limit of the one in use reaches {}%{}. Stop with Ctrl-C.\n",
+                 limit of the one in use reaches {}%{}. {}\n",
                 threshold.percent(),
-                warming.as_ref().map(warms).unwrap_or_default()
+                warming.as_ref().map(warms).unwrap_or_default(),
+                if scheduled {
+                    "Stop it with `pitboard watch uninstall`."
+                } else {
+                    "Stop with Ctrl-C."
+                }
             ),
         ),
         as_json,
@@ -561,6 +699,107 @@ mod tests {
     use super::*;
     use pitboard_core::provider::{Adoption, Held};
     use pitboard_core::service::Warning;
+
+    /// `watch install` says what the service does, where it went and the terms' sentence;
+    /// `status` reads it back with its share, and from another home says whose accounts it
+    /// watches; `uninstall` takes it away once. On a machine in memory, whose scheduler asks
+    /// nobody.
+    #[test]
+    fn the_service_is_installed_reported_and_taken_away() {
+        use pitboard_core::context::Context;
+        use pitboard_core::testing::MemoryHost;
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let home = scratch.path().to_path_buf();
+        let program = home.join("bin/pitboard");
+        std::fs::create_dir_all(program.parent().expect("its folder")).expect("made");
+        std::fs::write(&program, "").expect("a command line");
+        let ctx = Context::new(home.clone())
+            .with_schedule_program(program)
+            .with_memory_stores(MemoryHost::new());
+        let default = Pitboard::new(ctx.clone());
+        let elsewhere = Pitboard::new(ctx.with_pitboard_home(home.join("elsewhere")));
+        let at = |percent: &str| {
+            let parsed = <Share as clap::FromArgMatches>::from_arg_matches(
+                &<Share as clap::Args>::augment_args(clap::Command::new("watch"))
+                    .get_matches_from(["watch", "--at", percent]),
+            );
+            parsed.expect("a share")
+        };
+        let run = |pitboard: &Pitboard, what: WatchCommand| service(pitboard, &what);
+
+        let none = run(&default, WatchCommand::Status);
+        assert_eq!(
+            none.human,
+            "Nothing watches Claude Code in the background here.\nRun `pitboard watch install` \
+             to change that.\n"
+        );
+        assert_eq!(
+            none.result.as_ref().expect("read"),
+            &json!({"installed": false})
+        );
+
+        let installed = run(&default, WatchCommand::Install { share: at("90") });
+        let data = installed.result.as_ref().expect("installed").clone();
+        assert_eq!(data["installed"], true);
+        assert_eq!(data["threshold"], 90);
+        assert!(
+            data["path"].is_string() || data["task"].is_string(),
+            "{data}"
+        );
+        assert!(
+            installed.human.starts_with(
+                "Pitboard watches Claude Code in the background from now on, and at each \
+                 sign-in. It switches once a limit of the account in use reaches 90%, and warms \
+                 up the accounts `pitboard warm on` turned on.\n"
+            ),
+            "{}",
+            installed.human
+        );
+        assert!(
+            installed
+                .human
+                .ends_with(&format!("\n\n{}\n", words::IS_THIS_ALLOWED)),
+            "{}",
+            installed.human
+        );
+
+        let here = run(&default, WatchCommand::Status).human;
+        assert!(
+            here.starts_with(
+                "Pitboard watches Claude Code in the background, and switches once a limit of \
+                 the account in use reaches 90%.\n"
+            ),
+            "{here}"
+        );
+        let there = run(&elsewhere, WatchCommand::Status).human;
+        assert!(
+            there.ends_with(&format!(
+                "The watch service watches only the accounts in {}, not those in the directory \
+                 PITBOARD_HOME names.\n",
+                default.shown(&default.default_directory())
+            )),
+            "{there}"
+        );
+        let refused = run(&elsewhere, WatchCommand::Install { share: at("95") });
+        assert_eq!(
+            refused.result.expect_err("refused").code(),
+            "schedule_not_default_home"
+        );
+
+        let removed = run(&default, WatchCommand::Uninstall);
+        assert_eq!(
+            removed.human,
+            "Stopped watching Claude Code in the background.\n"
+        );
+        assert_eq!(
+            removed.result.expect("removed"),
+            json!({"installed": false, "removed": true})
+        );
+        assert_eq!(
+            run(&default, WatchCommand::Uninstall).human,
+            "Nothing was watching Claude Code in the background.\n"
+        );
+    }
 
     /// What watching cannot mend ends it; what a later look may get past is said and watched
     /// on.

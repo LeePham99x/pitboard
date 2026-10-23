@@ -1,6 +1,5 @@
 //! Which store keeps the data of each account's window.
 
-use crate::Site;
 use uuid::Uuid;
 
 // Neither this namespace nor a store name hashed in it may ever change: every window would
@@ -9,8 +8,8 @@ const NAMESPACE: [u8; 16] = [
     0x67, 0x4b, 0x09, 0xf3, 0x8d, 0x37, 0x4e, 0x48, 0xa3, 0x61, 0x5a, 0xf2, 0xa6, 0x85, 0x67, 0x73,
 ];
 
-// A version 5 UUID of `<store name>:<account id>`. Each character of the id is lowered alone,
-// as Swift's `lowercased()` did for every store released, not by Unicode's final-sigma rule.
+// Each character of the id is lowered alone, as Swift's `lowercased()` did for every store
+// released, not by Unicode's final-sigma rule.
 pub(crate) fn derive(store_name: &str, account_id: &str) -> String {
     let lowered: String = account_id.chars().flat_map(char::to_lowercase).collect();
     let name = format!("{store_name}:{lowered}");
@@ -23,28 +22,13 @@ pub(crate) fn same(one: &str, other: &str) -> bool {
     one.eq_ignore_ascii_case(other)
 }
 
-/// The store that keeps the data of the window of the account `account_id` names on `site`,
-/// which is also the window's identity: one window per account. A version 5 UUID of
-/// `<store name>:<account id>` in Pitboard's namespace, in lower case, which WebKit and
-/// WebView2 can each name a store by.
-///
-/// Derived rather than stored, so there is nothing to keep in step with the accounts: a
-/// rename keeps the window's sign-in, and a store no enrolled account derives is one an app
-/// can find and delete. A version 5 UUID is never the nil UUID, which WebKit refuses as an
-/// identifier. The account id is not secret; the hash keeps it out of folder names and saved
-/// windows.
-#[uniffi::export]
-pub fn store_id(site: Site, account_id: String) -> String {
-    derive(&site.store_name, &account_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use pitboard_sites::{CHATGPT, CLAUDE};
 
     fn claude(id: &str) -> String {
-        store_id((&CLAUDE).into(), id.into())
+        derive(CLAUDE.store_name, id)
     }
 
     /// The values the Swift `storeID` gave before the rule was Rust, which every window
@@ -93,7 +77,7 @@ mod tests {
             (&CLAUDE, "Ⅻ", "274dacb3-949e-57f1-896c-73e43128c5b5"),
         ] {
             assert_eq!(
-                store_id(site.into(), id.into()),
+                derive(site.store_name, id),
                 store,
                 "{}:{id}",
                 site.store_name
@@ -106,11 +90,11 @@ mod tests {
     #[test]
     fn a_codex_accounts_store_is_its_own() {
         assert_eq!(
-            store_id((&CHATGPT).into(), "team_user-1".into()),
+            derive(CHATGPT.store_name, "team_user-1"),
             "8ff9e0e6-a7e2-53e2-a594-6e53ddadd38a",
             "the name hashed is codex:<account id>, which never changes once shipped"
         );
-        assert_ne!(store_id((&CHATGPT).into(), "dana".into()), claude("dana"));
+        assert_ne!(derive(CHATGPT.store_name, "dana"), claude("dana"));
     }
 
     /// A store id an app kept in upper case, as Foundation writes a UUID, names the same

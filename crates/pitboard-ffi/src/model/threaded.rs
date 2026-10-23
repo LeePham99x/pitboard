@@ -1882,9 +1882,9 @@ fn an_account_enrolled_by_0_8_0_keeps_its_window() {
         .collect();
     assert_eq!(
         stores,
-        [crate::account_windows::store_id(
-            (&pitboard_sites::CLAUDE).into(),
-            "here".into()
+        [crate::account_windows::stores::derive(
+            pitboard_sites::CLAUDE.store_name,
+            "here"
         )]
     );
 }
@@ -1906,7 +1906,7 @@ fn the_windows_records_are_kept_in_the_apps_own_directory() {
     let key = world.pitboard_dir().to_string_lossy().into_owned();
     let store = |label: &str| {
         let enrolled = world.elsewhere().account(label).expect("enrolled");
-        crate::account_windows::store_id((&pitboard_sites::CLAUDE).into(), enrolled.id)
+        crate::account_windows::stores::derive(pitboard_sites::CLAUDE.store_name, &enrolled.id)
     };
     let (work, spare) = (store("work"), store("spare"));
     let gone = "00000000-0000-4000-8000-000000000001";
@@ -2031,9 +2031,9 @@ fn the_windows_records_are_not_written_where_pitboard_may_change_nothing() {
 
     let world = World::new("windows-elevated");
     world.enrolled("work", "here", 10.0);
-    let work = crate::account_windows::store_id(
-        (&pitboard_sites::CLAUDE).into(),
-        world.elsewhere().account("work").expect("enrolled").id,
+    let work = crate::account_windows::stores::derive(
+        pitboard_sites::CLAUDE.store_name,
+        &world.elsewhere().account("work").expect("enrolled").id,
     );
     world
         .host

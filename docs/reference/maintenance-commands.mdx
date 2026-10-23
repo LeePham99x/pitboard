@@ -148,6 +148,7 @@ The log is `audit.log` in Pitboard's directory, and holds no email address. Past
 | `reclaim` | A parked login is given back to its account. | The label | `ok` |
 | `reclaim` | A parked login is discarded. | The parked login's name, which holds an account id | `discarded` |
 | `schedule` | Daily renewal is turned on or off, or the app repairs a schedule that ran the app itself. | `install`, `uninstall` or `repair` | `ok` |
+| `watch-service` | The watch service is installed or taken away. | `install` or `uninstall` | `ok` |
 | `warm-up` | A warm-up runs, by itself or with `warm now` or **Warm Up Now**. | The label | `ok`, or a code from [Warm-up](/reference/errors#warm-up) |
 | `warm-on`, `warm-off` | An account is turned on or off for warm-ups. | The label | `ok` |
 | `warm-range` | The hours warm-ups are made in change. | The hours: `07:00-23:00` | `ok` |
@@ -166,7 +167,7 @@ pitboard log -n 3
 ## `uninstall`
 
 ```text
-Delete every parked login this Pitboard wrote, the daily renewal schedule and Pitboard's own files
+Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch service and Pitboard's own files
 
 Usage: pitboard uninstall [OPTIONS]
 ```
@@ -178,7 +179,7 @@ Usage: pitboard uninstall [OPTIONS]
 While the Pitboard app is open, `pitboard uninstall` refuses with `pitboard_open` and deletes nothing: the app would make Pitboard's directory again. Quit it with **Quit Pitboard** on macOS, or **Exit** in its icon's menu on Windows. Otherwise it works in this order:
 
 1. On macOS, where Pitboard holds a Claude Desktop login or a move of one waits, reads Claude's data folder as a change does, and settles the move. If it refuses, nothing is deleted.
-2. Removes the daily renewal schedule. If that fails, it stops with nothing deleted.
+2. Stops and removes the [watch service](/reference/account-commands#the-watch-service), then removes the daily renewal schedule. If either fails, it stops with nothing deleted.
 3. Deletes every parked login this Pitboard wrote, and every folder set aside in `~/.pitboard/parks`.
 4. Deletes Pitboard's directory, once every parked login and folder set aside is gone.
 
@@ -194,14 +195,14 @@ The login each tool is using stays. On macOS, so do parked logins that `pitboard
 
 While a warm-up runs, step 4 keeps the directory. It also keeps it where a file in it could not be removed, and names that file. Run `pitboard uninstall` again once the warm-up is over or the file is closed.
 
-With `PITBOARD_HOME` set to another directory, it deletes that directory and leaves the schedule. `pitboard schedule uninstall` removes the schedule. The question and the output name that directory.
+With `PITBOARD_HOME` set to another directory, it deletes that directory and leaves the schedule and the watch service. `pitboard schedule uninstall` and `pitboard watch uninstall` remove them. The question and the output name that directory.
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `uninstall` refuses with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/environment-variables#custom-oauth-endpoint) says why.
 
 In a terminal, it asks first, as [Questions before deleting](/reference/commands#questions-before-deleting) describes:
 
 ```text
-Delete every parked login this Pitboard wrote, the daily renewal schedule and ~/.pitboard? Each tool stays signed in to the account in use; the others need signing in again. [y/N]
+Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch service and ~/.pitboard? Each tool stays signed in to the account in use; the others need signing in again. [y/N]
 ```
 
 Anywhere else, such as in a script or with `--json`, it needs `--yes`. Without it, `uninstall` refuses with `confirmation_needed`, exit status 2, and changes nothing.
@@ -221,6 +222,7 @@ Turned off the daily renewal schedule.
 | Output | When |
 | --- | --- |
 | `Deleted 2 folder(s) set aside.` | On macOS, folders were set aside in `~/.pitboard/parks`. It follows the first line. |
+| `Stopped the watch service.` | The watch service was installed. It comes before the schedule's line. |
 | `` Left 1 parked login(s) that `pitboard repair` found and this Pitboard did not write, because they may be another Pitboard's. `` | macOS only. |
 | `` 1 could not be deleted yet, so ~/.pitboard was kept; run `pitboard uninstall` again. `` | A parked login or a folder set aside could not be deleted, or a renewal of Claude Code's login could not be saved yet. It takes the place of the last line. |
 
@@ -320,7 +322,6 @@ On macOS, Claude Desktop's checks read the folders in `~/.pitboard/parks`, open 
   | `discarded` | `old parked logins` | Only when parked logins are waiting to be deleted. Always warns. |
   | `machine_id` | `machine id` | Warns when this machine has no stable identifier. On Windows, it is always there, `ok`, and says that a copy of the PC, such as a whole virtual machine, takes this PC's accounts for its own. |
   | `local_app_data` | `local app data` | Windows only, when Windows keeps your local app data somewhere other than `AppData\Local` in the folder `USERPROFILE` names. Always warns: Pitboard keeps its directory there whatever Windows says. |
-  | `codex_installer_home` | `Codex's home` | Windows only, when `CODEX_HOME` is not set and your profile folder is not the one `USERPROFILE` names: Codex then keeps its login in one `.codex` and its installer uses another. Always warns. |
   | `roaming_profile` | `roaming profile` | Windows only, when your profile roams. Always warns: Claude Code's and Codex's logins go to every PC you sign in to. |
   | `wsl` | `WSL` | On Windows, the WSL distributions there, whose Claude Code and Codex Pitboard on Windows does not switch. It adds that a switch on Windows changes the login of a Codex there that uses the Windows Codex home. Inside WSL, says Pitboard there switches what is installed in that Linux, and Pitboard for Windows the Claude Code and Codex installed on Windows, which keep their own logins. Where Codex's home is on a Windows drive, it says that only of Claude Code. It adds that Codex starts no shared background server there, as read in Codex 0.163.0, and that a switch there changes the login of Codex on Windows where it uses the same folder. Always `ok`. |
   | `pitboard_copies` | `copies of pitboard` | Windows only, when more than one `pitboard` is on your `PATH`. Names the one a shell runs. Always `ok`. |
@@ -329,6 +330,7 @@ On macOS, Claude Desktop's checks read the folders in `~/.pitboard/parks`, open 
   | `claude_daemon` | `Claude Code daemon` | Whether Claude Code's daemon has run here, and whether it runs. Always `ok`. |
   | `pending_parks` | `parks being reclaimed` | Parked logins Pitboard started to write and has not accounted for. Warns when one cannot be read. |
   | `schedule` | `renewal schedule` | Only when daily renewal is on for Pitboard's own directory. Fails when the program it runs is gone or is the app itself. Warns when it does not name a program. On Windows, warns when a setting of the task changed in Task Scheduler or its last run failed. |
+  | `watch_service` | `watch service` | Only when the watch service is installed for Pitboard's own directory. Fails when the program it runs is gone. Warns when it does not name a program. On Windows, warns when its last run failed. |
   | `schedule_proxy` | `renewal schedule's proxy` | Only when the job's requests would go another way than this run's. Warns, but is `ok` in the app. See [The schedule uses another proxy](/troubleshooting/renewal#the-schedule-uses-another-proxy). |
   | `claude_version` | `Claude Code build` | The installed Claude Code version, and the build of it for this system that Pitboard's facts were read from. Always `ok`. |
   | `status_line` | `status line` | Windows only. The shell Claude Code runs its status line in, Git Bash, PowerShell 7 or Windows PowerShell, and the `pitboard` it finds there. Warns when Claude Code's status line runs `pitboard` and that shell finds none. |
@@ -336,6 +338,7 @@ On macOS, Claude Desktop's checks read the folders in `~/.pitboard/parks`, open 
   | `asking` | `asking Anthropic` | Warns while Pitboard waits to ask about usage, after a service asked for less traffic or could not be reached. The name lists the services asked. |
   | `network` | `network` | Direct, or which proxy and which variable named it. Warns for a variable holding no proxy address Pitboard can read. Warns for a SOCKS proxy, which Pitboard does not use, where `NO_PROXY` leaves a host it calls. |
   | `dormant_account` | `account <label>` | Only for a Claude Code account not switched to for 30 days or more. An account enrolled with `--sign-in` and never switched to gets none. Always warns. |
+  | `codex_installer_home` | `Codex's home` | Windows only, when `CODEX_HOME` is not set and your profile folder is not the one `USERPROFILE` names: Codex then keeps its login in one `.codex` and its installer uses another. Always warns. |
   | `codex_backend` | `Codex login store` | Where Codex keeps its login. Pitboard switches only the file store, `auth.json`. |
   | `codex_login_restrictions` | `Codex login restrictions` | Only when a setting limits which ChatGPT logins Codex keeps, such as `forced_chatgpt_workspace_id`. Names each setting and where it is set. Warns when it rules out an enrolled account, which Pitboard then does not put in use. Fails when Codex cannot read one. |
   | `codex_auth_file` | `Codex login file` | File store only. `auth.json` exists, and only you can read it. |

@@ -10,7 +10,8 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
 use windows::Win32::System::TaskScheduler::{
-    ITaskFolder, ITaskService, TASK_CREATE_OR_UPDATE, TASK_LOGON_INTERACTIVE_TOKEN, TaskScheduler,
+    IRegisteredTask, ITaskFolder, ITaskService, TASK_CREATE_OR_UPDATE,
+    TASK_LOGON_INTERACTIVE_TOKEN, TaskScheduler,
 };
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::BSTR;
@@ -23,6 +24,9 @@ pub(super) struct System;
 const NOT_FOUND: [u32; 2] = [0x8007_0002, 0x8007_0003];
 // ERROR_ALREADY_EXISTS: another process made the folder first (RF-E1, run 38922866517).
 const ALREADY_THERE: u32 = 0x8007_00B7;
+
+// SCHED_E_TASK_NOT_RUNNING: nothing to stop.
+const NOT_RUNNING: u32 = 0x8004_130B;
 
 const ASKED_IN_A_TEST: &str = "a build for tests asked Task Scheduler itself";
 
@@ -104,6 +108,50 @@ impl Service for System {
                     .and_then(|root| root.DeleteFolder(&BSTR::from(&FOLDER[1..]), 0));
             }
             Ok(())
+        })
+    }
+
+    fn run(&self, _: Permit, _ctx: &Context, name: &str) -> Result<()> {
+        System::on_task(name, |task| {
+            // SAFETY: a task the connected service gave; an empty VARIANT passes no parameters.
+            unsafe { task.Run(&VARIANT::default()) }.map(drop)
+        })
+    }
+
+    fn stop(&self, _: Permit, _ctx: &Context, name: &str) -> Result<()> {
+        System::on_task(name, |task| {
+            // SAFETY: a task the connected service gave; 0 is the only flag Stop takes.
+            let stopped = unsafe { task.Stop(0) };
+            match stopped {
+                Err(e) if e.code().0 as u32 == NOT_RUNNING => Ok(()),
+                stopped => stopped,
+            }
+        })
+    }
+}
+
+impl System {
+    // `then` on the task named, where there is one.
+    fn on_task(
+        name: &str,
+        then: impl FnOnce(&IRegisteredTask) -> windows::core::Result<()> + Send,
+    ) -> Result<()> {
+        if cfg!(any(test, feature = "test-support")) {
+            return Err(Error::ScheduleRefused {
+                detail: ASKED_IN_A_TEST.into(),
+            });
+        }
+        let name = name.to_owned();
+        in_the_mta(move |service| {
+            let Some(folder) = folder(service)? else {
+                return Ok(());
+            };
+            // SAFETY: a folder the connected service gave, and the task it gave.
+            match unsafe { folder.GetTask(&BSTR::from(name.as_str())) } {
+                Ok(task) => then(&task),
+                Err(e) if not_found(&e) => Ok(()),
+                Err(e) => Err(e),
+            }
         })
     }
 }

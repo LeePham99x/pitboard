@@ -23,8 +23,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The file's name, in the directory the app names.
 pub(crate) const FILE: &str = "windows.json";
 
-/// A store id as the records keep and compare it: in lower case, as `store_id` writes one, so
-/// one Foundation wrote in upper case is the same store.
+/// A store id as the records keep and compare it: in lower case, as `stores::derive` writes
+/// one, so one Foundation wrote in upper case is the same store.
 pub(crate) fn store_key(store: &str) -> String {
     store.to_ascii_lowercase()
 }
@@ -272,7 +272,7 @@ mod tests {
     const DANA: &str = "/Users/dana/.pitboard";
     const SCRATCH: &str = "/tmp/test/.pitboard";
 
-    /// A store as Foundation wrote it into UserDefaults, and as `store_id` derives it.
+    /// A store as Foundation wrote it into UserDefaults, and as `stores::derive` writes it.
     const WORK_UPPER: &str = "7E15C34F-69EC-55B4-9542-F1C1FE3D7085";
     const WORK: &str = "7e15c34f-69ec-55b4-9542-f1c1fe3d7085";
 
@@ -314,7 +314,7 @@ mod tests {
     }
 
     /// What the macOS app's records hold is taken in its own case, by its own keys, and every
-    /// store id is then the one `store_id` derives: a store compared as written would be
+    /// store id is then the one `stores::derive` writes: a store compared as written would be
     /// nobody's, and deleted.
     #[test]
     fn todays_records_are_read_in_any_case_under_their_own_keys() {
@@ -338,9 +338,9 @@ mod tests {
         assert_eq!(earlier.entry("/Users/dana/.pitboard/"), Entry::default());
         assert_eq!(
             store_key(WORK_UPPER),
-            crate::account_windows::store_id(
-                (&pitboard_sites::CLAUDE).into(),
-                "4f3c2a10-8b7e-4d2a-9c1e-5a6b7c8d9e0f".into()
+            crate::account_windows::stores::derive(
+                pitboard_sites::CLAUDE.store_name,
+                "4f3c2a10-8b7e-4d2a-9c1e-5a6b7c8d9e0f"
             )
         );
     }

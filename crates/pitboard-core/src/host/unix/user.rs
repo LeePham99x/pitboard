@@ -131,7 +131,8 @@ pub(crate) fn login_shell() -> Option<PathBuf> {
 /// `SUDO_UID` (`sudo`, as the context read it from the environment this process was
 /// started with), and not as root, an effective user id of 0. Under sudo first, since
 /// `sudo pitboard` is both and "with sudo" says what to stop doing. POSIX always answers
-/// both, so this is never unknown.
+/// both, so this is never unknown. Linux asks [`linux_elevation`] instead.
+#[cfg(any(not(target_os = "linux"), test))]
 pub(crate) fn elevation(sudo: bool) -> Elevation {
     // SAFETY: `geteuid` cannot fail and touches no memory of this process.
     let root = unsafe { libc::geteuid() } == 0;
@@ -139,11 +140,37 @@ pub(crate) fn elevation(sudo: bool) -> Elevation {
 }
 
 /// What [`elevation`] answers for each way this process can have been started.
+#[cfg(any(not(target_os = "linux"), test))]
 fn elevation_of(sudo: bool, root: bool) -> Elevation {
     match (sudo, root) {
         (true, _) => Elevation::Elevated { why: "with sudo" },
         (false, true) => Elevation::Elevated { why: "as root" },
         (false, false) => Elevation::Normal,
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+const IN_ANOTHER_USERS_HOME: &str = "as root in another user's home";
+
+// Linux's: root in a home root owns writes only what root's own runs read back.
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_elevation(sudo: bool, home: &std::path::Path) -> Elevation {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: `geteuid` cannot fail and touches no memory of this process.
+    let root = unsafe { libc::geteuid() } == 0;
+    let owner = std::fs::metadata(home).ok().map(|home| home.uid());
+    linux_elevation_of(sudo, root, owner)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_elevation_of(sudo: bool, root: bool, home_owner: Option<u32>) -> Elevation {
+    match (root, home_owner) {
+        _ if sudo => Elevation::Elevated { why: "with sudo" },
+        (false, _) | (true, Some(0)) => Elevation::Normal,
+        (true, Some(_)) => Elevation::Elevated {
+            why: IN_ANOTHER_USERS_HOME,
+        },
+        (true, None) => Elevation::Unknown,
     }
 }
 
@@ -337,6 +364,35 @@ mod tests {
             Elevation::Elevated { why: "as root" }
         );
         assert_eq!(elevation_of(false, false), Elevation::Normal);
+    }
+
+    // A machine whose only user is root, and `su` without `-`, which keeps the caller's HOME.
+    #[test]
+    fn on_linux_root_in_its_own_home_is_the_person_and_in_another_users_is_not() {
+        assert_eq!(linux_elevation_of(false, true, Some(0)), Elevation::Normal);
+        assert_eq!(
+            linux_elevation_of(false, true, Some(1000)),
+            Elevation::Elevated {
+                why: IN_ANOTHER_USERS_HOME
+            }
+        );
+        assert_eq!(
+            linux_elevation_of(false, true, None),
+            Elevation::Unknown,
+            "a home whose owner cannot be read"
+        );
+        for (root, owner) in [(true, Some(0)), (false, Some(1000)), (false, Some(0))] {
+            assert_eq!(
+                linux_elevation_of(true, root, owner),
+                Elevation::Elevated { why: "with sudo" },
+                "{root} {owner:?}"
+            );
+        }
+        assert_eq!(
+            linux_elevation_of(false, false, Some(0)),
+            Elevation::Normal,
+            "a person is not elevated by a home they do not own"
+        );
     }
 
     /// Root is read from the effective user id, which is checked here against what the

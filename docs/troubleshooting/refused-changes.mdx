@@ -8,7 +8,9 @@ In each case here, reads such as `pitboard status` and the status line still ans
 
 ## Pitboard changes nothing as root
 
-On macOS and Linux, as root or with `sudo`, Pitboard refuses every change with `elevated`: a file or keychain item made as root would be out of reach of your own runs. A container whose only user is root counts too.
+With `sudo`, Pitboard refuses every change with `elevated`: a file or keychain item made as root would be out of reach of your own runs. On macOS, it refuses every change as root too.
+
+On Linux, root changes what it owns in its own home, as on a server or container whose only user is root. Pitboard refuses root only in a home another user owns, such as the one `su` without `-` keeps.
 
 Run Pitboard as yourself. [Remove files Pitboard made as root](/install/remove#remove-files-pitboard-made-as-root) cleans up after an earlier Pitboard run as root.
 

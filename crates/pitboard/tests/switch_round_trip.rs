@@ -679,6 +679,14 @@ fn a_scheduled_renewal_renews_the_default_home_whatever_pitboard_home_says() {
     renewal.assert();
 }
 
+// Linux lets root act in its own home, so its refusal names only what it refuses.
+#[cfg(unix)]
+const UNDER_SUDO: &str = if cfg!(target_os = "linux") {
+    "with sudo or as root in another user's home"
+} else {
+    "as root or with sudo"
+};
+
 /// Under sudo, `renew` renewed a parked login as root and wrote what came back as root,
 /// where the person's own runs might not replace it again. It is refused now, with the code
 /// a program branches on, having asked nobody and written nothing, the audit log included.
@@ -713,7 +721,7 @@ fn renew_under_sudo_is_refused_and_changes_nothing() {
     assert_eq!(refused["error"]["code"], "elevated");
     assert_eq!(
         refused["error"]["message"],
-        "Pitboard changes nothing when it runs as root or with sudo. Run it as yourself."
+        format!("Pitboard changes nothing when it runs {UNDER_SUDO}. Run it as yourself.")
     );
     assert!(tree(&env.root) == before, "nothing is written");
     assert!(!renewal.matched(), "nobody is asked");
@@ -747,7 +755,9 @@ fn enrolling_by_sign_in_under_sudo_announces_no_sign_in() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!err.contains("sign-in. Sign in as"), "{err}");
     assert!(
-        err.contains("Pitboard changes nothing when it runs as root or with sudo."),
+        err.contains(&format!(
+            "Pitboard changes nothing when it runs {UNDER_SUDO}."
+        )),
         "{err}"
     );
     assert!(tree(&env.root) == before, "nothing is written");

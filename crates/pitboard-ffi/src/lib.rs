@@ -70,7 +70,7 @@ pub use account_windows::{
     SignInWindowSize, SiteMenu, WindowAccount, WindowNoteKind, after_content_process_ended,
     decide_navigation, decide_response, dialog_title, download_destination, download_host,
     download_question, frame_asker, opening_note, page_may_close, page_may_use, remove_data_alert,
-    sign_in_window_size, site_menus, store_id, window_accounts, window_home, window_note,
+    sign_in_window_size, site_menus, window_accounts, window_home, window_note,
 };
 
 // The core the model's lanes call, made from what the app was started with, and what it

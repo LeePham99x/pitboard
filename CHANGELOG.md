@@ -15,6 +15,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Codex keeps, such as `forced_chatgpt_workspace_id`, and the accounts it rules out.
 - A Codex switch on Linux names the ChatGPT app among what still runs Codex, and says to quit it
   and open it again.
+- `pitboard watch install` has the system's own service manager run `pitboard watch` from each
+  sign-in on, and `pitboard watch status` and `pitboard watch uninstall` check and remove it.
+- `pitboard doctor` reports the watch service, and `pitboard uninstall` stops and removes it.
+- `pitboard watch --help` and `pitboard watch install` say that Anthropic's terms may cover
+  automatic switching and warm-ups, and link to what they say.
+- The install script ends with the command to run next and, where your login shell is zsh, the
+  lines that make zsh load Pitboard's completions.
 
 ### Changed
 
@@ -41,6 +48,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard warns with `auth_overridden`, and the automatic switch holds back, while
   `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile or managed settings that require the Cloud
   gateway make Claude Code sign in another way.
+- On Linux, Pitboard and its install script work as root in a home root owns, as on a server
+  whose only user is root, and refuse only under `sudo` or as root in another user's home.
+- `pitboard --help` wraps to the terminal, lists the commands in the order you use them and
+  ends with three examples.
+- Where a login file behind the keychain or Credential Manager keeps running Claude Code
+  sessions on their account, `pitboard use` says that `pitboard stow` puts it away, instead of
+  sending you to `pitboard doctor`.
+- On a Linux that systemd did not start, as in many containers, `pitboard schedule install`
+  refuses with `schedule_unsupported` and says so, instead of a `home_unwritable` error that
+  named `systemctl`.
+- Shell completions leave out `pitboard renew --scheduled`, which only the daily renewal
+  schedule runs.
+- On Windows, `pitboard doctor` says where Codex keeps its home among Codex's checks, instead
+  of under a second Codex heading above Pitboard's own.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

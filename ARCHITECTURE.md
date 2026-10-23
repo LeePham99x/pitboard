@@ -110,8 +110,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
     chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
     through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
-    launchd) or `linux/` (`/proc`, systemd, and whether it runs in WSL as Codex tells, which
-    a build for tests reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
+    launchd) or `linux/` (`/proc`, systemd, offered only where systemd started the system as
+    sd_booted(3) tells, and whether it runs in WSL as Codex tells, which a build for tests
+    reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
     both, or `windows/`. Linux and Windows refuse Claude Desktop's data folder before
     anything else is asked, so neither reads a cookie jar, and Linux lists no process with
     its parent.
@@ -434,7 +435,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     decides what daily renewal runs and whose it is, and refuses a program in the temporary
     copy macOS runs an app from, or Explorer one opened inside a zip, by
     `in_a_temporary_copy`, which an app asks of the command line inside it too; the host's
-    scheduler writes it.
+    scheduler writes it. `watch_service.rs` decides the same of the watch service, a second
+    job on that scheduler (`schedule::Job`).
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
@@ -1142,7 +1144,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - Pitboard changes nothing where it runs as root or under sudo, or elevated on Windows, or
   where the host cannot say whether it does: a file it wrote would be root's or the
   administrators', and a keychain item might be, where the person's own runs might not read
-  or replace it. On Windows `TokenElevation` decides, `TokenElevationType` says which words
+  or replace it. On Linux root changes things in a home root owns, as on a machine whose only
+  user is root, and is refused in another user's home or where the home's owner cannot be
+  read. On Windows `TokenElevation` decides, `TokenElevationType` says which words
   (Run as administrator, or an account whose every program runs elevated, which no terminal
   of it changes), a token of LocalSystem, LocalService or NetworkService is elevated
   whatever it says, and a token not read in full is unknown, which refuses. Nor does it
@@ -1170,14 +1174,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
   launchd's job label in `XPC_SERVICE_NAME`, or, since what systemd passes a job is best
   effort and not to be relied on and Task Scheduler passes none, by the marker the unit's
   `ExecStart` and the task's action carry, `renew --scheduled` (`schedule::SCHEDULED_RUN`),
-  which the command line passes on through `Context::started_by_the_schedule`. The command
-  line leaves `renew` to the gate, which asks of the homes the run renews in, so an empty or
-  relative `PITBOARD_HOME` stops no run of the schedule. In a build for tests, such a run
-  whose home is the account's own panics before it reads anything. For the same reason
-  `schedule::install` refuses, with `schedule_not_default_home`, wherever `schedule::serves`
-  is false, that is while `PITBOARD_HOME` names another directory. `uninstall` is not
-  refused, so a schedule can be taken away from any home, and `repair` does nothing there, as
-  before, without an error.
+  which the command line passes on through `Context::started_by_the_schedule`. Only its
+  parser knows the marker, as clap_complete writes a hidden argument into every shell's
+  completions. The command line leaves `renew` to the gate, which asks of the homes the run
+  renews in, so an empty or relative `PITBOARD_HOME` stops no run of the schedule. In a build
+  for tests, such a run whose home is the account's own panics before it reads anything. For
+  the same reason `schedule::install` refuses, with `schedule_not_default_home`, wherever
+  `schedule::serves` is false, that is while `PITBOARD_HOME` names another directory.
+  `uninstall` is not refused, so a schedule can be taken away from any home, and `repair` does
+  nothing there, as before, without an error.
 - The schedule's job is started with the system's environment, not the person's shell, so
   `schedule::install` gives it, through `Scheduler::put`, `PITBOARD_NO_ARGV` where the
   installing context refuses the argument line, and every proxy variable that context
@@ -1196,6 +1201,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
   (`Proxies::same_way`). In the app, whose environment is the system's as the job's is,
   the same line is `ok` and says how each way of installing the schedule chooses its
   proxy: the app's switch would take a terminal's proxy away.
+- The watch service is a second job on the same scheduler (`schedule::Job::Watch`,
+  `watch_service.rs`). It runs `pitboard watch --scheduled --at <share>` on every system
+  (`schedule::WATCH_RUN`): a LaunchAgent that runs at load and again only after a crash
+  (`KeepAlive`'s `Crashed`), a systemd user service enabled under `default.target` and started
+  again only `on-abnormal`, or a task `\Pitboard\Watch <SID>` with a `LogonTrigger` for the
+  person's SID and no time limit, which `put` starts at once after ending the run under the
+  definition before. A run that ended itself on an error it cannot mend starts again at the
+  next sign-in, not sooner. Its rules are the schedule's: it serves the default home alone
+  (`schedule::serves`, `schedule_not_default_home`), a run of it watches that home whatever
+  `PITBOARD_HOME` says (`Context::started_by_the_watch_service`, `schedule::for_its_run`), it
+  is given the installing Pitboard's proxy variables, in `watch.env` on Windows, and the gate
+  refuses it where Pitboard may change nothing. `uninstall` stops and removes it before the
+  schedule, since it writes in the directory as it runs, and `doctor` reports it as
+  `watch_service`. The app may be switching too: a switch is decided again under the lock
+  (`switch::auto`), and `tests/watch.rs` has four processes decide from one reading and make
+  one switch.
 - On Windows `doctor` also reads what Task Scheduler keeps of the task (`Scheduler::task`):
   when it last ran and how that run ended, and the settings Pitboard writes that were changed
   there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
@@ -1204,9 +1225,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. The
   app's start-up repair (`schedule::repair`) points a task at the command line inside the app
   only where the Pitboard it runs is gone and its settings are as Pitboard wrote them. The
-  MSI's full uninstall, through `Pitboard.exe --unregister`, takes the task away
-  (`schedule::uninstall_for_app`) only where it runs the `bin\pitboard.exe` beside that
-  `Pitboard.exe`, whatever its settings, since the removal deletes that program. A task that
+  MSI's full uninstall, through `Pitboard.exe --unregister`, takes each task away, renewal's
+  and the watch service's (`schedule::uninstall_for_app`), only where it runs the
+  `bin\pitboard.exe` beside that `Pitboard.exe`, whatever its settings, since the removal
+  deletes that program. A task that
   runs Scoop's, WinGet's or another copy stays, and so do the parked logins and the Pitboard
   directory. A read Task Scheduler answers with an error, not with no such task, stops an
   install and an uninstall before either changes anything, so an uninstall never leaves the
@@ -1235,7 +1257,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and an app may make them where it likes: `check_name` and `downloads_quit_question`,
   which read only what they are given; `sites_for` and `site_names`, which are
   `pitboard-sites`' and read only what they are given too;
-  the account windows' rules, such as `store_id`, `window_accounts`, `decide_navigation` and
+  the account windows' rules, such as `decide_navigation`, `decide_response` and
   `window_note`, which read only what they are given as well, so a web view's delegate asks
   them as it is asked; `download_destination`, which asks the file system whether each name
   it tries is taken; `app_command_line`, which only joins paths; `can_run`, which asks the
@@ -2233,7 +2255,7 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 
 - One store per account, derived from the account's `id`, which never changes. A window's
   store is a version 5 UUID of `<store name>:<account id>` in a fixed namespace, which
-  `store_id` writes in lower case.
+  `stores.rs` writes in lower case.
   It is also the window's value, so there is one window per account, and a rename keeps its
   sign-in. The namespace and the store names, `claude` and `codex`, never change: a change
   would leave every window without its data, and the next sweep would delete that data.
@@ -3119,6 +3141,9 @@ measured on 18 October 2026, and those CI and the runner facts measured by 20 Oc
 | WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
 | `longPathAware` in a manifest lifts nothing where `LongPathsEnabled` is 0 or absent, as on a PC no policy or installer changed | [Maximum path length limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation) | Both images set it to 1, where the manifest lifts the limit (RF-T8, runs 39310064516 and 39320680285), and AGENTS.md does not let runner-facts.ps1 change it. |
 | `StartWhenAvailable` runs, about 10 minutes later, a start missed while the PC slept or was off | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. Task Scheduler took no missed start of the renewal's daily trigger begun before the task was registered, or passed while it was disabled: none of four tasks, two with the setting, ran within 21 to 29 minutes, each `0x00041303` with no missed run counted (RF-T8, runs 39310064516 and 39320680285). |
+| A `LogonTrigger` whose `UserId` is the person's SID starts the task at their sign-in, for the watch service | [LogonTrigger.UserId](https://learn.microsoft.com/en-us/windows/win32/taskschd/logontrigger-userid) | No run of `windows-facts.yml` has registered the watch service's task yet. |
+| `ExecutionTimeLimit` of `PT0S` lets the watch service's task run with no limit | [TaskSettings.ExecutionTimeLimit](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-executiontimelimit) | As above. |
+| `IRegisteredTask::Run` starts the task at once, and `Stop` ends its run under way | [IRegisteredTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nn-taskschd-iregisteredtask) | As above. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
 | `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |

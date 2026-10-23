@@ -8,22 +8,22 @@ Commands follow the order of `pitboard --help`.
 | Command | What it does |
 | --- | --- |
 | [`status`](/reference/account-commands#status) | Show who is signed in, and what each Claude Code and Codex account has left |
-| [`enroll`](/reference/account-commands#enroll) | Add an account: the one signed in, or another with `--sign-in` |
 | [`use`](/reference/account-commands#use) | Switch a tool to an enrolled account |
+| [`enroll`](/reference/account-commands#enroll) | Add an account: the one signed in, or another with `--sign-in` |
+| [`rename`](/reference/account-commands#rename) | Change an account's label |
 | [`forget`](/reference/account-commands#forget) | Forget an account and delete its parked login |
-| [`stow`](/reference/recovery-commands#stow) | Put away a login file behind the keychain or Credential Manager |
-| [`abandon`](/reference/recovery-commands#abandon) | Give up on an interrupted switch or Claude Desktop move, keeping every login |
-| [`repair`](/reference/recovery-commands#repair) | Account for every parked login on this computer |
-| [`adopt`](/reference/recovery-commands#adopt) | Take over a Pitboard directory from another computer |
+| [`watch`](/reference/account-commands#watch) | Stay running, switch Claude Code before the account in use runs out, and warm up accounts, in a terminal or as a background service |
+| [`warm`](/reference/account-commands#warm) | Choose which accounts Pitboard warms up and when, or warm one up now |
+| [`statusline`](/reference/integration-commands#statusline) | Print one line for Claude Code's status line |
 | [`renew`](/reference/maintenance-commands#renew) | Renew every parked login that is due |
 | [`schedule`](/reference/maintenance-commands#schedule) | Install, check or remove the daily renewal schedule |
 | [`log`](/reference/maintenance-commands#log) | List what Pitboard changed, and when |
-| [`uninstall`](/reference/maintenance-commands#uninstall) | Delete the parked logins this Pitboard wrote, its schedule and directory |
-| [`rename`](/reference/account-commands#rename) | Change an account's label |
 | [`doctor`](/reference/maintenance-commands#doctor) | Check that what Pitboard relies on still holds |
-| [`statusline`](/reference/integration-commands#statusline) | Print one line for Claude Code's status line |
-| [`warm`](/reference/account-commands#warm) | Choose which accounts Pitboard warms up and when, or warm one up now |
-| [`watch`](/reference/account-commands#watch) | Stay running, switch Claude Code before the account in use runs out, and warm up accounts |
+| [`uninstall`](/reference/maintenance-commands#uninstall) | Delete the parked logins this Pitboard wrote, its schedule, watch service and directory |
+| [`stow`](/reference/recovery-commands#stow) | Put away a login file behind the keychain or Credential Manager |
+| [`repair`](/reference/recovery-commands#repair) | Account for every parked login on this computer |
+| [`abandon`](/reference/recovery-commands#abandon) | Give up on an interrupted switch or Claude Desktop move, keeping every login |
+| [`adopt`](/reference/recovery-commands#adopt) | Take over a Pitboard directory from another computer |
 | [`completions`](/reference/integration-commands#completions) | Print a shell completion script |
 | [`help`](#global-options) | Print the help of `pitboard` or of a command |
 | [`manpage`](/reference/integration-commands#manpage) | Print the man page |
