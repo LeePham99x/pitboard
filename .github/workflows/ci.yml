@@ -199,11 +199,12 @@ jobs:
         run: >
           ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked --workspace'
           -Probe target/debug/pitboard-probe.exe -ExFat
-      - name: pitboard-ffi with its fixtures, as a standard user
+      # The crate's other tests ran above, and the feature changes none of them.
+      - name: pitboard-ffi's fixture tests, as a standard user
         shell: pwsh
         run: >
           ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked -p pitboard-ffi --features fixture'
-          -Probe target/debug/pitboard-probe.exe
+          -Filter 'test(/^fixture::/)' -Probe target/debug/pitboard-probe.exe
       # Each run writes its report under its target folder, and a step that fails is the last to run.
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
