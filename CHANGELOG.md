@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Pitboard says to open Claude when a Claude Desktop change finds Claude's Reset App Data
+  waiting to delete its data folder, instead of asking you to update Pitboard.
+
 ## [1.0.0-beta.4] - 2026-10-20
 
 ### Added
