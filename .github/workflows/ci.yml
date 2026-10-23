@@ -64,7 +64,8 @@ jobs:
           tool: nextest@0.9.146
       - run: cargo nextest run --locked --profile ci
       # The fixtures, each a world on the real core, which only a build with the feature has.
-      - run: cargo nextest run --locked --profile ci -p pitboard-ffi --features fixture
+      # The crate's other tests ran above, and the feature changes none of them.
+      - run: cargo nextest run --locked --profile ci -p pitboard-ffi --features fixture -E 'test(/^fixture::/)'
       # Both runs write this report, and a step that fails is the last to run.
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
