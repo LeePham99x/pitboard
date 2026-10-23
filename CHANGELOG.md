@@ -11,6 +11,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
+- On Linux, Pitboard and its install script work as root in a home root owns, as on a server
+  whose only user is root, and refuse only under `sudo` or as root in another user's home.
+
+### Fixed
+
+- On a Linux that systemd did not start, as in many containers, `pitboard schedule install`
+  refuses with `schedule_unsupported` and says so, instead of a `home_unwritable` error that
+  named `systemctl`.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

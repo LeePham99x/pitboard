@@ -24,9 +24,16 @@ check_arguments() {
   fi
 }
 
+# On Linux root may act in a home it owns, as on a machine whose only user is root.
 check_user() {
   uid=$(id -u)
-  if [ "$uid" = 0 ] || [ -n "${SUDO_UID:-}" ]; then
+  if [ "$system" = Linux ]; then
+    rooted=$(find -H "${home:-/}" -prune -user 0 2>/dev/null) || rooted=
+    if [ -n "${SUDO_UID:-}" ] || { [ "$uid" = 0 ] && [ -z "$rooted" ]; }; then
+      fail "Pitboard changes nothing when it runs with sudo or as root in another user's home," \
+        "so this installs nothing. Run it as yourself."
+    fi
+  elif [ "$uid" = 0 ] || [ -n "${SUDO_UID:-}" ]; then
     fail "Pitboard changes nothing when it runs as root or with sudo, so this installs nothing." \
       "Run it as yourself."
   fi
@@ -199,9 +206,9 @@ main() {
   # Otherwise zsh ties the EXIT trap to main, and an exit under set -e can skip it.
   if [ -n "${ZSH_VERSION-}" ]; then setopt POSIX_TRAPS; fi
   check_arguments "$@"
-  check_user
   find_target
   find_places
+  check_user
   find_tools
 
   tmp=

@@ -109,8 +109,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
     chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
     through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
-    launchd) or `linux/` (`/proc`, systemd, and whether it runs in WSL as Codex tells, which
-    a build for tests reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
+    launchd) or `linux/` (`/proc`, systemd, offered only where systemd started the system as
+    sd_booted(3) tells, and whether it runs in WSL as Codex tells, which a build for tests
+    reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
     both, or `windows/`. Linux and Windows refuse Claude Desktop's data folder before
     anything else is asked, so neither reads a cookie jar, and Linux lists no process with
     its parent.
@@ -1141,7 +1142,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - Pitboard changes nothing where it runs as root or under sudo, or elevated on Windows, or
   where the host cannot say whether it does: a file it wrote would be root's or the
   administrators', and a keychain item might be, where the person's own runs might not read
-  or replace it. On Windows `TokenElevation` decides, `TokenElevationType` says which words
+  or replace it. On Linux root changes things in a home root owns, as on a machine whose only
+  user is root, and is refused in another user's home or where the home's owner cannot be
+  read. On Windows `TokenElevation` decides, `TokenElevationType` says which words
   (Run as administrator, or an account whose every program runs elevated, which no terminal
   of it changes), a token of LocalSystem, LocalService or NetworkService is elevated
   whatever it says, and a token not read in full is unknown, which refuses. Nor does it

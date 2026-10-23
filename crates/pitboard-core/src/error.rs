@@ -293,10 +293,7 @@ pub enum Error {
     )]
     StateWrongMachine { path: PathBuf },
 
-    #[error(
-        "this platform has no scheduler Pitboard knows how to write. Keeping parked logins \
-         alive here means running `pitboard` yourself from time to time."
-    )]
+    #[error("{}", crate::words::no_scheduler(crate::host::OS))]
     ScheduleUnsupported,
 
     #[error("the scheduler refused: {detail}")]

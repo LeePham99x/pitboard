@@ -31,6 +31,10 @@ pitboard schedule install
 
 Where the last run failed, run `pitboard renew` to see what it says. [Renewal schedule](/reference/files#renewal-schedule) lists where each system keeps the schedule.
 
+### Linux has no scheduler for it
+
+`pitboard schedule install` asks your user's systemd. Where systemd did not start the system, as in many containers, it refuses with `schedule_unsupported`. Where your user has no systemd session, such as a root shell from `su`, it refuses with `schedule_refused` and what `systemctl` said. Run `pitboard renew` yourself instead, such as from cron.
+
 ### The schedule uses another proxy
 
 `pitboard doctor` warns on its `renewal schedule's proxy` line when the schedule's proxy differs from your shell's. Run `pitboard schedule install` from a shell where the proxy variables are right.

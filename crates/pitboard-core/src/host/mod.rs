@@ -1311,24 +1311,35 @@ mod tests {
         ));
     }
 
-    // launchd, a systemd user timer and Task Scheduler.
+    // launchd, a systemd user timer where systemd started Linux, and Task Scheduler.
     #[test]
     fn a_scheduler_is_offered_where_pitboard_writes_for_one() {
-        assert!(current().scheduler().is_some());
+        assert_eq!(
+            current().scheduler().is_some(),
+            OS != Os::Linux || Path::new("/run/systemd/system").is_dir()
+        );
     }
 
     /// This system's host reads sudo from the environment the context was read from, which
-    /// is where sudo says it, and root from the process itself. Set but empty, `SUDO_UID`
-    /// says nothing, as every variable Pitboard reads that way.
+    /// is where sudo says it, and root from the process itself, with the home's owner on
+    /// Linux. Set but empty, `SUDO_UID` says nothing, as every variable Pitboard reads that
+    /// way.
     #[test]
     fn the_host_reads_sudo_from_the_context_and_root_from_the_process() {
-        let under = |value: &str| {
+        let ctx_under = |value: &str| {
             let env: Environment = [("HOME", "/Users/x"), ("SUDO_UID", value)]
                 .into_iter()
                 .collect();
-            let ctx = Context::for_command_line(&env);
+            Context::for_command_line(&env)
+        };
+        let under = |value: &str| {
+            let ctx = ctx_under(value);
             ctx.host().elevation(&ctx)
         };
+        #[cfg(target_os = "linux")]
+        let unsudoed = |ctx: &Context| user::linux_elevation(false, ctx.home());
+        #[cfg(not(target_os = "linux"))]
+        let unsudoed = |_: &Context| user::elevation(false);
         assert_eq!(
             under("501"),
             match OS {
@@ -1339,10 +1350,10 @@ mod tests {
         let ctx = Context::for_unit_test();
         assert_eq!(
             ctx.host().elevation(&ctx),
-            user::elevation(false),
+            unsudoed(&ctx),
             "withheld from a unit test, so only root is read"
         );
-        assert_eq!(under(""), user::elevation(false));
+        assert_eq!(under(""), unsudoed(&ctx_under("")));
     }
 
     // Instant reads the same clock on macOS and Linux, and a clock that counts sleep on Windows.

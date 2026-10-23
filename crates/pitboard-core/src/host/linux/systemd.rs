@@ -33,6 +33,11 @@ impl Systemd {
     }
 }
 
+// sd_booted(3) asks the same: systemd as init makes this directory as the system starts.
+pub(super) fn started_by_systemd(root: &Path) -> bool {
+    root.join("run/systemd/system").is_dir()
+}
+
 impl Scheduler for Systemd {
     fn location(&self, ctx: &Context) -> Location {
         Location::File(Self::timer_file(ctx))
@@ -262,6 +267,19 @@ mod tests {
     use crate::host::memory::MemoryHost;
     use crate::schedule::{install, installed_program};
     use std::os::unix::fs::PermissionsExt;
+
+    // As sd_booted(3) tells: a container started without systemd as init has no user manager.
+    #[test]
+    fn only_a_system_systemd_started_offers_its_scheduler() {
+        let root = tempfile::tempdir().expect("a scratch root");
+        assert!(!started_by_systemd(root.path()));
+        std::fs::create_dir_all(root.path().join("run/systemd")).expect("made");
+        std::fs::write(root.path().join("run/systemd/system"), "").expect("a file");
+        assert!(!started_by_systemd(root.path()), "a file is not the directory");
+        std::fs::remove_file(root.path().join("run/systemd/system")).expect("gone");
+        std::fs::create_dir(root.path().join("run/systemd/system")).expect("made");
+        assert!(started_by_systemd(root.path()));
+    }
 
     /// The pairs a service is given, as `install` hands them over.
     fn pairs(given: &[(&str, &str)]) -> Vec<(String, String)> {

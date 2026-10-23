@@ -1208,23 +1208,29 @@ pub(crate) const ADMIN_APPROVAL_OFF: &str = "User Account Control is off on this
      program an administrator starts is elevated: turn it on, or run Pitboard from a standard \
      account.";
 
-// On macOS and Linux root and sudo share one refusal, since the way out is the same.
+// On macOS and Linux each refusal shares one sentence, since the way out is the same. Linux
+// lets root act in its own home.
 pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
     let because = |cannot_tell: &str| match why {
         Some(why) => format!("Pitboard runs {why}"),
         None => format!("Pitboard cannot tell whether it runs {cannot_tell}"),
     };
+    let refused = match os {
+        Os::Linux => "with sudo or as root in another user's home",
+        Os::MacOs | Os::Windows => "as root or with sudo",
+    };
     match os {
         Os::MacOs | Os::Linux => ChangesNothing {
             refusal: match why {
-                Some(_) => "Pitboard changes nothing when it runs as root or with sudo. Run it as \
-                            yourself."
-                    .into(),
-                None => "Pitboard changes nothing when it cannot tell whether it runs as root or \
-                         with sudo. Run it as yourself."
-                    .into(),
+                Some(_) => {
+                    format!("Pitboard changes nothing when it runs {refused}. Run it as yourself.")
+                }
+                None => format!(
+                    "Pitboard changes nothing when it cannot tell whether it runs {refused}. Run it \
+                     as yourself."
+                ),
             },
-            because: because("as root or with sudo"),
+            because: because(refused),
             way_out: "Run it as yourself.",
             to_ask_again: "Run it as yourself to ask again.",
         },
@@ -1253,6 +1259,20 @@ pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
                 way_out,
                 to_ask_again,
             }
+        }
+    }
+}
+
+pub(crate) fn no_scheduler(os: Os) -> &'static str {
+    match os {
+        Os::Linux => {
+            "systemd did not start this system, as it does not start many containers, so it has \
+             no systemd user timer for Pitboard to write. Keeping parked logins alive here means \
+             running `pitboard` yourself from time to time."
+        }
+        Os::MacOs | Os::Windows => {
+            "this platform has no scheduler Pitboard knows how to write. Keeping parked logins \
+             alive here means running `pitboard` yourself from time to time."
         }
     }
 }
@@ -1661,15 +1681,40 @@ mod tests {
         }
     }
 
+    // A container whose only user is root seldom runs systemd, so Linux says what is missing.
+    #[test]
+    fn a_system_with_no_scheduler_says_what_it_lacks() {
+        assert_eq!(
+            no_scheduler(Os::Linux),
+            "systemd did not start this system, as it does not start many containers, so it has \
+             no systemd user timer for Pitboard to write. Keeping parked logins alive here means \
+             running `pitboard` yourself from time to time."
+        );
+        for os in [Os::MacOs, Os::Windows] {
+            assert_eq!(
+                no_scheduler(os),
+                "this platform has no scheduler Pitboard knows how to write. Keeping parked \
+                 logins alive here means running `pitboard` yourself from time to time."
+            );
+        }
+    }
+
+    // On Linux root may act in its own home, so only sudo and another user's home refuse.
     #[test]
     fn root_and_sudo_are_told_to_run_it_as_themselves() {
-        for os in [Os::MacOs, Os::Linux] {
-            for why in ["as root", "with sudo"] {
+        for (os, whys, refused) in [
+            (Os::MacOs, ["as root", "with sudo"], "as root or with sudo"),
+            (
+                Os::Linux,
+                ["as root in another user's home", "with sudo"],
+                "with sudo or as root in another user's home",
+            ),
+        ] {
+            for why in whys {
                 let said = elevated(os, Some(why));
                 assert_eq!(
                     said.refusal,
-                    "Pitboard changes nothing when it runs as root or with sudo. Run it as \
-                     yourself."
+                    format!("Pitboard changes nothing when it runs {refused}. Run it as yourself.")
                 );
                 assert_eq!(said.because, format!("Pitboard runs {why}"));
                 assert_eq!(said.way_out, "Run it as yourself.");
@@ -1678,12 +1723,14 @@ mod tests {
             let unknown = elevated(os, None);
             assert_eq!(
                 unknown.refusal,
-                "Pitboard changes nothing when it cannot tell whether it runs as root or with \
-                 sudo. Run it as yourself."
+                format!(
+                    "Pitboard changes nothing when it cannot tell whether it runs {refused}. Run \
+                     it as yourself."
+                )
             );
             assert_eq!(
                 unknown.because,
-                "Pitboard cannot tell whether it runs as root or with sudo"
+                format!("Pitboard cannot tell whether it runs {refused}")
             );
         }
     }
