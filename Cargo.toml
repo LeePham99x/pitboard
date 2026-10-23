@@ -42,9 +42,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 # Claude's cookie jar is SQLite: the system's, never a bundled build. 0.40 needs a Rust past 1.91.
 rusqlite = { version = "0.40.2", default-features = false }
-# For the account windows' store ids alone, which are version 5 UUIDs, and RFC 9562 defines
-# those over SHA-1. Nothing secret is hashed.
-sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 tempfile = "3.27"
 thiserror = "2"
@@ -79,6 +76,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # IDNA, for a host that is not plain ASCII. pitboard-sites splits a link itself, as
 # Foundation does, since the WHATWG standard url follows reads some links otherwise.
 url = "2.5"
+# The account windows' store ids, version 5 UUIDs. Nothing secret is hashed.
+uuid = { version = "1.27", default-features = false, features = ["v5"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

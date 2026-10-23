@@ -1,42 +1,20 @@
 //! Which store keeps the data of each account's window.
 
 use crate::Site;
-use sha1::{Digest, Sha1};
+use uuid::Uuid;
 
-/// Pitboard's namespace for the windows' stores, `674b09f3-8d37-4e48-a361-5af2a6856773`. It
-/// never changes, and neither does a site's store name hashed in it: a change would leave
-/// every window without its data, and the next sweep would delete that data. Golden tests pin
-/// both.
+// Neither this namespace nor a store name hashed in it may ever change: every window would
+// lose its data, and the next sweep would delete it. Golden tests pin both.
 const NAMESPACE: [u8; 16] = [
     0x67, 0x4b, 0x09, 0xf3, 0x8d, 0x37, 0x4e, 0x48, 0xa3, 0x61, 0x5a, 0xf2, 0xa6, 0x85, 0x67, 0x73,
 ];
 
-/// The store of the window of the account `account_id` names on a site whose store name is
-/// `store_name`: a version 5 UUID (RFC 9562, SHA-1) of `<store name>:<account id>` in
-/// Pitboard's namespace, the account id in lower case, written in lower case.
-///
-/// Each character of the account id is lowered alone, as Swift's `lowercased()` lowered it
-/// for every store released. `str::to_lowercase` follows Unicode's rule for a sigma that ends
-/// a word, which Swift does not, so it would hash `ΟΔΟΣ` otherwise.
+// A version 5 UUID of `<store name>:<account id>`. Each character of the id is lowered alone,
+// as Swift's `lowercased()` did for every store released, not by Unicode's final-sigma rule.
 pub(crate) fn derive(store_name: &str, account_id: &str) -> String {
     let lowered: String = account_id.chars().flat_map(char::to_lowercase).collect();
-    let mut hash = Sha1::new();
-    hash.update(NAMESPACE);
-    hash.update(format!("{store_name}:{lowered}"));
-    let digest = hash.finalize();
-    let mut bytes = [0u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    bytes[6] = (bytes[6] & 0x0F) | 0x50;
-    bytes[8] = (bytes[8] & 0x3F) | 0x80;
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    )
+    let name = format!("{store_name}:{lowered}");
+    Uuid::new_v5(&Uuid::from_bytes(NAMESPACE), name.as_bytes()).to_string()
 }
 
 /// Whether two store ids name one store. Compared without regard to case, since a store id
