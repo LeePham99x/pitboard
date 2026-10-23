@@ -53,6 +53,15 @@ pub(crate) const HOLDERS: &[Holder] = &[
         location: Location::Within("app-server-daemon"),
         remedy: restart_the_app_server(OS),
     },
+    // From 0.164.0, where an older Codex left a daemon's launch state, the app server runs from
+    // the standalone package's `current`. On Linux its path resolves to a release, as a terminal
+    // session's does, and it reads as a session.
+    Holder {
+        kind: "app_server_daemon",
+        noun: Noun::One("Codex's background app server"),
+        location: Location::WithinEach(&["standalone", "current"]),
+        remedy: restart_the_app_server(OS),
+    },
     // `<extensions>/openai.chatgpt-<version>-<platform>/bin/<platform>/codex`.
     Holder {
         kind: "editor_extension",
@@ -171,6 +180,37 @@ mod tests {
                 app: AppId::WindowsAumid("OpenAI.Codex_2p2nqsd0c76g0!App"),
                 name: "ChatGPT",
             }
+        );
+    }
+
+    // From 0.164.0 a daemon whose launch state an older Codex left runs from the standalone
+    // package's `current` (codex_app_server_daemon), and a terminal session from its release.
+    #[test]
+    fn a_daemon_left_in_the_standalone_package_is_the_app_server() {
+        let listed = [
+            "/Users/a/.codex/packages/standalone/releases/0.164.0-aarch64-apple-darwin/bin/codex",
+            "/Users/a/.codex/packages/standalone/current/bin/codex",
+            "/Users/a/.codex/packages/app-server-daemon/current/bin/codex",
+        ];
+        let processes: Vec<Process> = (1..)
+            .zip(listed)
+            .map(|(pid, path)| Process {
+                pid,
+                path: PathBuf::from(path),
+                package: None,
+            })
+            .collect();
+        let kinds: Vec<(&str, Vec<u32>)> = classify(&processes, HOLDERS, "codex")
+            .iter()
+            .map(|h| (h.holder.kind, h.pids.clone()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("app_server_daemon", vec![3]),
+                ("app_server_daemon", vec![2]),
+                ("session", vec![1]),
+            ]
         );
     }
 

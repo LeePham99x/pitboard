@@ -1,9 +1,11 @@
 //! Every fact about Codex CLI that Pitboard stands on, named and dated.
 //!
-//! Read from codex-cli 0.154.0, unless an entry names another build: the binary installed
-//! on the machine this was written on, the matching public source at tag `rust-v0.154.0`,
-//! and the real `auth.json` that build had written. What runs Codex beside the CLI, the
-//! ChatGPT app and the background app server, is read from the builds its entries name.
+//! First read from codex-cli 0.154.0: the binary installed on the machine this was written
+//! on, the matching public source at tag `rust-v0.154.0`, and the real `auth.json` that build
+//! had written. Every fact of the CLI's was read again in the source at tag `rust-v0.164.0`
+//! on 2026-10-23, and its four builds hold every literal, unless an entry names another
+//! build. What runs Codex beside the CLI, the ChatGPT app and the background app server, is
+//! read from the builds its entries name.
 //!
 //! See [`crate::assumptions`] for what an entry means and how a probe reads one.
 
@@ -11,7 +13,7 @@ use crate::assumptions::OnSystem::{NotRead, Pending, Read};
 use crate::assumptions::{Assumption, PerSystem};
 
 /// The build every entry below was read from on macOS and Linux, unless it names its own.
-pub(crate) const VERIFIED_AGAINST: &str = "0.154.0";
+pub(crate) const VERIFIED_AGAINST: &str = "0.164.0";
 
 // Both Windows builds of 0.163.0, read as bytes on 2026-10-20 with the source at `rust-v0.163.0`
 // against the `rust-v0.160.0` and `rust-v0.162.1` sources each reading named before.
@@ -70,8 +72,8 @@ const fn later_on_windows(
 pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "codex_login_location",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "Codex sets no mode on Windows and keeps a keyring store's login in the secret store \
              by default, which codex_windows_login_location reads",
@@ -102,8 +104,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     PerSystem {
         name: "codex_app_server_daemon",
-        macos: Read("0.159.3"),
-        linux: Read("0.159.3"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "where the app server runs from on Windows, and how it starts there, is \
              codex_windows_app_server's",
@@ -125,8 +127,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     PerSystem {
         name: "codex_home_isolates_a_sign_in",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "an empty or unset `CODEX_HOME` is not `~/.codex` there, and is read as \
              codex_windows_home",
@@ -156,8 +158,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     everywhere("codex_refusal_is_invalid_grant", VERIFIED_AGAINST),
     PerSystem {
         name: "codex_install_places",
-        macos: Read("0.159.2"),
-        linux: Read("0.159.2"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "install.ps1, npm and winget put `codex.exe` elsewhere on Windows, which \
              codex_windows_install_places reads",
@@ -185,11 +187,11 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         "whether `codex login` runs piped, with no console window, from a program on Windows, \
          session step 9",
     ),
-    everywhere("codex_login_prints_its_address", "0.160.0"),
+    everywhere("codex_login_prints_its_address", "0.164.0"),
     PerSystem {
         name: "codex_store_layers",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "Windows keeps this machine's layers in another folder, reads no \
              managed_config.toml and keeps a keyring store's login in the secret store by \
@@ -204,7 +206,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     PerSystem {
         name: "codex_managed_preferences",
-        macos: Read("0.160.0"),
+        macos: Read("0.164.0"),
         linux: NotRead(
             "Linux has no managed preferences, and Codex's Linux build holds neither of their \
              keys",
@@ -214,7 +216,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              their keys; what an administrator sets there is codex_windows_store_layers'",
         ),
     },
-    everywhere("codex_login_takes_a_store_override", "0.160.0"),
+    everywhere("codex_login_takes_a_store_override", "0.164.0"),
     read_from_0_164_0("codex_login_restrictions"),
     read_from_0_164_0("codex_model_limits"),
     PerSystem {
@@ -229,7 +231,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "codex_wsl",
         macos: NotRead("WSL runs Codex's Linux build"),
-        linux: Read("0.163.0"),
+        linux: Read("0.164.0"),
         windows: NotRead("WSL runs Codex's Linux build"),
     },
     PerSystem {
@@ -255,7 +257,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     storage.rs, AuthCredentialsStoreMode in codex-rs/config/src/types.rs, and \
                     codex-rs/config/defaults.toml, at tag rust-v0.160.0, read on 2026-10-07. \
                     0.154.0 packaged the default as `.codexconfig.toml`",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::paths, and every read and write of the live login",
         probe: &["auth.json", "cli_auth_credentials_store"],
         absent: &[],
@@ -461,14 +464,19 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "codex_app_server_daemon",
-        fact: "codex can run on its own as a background app server, from \
-               `$CODEX_HOME/packages/app-server-daemon/releases/<version>/bin/codex`, a child \
-               of launchd that terminal sessions can share, and `codex app-server daemon \
-               restart` starts it again",
-        read_from: "the process list on 2026-10-01 and the daemon subcommands of the codex it \
-                    ran",
-        verified_against: "0.159.3",
-        depends: "provider::codex::holders's app_server_daemon",
+        fact: "codex can run on its own as a background app server, a child of launchd that \
+               terminal sessions can share, and `codex app-server daemon restart` starts it \
+               again. It runs from `$CODEX_HOME/packages/app-server-daemon`, \
+               `releases/<version>/bin/codex` through the link `current`. Where that has no \
+               `current` and an older Codex left a daemon's pid file or log in \
+               `$CODEX_HOME/app-server-daemon`, it runs from `packages/standalone/current` \
+               instead, the package a standalone install's terminal sessions run from",
+        read_from: "the process list of 0.159.3 on 2026-10-01 and the daemon subcommands of the \
+                    codex it ran; package_root and managed_codex_bin in \
+                    codex-rs/app-server-daemon/src/managed_install.rs at tag rust-v0.164.0, \
+                    read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::holders's two app_server_daemon kinds",
         probe: &["app-server daemon restart"],
         absent: &[],
     },
@@ -529,7 +537,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "find_codex_home_from_env in codex-rs/utils/home-dir/src/lib.rs and the \
                     layers load_config_layers_state reads, at tag rust-v0.160.0, read on \
                     2026-10-07",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's sign_in and read_signin, and Isolation for Codex",
         probe: &["CODEX_HOME", "cli_auth_credentials_store"],
         absent: &[],
@@ -603,7 +612,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     install of 0.159.2 left on a Mac, read on 2026-10-05, and the update \
                     commands in the macOS and Linux binaries",
         // 0.154.0 names the installers too, but not the standalone package layout.
-        verified_against: "0.159.2",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "codex::paths::install_places, where an app looks for `codex` after the \
                   login shell's PATH",
         probe: &[
@@ -681,7 +691,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "print_login_server_start in cli/src/login.rs, and build_authorize_url and \
                     DEFAULT_ISSUER in login/src/server.rs, at tag rust-v0.160.0, and the same \
                     strings in the macOS and Linux binaries",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's read_sign_in, and the address the app's sign-in \
                   sheet offers",
         probe: &[
@@ -764,7 +775,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     codex-rs/core/src/features.rs, which applies a profile's features, none \
                     of them about the store; and load_config_or_exit in \
                     codex-rs/cli/src/login.rs, through which `codex login` loads that config",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::layers, and so every read and write of the live Codex \
                   login and every refusal of a store",
         probe: &[
@@ -831,7 +843,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     and where load_requirements_from_sources and load_config_layers_state put \
                     them. The two keys are in the macOS binary, and in neither the Linux nor \
                     the Windows ones",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "host::macos::preferences, and provider::codex::layers's ManagedPreference \
                   and RequiredByPreference",
         probe: &[
@@ -856,7 +869,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     load_config_or_exit in codex-rs/cli/src/login.rs, and the precedence of \
                     ConfigLayerSource::SessionFlags, at tag rust-v0.160.0, read on 2026-10-07. \
                     The flag's help is in the macOS, Linux and both Windows binaries",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's sign_in, and so where a sign-in Pitboard runs \
                   leaves the login it reads back",
         probe: &[
@@ -974,7 +988,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     it, and codex-rs/cli/src/wsl_paths.rs, at tag rust-v0.163.0, read on \
                     2026-10-16. The linux-x64 build of 0.163.0 holds both variables, \
                     `/proc/version` and the exclusion's words",
-        verified_against: "0.163.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "doctor's wsl check on Linux, which reads WSL as Codex does and says where \
                   Codex's home is on a Windows drive",
         probe: &[
@@ -1078,14 +1093,14 @@ mod tests {
             );
         }
         let wsl = PER_SYSTEM.iter().find(|l| l.name == "codex_wsl").unwrap();
-        assert_eq!(wsl.on(Platform::Linux), Read("0.163.0"));
+        assert_eq!(wsl.on(Platform::Linux), Read("0.164.0"));
         assert!(matches!(wsl.on(Platform::MacOs), NotRead(_)));
     }
 
-    /// Each fact re-read from 0.160.0 for which store Codex keeps its login in, and the two
-    /// read for it, name that build on macOS and Linux.
+    /// Each fact read for which store Codex keeps its login in names the build it was last
+    /// read from on macOS and Linux.
     #[test]
-    fn the_store_facts_are_read_from_0_160_0() {
+    fn the_store_facts_are_read_from_0_164_0() {
         for name in [
             "codex_login_location",
             "codex_home_isolates_a_sign_in",
@@ -1094,7 +1109,7 @@ mod tests {
             "codex_login_takes_a_store_override",
         ] {
             let line = PER_SYSTEM.iter().find(|l| l.name == name).expect(name);
-            assert_eq!(line.on(Platform::MacOs), Read("0.160.0"), "{name}");
+            assert_eq!(line.on(Platform::MacOs), Read("0.164.0"), "{name}");
         }
     }
 }

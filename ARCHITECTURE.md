@@ -3515,6 +3515,13 @@ treated, and only the macOS build shows it. The run reads both builds since.
   counts only where neither holds a policy. Pitboard reads all three through the host, and
   the folder and `HKLM` both, so it may name an override a session would not take, never
   miss one.
+- Read again on 23 October 2026 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64
+  builds of 2.1.309, on which pitboard-conformance passes every fact: `refresh_lock`,
+  `keychain_write_route`, `keychain_absence_codes`, `supervisor_daemon`, the usage cache facts,
+  `config_identity_is_the_last_writers` and `sign_in_output` hold. `login_carries_its_plan`
+  moved: a save keeps `subscriptionTypeSource` beside the plan and takes a stamped profile's
+  plan over the stored one, which `document::plan` reads the same. `windows_token_env`'s
+  literals moved and its order holds. `credential_cache` waits on a measurement.
 - Read on 23 October 2026 from the four builds of 2.1.309 (`auth_precedence`,
   `anthropic_profiles`, `profile_folder`, `windows_profile_folder`, `organisation_pin`): a
   session also signs in another way under `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile, or
@@ -3753,6 +3760,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     the kinds apart by the directories in that path, and a bare name is a `codex` session.
   - No editor with the Codex extension was running there. Its place, a folder named
     `openai.chatgpt-<version>`, is the extension's packaged layout, not measured.
+- Read again in the source at tag `rust-v0.164.0` on 23 October 2026, whose four builds pass
+  pitboard-conformance: every fact of the CLI's but the Windows ones, which keep their 0.162.1
+  and 0.163.0 readings. `codex_app_server_daemon` moved: where `packages/app-server-daemon`
+  has no `current` and an older Codex left a daemon's pid file or log, the daemon runs from
+  `packages/standalone/current`. A second `app_server_daemon` holder takes those directories,
+  `holder::Location::WithinEach`. On Linux the path resolves to a release, as a standalone
+  install's sessions do, so such a daemon reads as a session there.
 - Read on 23 October 2026 from the amd64 `.deb` of ChatGPT for Linux 26.1016.61520, as bytes
   and never run (`codex_linux_app`): it installs to `/usr/lib/chatgpt` and runs its own
   `resources/codex` as `codex app-server` with the app's environment. So a folder named

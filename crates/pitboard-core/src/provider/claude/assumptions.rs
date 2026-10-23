@@ -122,13 +122,13 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     PerSystem {
         name: "keychain_write_route",
-        macos: Read(VERIFIED_AGAINST),
+        macos: Read("2.1.309"),
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: NO_KEYCHAIN_ON_WINDOWS,
     },
     PerSystem {
         name: "keychain_absence_codes",
-        macos: Read(VERIFIED_AGAINST),
+        macos: Read("2.1.309"),
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: NO_KEYCHAIN_ON_WINDOWS,
     },
@@ -173,8 +173,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     everywhere("oauth_client", VERIFIED_AGAINST),
     PerSystem {
         name: "supervisor_daemon",
-        macos: Read(VERIFIED_AGAINST),
-        linux: Read(VERIFIED_AGAINST),
+        macos: Read("2.1.309"),
+        linux: Read("2.1.309"),
         windows: NotRead(
             "which process the lock names on Windows is windows_daemon_identity's, read from \
              the Windows builds",
@@ -191,14 +191,9 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              fact rules out, so read from the Windows build it reports a keyring arrived",
         ),
     },
-    // Read again in both Windows builds of 2.1.300 and 2.1.303, where a line is read with
+    // Read again in both Windows builds of 2.1.300, 2.1.303 and 2.1.309, where a line is read with
     // readline and trimmed, so one typed back with `\r\n` is one with `\n`.
-    PerSystem {
-        name: "sign_in_output",
-        macos: Read("2.1.289"),
-        linux: Read("2.1.289"),
-        windows: Read(WINDOWS_VERIFIED_AGAINST),
-    },
+    read_from_2_1_309("sign_in_output"),
     PerSystem {
         name: "sign_in_takes_another_code",
         macos: Read("2.1.289"),
@@ -264,44 +259,20 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.294"),
         windows: Read("2.1.294"),
     },
-    PerSystem {
-        name: "usage_cache_stamp_is_the_configs",
-        macos: Read("2.1.294"),
-        linux: Read("2.1.294"),
-        windows: Read("2.1.294"),
-    },
-    PerSystem {
-        name: "status_reads_the_config_usage_the_token",
-        macos: Read("2.1.294"),
-        linux: Read("2.1.294"),
-        windows: Read("2.1.294"),
-    },
-    PerSystem {
-        name: "config_identity_is_the_last_writers",
-        macos: Read("2.1.294"),
-        linux: Read("2.1.294"),
-        windows: Read("2.1.294"),
-    },
+    read_from_2_1_309("usage_cache_stamp_is_the_configs"),
+    read_from_2_1_309("status_reads_the_config_usage_the_token"),
+    read_from_2_1_309("config_identity_is_the_last_writers"),
     PerSystem {
         name: "status_line_input_names_no_account",
         macos: Read("2.1.294"),
         linux: Read("2.1.294"),
         windows: Read("2.1.294"),
     },
-    // Read again in both Windows builds of 2.1.300 and 2.1.303, and measured with this timing as
-    // the write lock was (RF-C5r, run 38693947329). From 2.1.301 it takes a synchronous `fs`.
-    PerSystem {
-        name: "refresh_lock",
-        macos: Read("2.1.294"),
-        linux: Read("2.1.294"),
-        windows: Read(WINDOWS_VERIFIED_AGAINST),
-    },
-    PerSystem {
-        name: "login_carries_its_plan",
-        macos: Read("2.1.296"),
-        linux: Read("2.1.296"),
-        windows: Read("2.1.296"),
-    },
+    // Read again in both Windows builds of 2.1.300, 2.1.303 and 2.1.309, and measured with this
+    // timing as the write lock was in 2.1.303 (RF-C5r, run 38693947329). From 2.1.301 it takes a
+    // synchronous `fs`.
+    read_from_2_1_309("refresh_lock"),
+    read_from_2_1_309("login_carries_its_plan"),
     PerSystem {
         name: "windows_home_folder",
         macos: NotRead("macOS keeps the home in `HOME`, which config_file_location reads"),
@@ -449,7 +420,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_token_env",
         macos: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
         linux: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
-        windows: Read("2.1.303"),
+        windows: Read("2.1.309"),
     },
     PerSystem {
         name: "windows_statusline_shell",
@@ -557,7 +528,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                exited 36 after this process had seen the item; any other failure moves the \
                login to `.credentials.json`",
         read_from: "the keychain backend's update path and the fallback wrapper around it",
-        verified_against: VERIFIED_AGAINST,
+        // Read again on 2026-10-23 from the darwin-arm64 build of 2.1.309.
+        verified_against: "2.1.309",
         depends: "host::macos::keychain::MAX_COMMAND_BYTES and the write path",
         probe: &[
             "exceeds security -i stdin limit; using argv",
@@ -577,7 +549,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                exiting 36 only adds an unlock hint. Pitboard reads 36 as a locked keychain, \
                never as absent, the strict end of that",
         read_from: "the keychain backend's read path",
-        verified_against: VERIFIED_AGAINST,
+        // Read again on 2026-10-23 from the darwin-arm64 build of 2.1.309.
+        verified_against: "2.1.309",
         depends: "host::macos::keychain::classify",
         probe: &[
             "failureIfTransient",
@@ -636,8 +609,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     the storage write wrapper, and the dead holder takeover, which reads the \
                     owner record",
         // Read on 2026-10-09 from the macOS, Linux x64, Windows x64 and Windows arm64 builds of
-        // 2.1.294, whose code here is the same.
-        verified_against: "2.1.294",
+        // 2.1.294, whose code here is the same, and again on 2026-10-23 from the four builds of
+        // 2.1.309.
+        verified_against: "2.1.309",
         depends: "lock::REFRESH, a switch, which holds it from before it reads the outgoing login \
                   a last time until it has recorded the login installed, so no session spends the \
                   refresh token of the copy it parks, `pitboard stow`, which holds it from its \
@@ -768,7 +742,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                a timer of roughly eight hours, records itself in `<config dir>/daemon.lock`, and \
                writes through the same lock as everything else",
         read_from: "the daemon's auth scheduler and its lock file",
-        verified_against: VERIFIED_AGAINST,
+        // Read again on 2026-10-23 from the darwin-arm64 and linux-x64 builds of 2.1.309.
+        verified_against: "2.1.309",
         depends: "daemon.rs, and the lock discipline the switch relies on",
         probe: &[
             "daemon.lock",
@@ -821,13 +796,15 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                `TERMINAL_EMULATOR` is JetBrains-JediTerm, `WT_SESSION` is set outside tmux, \
                `TERM_PROGRAM` is tmux 3.4 or later, or `TERM` contains kitty. A terminal \
                attached to a background session answers for the check instead, and \
-               `auth login` has none",
+               `auth login` has none. Only where its stdin is a terminal and the browser cannot \
+               come back to the loopback does it write `Sign in at: <address>` and `Paste code \
+               here > ` instead, and Pitboard's sign-in hands it a pipe",
         read_from: "the `auth login` command's OAuth flow and `startOAuthFlow`, the authorize \
                     address builder and its constants, the hyperlink helper the address is \
                     printed through with `assumeSupport`, and the supports-hyperlinks check \
                     it asks",
-        // Read from a newer build than the rest of this register.
-        verified_against: "2.1.289",
+        // Read from 2.1.289, and again on 2026-10-23 from the four builds of 2.1.309.
+        verified_against: "2.1.309",
         depends: "provider::claude::engine's read_sign_in, provider::printed, which reads \
                   the hyperlink, and the address and code field the app's sign-in sheet \
                   offers",
@@ -841,6 +818,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
             // after the helper's name, which the minifier chooses. `auth login` makes one of
             // the three such calls in 2.1.289; 2.1.110 has none.
             "{assumeSupport:!0})}",
+            // The other words, only for a terminal on stdin.
+            "...process.stdin.isTTY&&{onCallbackListenerUnavailable:",
         ],
         absent: &[],
     },
@@ -1058,8 +1037,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     config still names that account, the cache's two readers, and the reset \
                     a sign-in and a logout both run",
         // Read on 2026-10-08 from the macOS build and on 2026-10-09 from the Linux x64,
-        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same.
-        verified_against: "2.1.294",
+        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same, and
+        // again on 2026-10-23 from the four builds of 2.1.309.
+        verified_against: "2.1.309",
         depends: "status, which takes no usage from it, and the automatic switch, which \
                   decides from status's offline rows",
         probe: &[
@@ -1084,8 +1064,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     seeds itself from the session's header snapshot or the cache, and the \
                     usage read it starts",
         // Read on 2026-10-08 from the macOS build and on 2026-10-09 from the Linux x64,
-        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same.
-        verified_against: "2.1.294",
+        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same, and
+        // again on 2026-10-23 from the four builds of 2.1.309.
+        verified_against: "2.1.309",
         depends: "what a switch says of sessions already running while a file is behind the \
                   keychain, which names the file and no account: `/status` in one of them \
                   names the account switched to",
@@ -1109,8 +1090,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     and its 24 hour check, the bootstrap merge into `oauthAccount`, and the \
                     refresh's profile update",
         // Read on 2026-10-08 from the macOS build and on 2026-10-09 from the Linux x64,
-        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same.
-        verified_against: "2.1.294",
+        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same, and
+        // again on 2026-10-23 from the four builds of 2.1.309.
+        verified_against: "2.1.309",
         depends: "in_use::known, which takes the config naming another account than when \
                   Anthropic last named the login stored as a sign that something signed in, \
                   never as whose the login is; and every reader of the account in use, which \
@@ -1157,26 +1139,31 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                and `claude_enterprise` are stored as `max`, `pro`, `team` and `enterprise`, and \
                `rateLimitTier`, the profile's `organization.rate_limit_tier` as Anthropic gives \
                it, such as `default_claude_max_20x` or `default_claude_max_5x`. Each is null \
-               where neither the profile nor the login stored before says one. Every save into \
-               `claudeAiOauth` keeps the stored value of either where the new login has none, \
-               and a token refresh asks for the profile again only where the login lacks \
-               either or the config's `oauthAccount` lacks one of its profile fields. So a \
-               plan changed since the login's last sign-in can go unseen in it",
+               where neither the profile nor the login stored before says one. From 2.1.309 \
+               `subscriptionTypeSource`, `profile` or `sign_in`, and \
+               `subscriptionTypeVerifiedAt` are kept beside them, and a save takes the \
+               profile's plan over the stored one only where the profile's answer is stamped \
+               as Anthropic's own and the stored plan came from a profile, is old, or ranks \
+               differently. A token refresh asks for the profile again only where the login \
+               lacks either or the config's `oauthAccount` lacks one of its profile fields. So \
+               a plan changed since the login's last sign-in can go unseen in it",
         read_from: "the profile read, which maps `organization_type` through a table and takes \
                     `rate_limit_tier` whole; the function every save of the login into \
-                    `claudeAiOauth` goes through, which writes both beside the tokens; the \
+                    `claudeAiOauth` goes through, which writes both beside the tokens, and from \
+                    2.1.309 the one that chooses the stored or the profile's plan; the \
                     sign-in's save; and the refresh's check of whether to ask for the profile. \
                     Measured on 2026-10-10 in the stored logins of five accounts on one Mac: \
                     `max` with `default_claude_max_20x`, and `team` with `default_claude_max_5x`",
-        // Read on 2026-10-11 from macOS 2.1.294 to 2.1.296, and Linux x64 and Windows 2.1.296.
-        verified_against: "2.1.296",
+        // Read on 2026-10-11 from macOS 2.1.294 to 2.1.296, and Linux x64 and Windows 2.1.296,
+        // and on 2026-10-23 from the four builds of 2.1.309, where the save's plan moved.
+        verified_against: "2.1.309",
         depends: "provider::claude::document::plan, which reads the plan off a login or a park \
                   of it for `pitboard status`, the app and the account's record, as \
                   `subscriptionType` capitalised and the multiple `rateLimitTier` ends with",
         probe: &[
             r#"[["claude_max","max"],["claude_pro","pro"],["claude_enterprise","enterprise"],["claude_team","team"]]"#,
             "organization?.rate_limit_tier??null",
-            "?.subscriptionType??null,rateLimitTier:",
+            r#"subscriptionTypeSource:"profile",subscriptionTypeVerifiedAt:Date.now()"#,
         ],
         absent: &[],
     },
@@ -1668,8 +1655,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "windows_token_env",
         fact: "on Windows Claude Code signs in with the access token `CLAUDE_CODE_OAUTH_TOKEN` \
-               holds wherever it is set: right after `ANTHROPIC_AUTH_TOKEN` and before a \
-               descriptor or its well-known file, `apiKeyHelper`, a profile and the stored login. \
+               holds wherever it is set: right after `ANTHROPIC_AUTH_TOKEN`, beside a token the Claude desktop app hands a \
+               session it starts, and before a descriptor or its well-known file, `apiKeyHelper`, a profile and the stored login. \
                It takes it as an access token alone, with no refresh token and no expiry, so \
                nothing renews it, scoped `user:inference` unless `CLAUDE_CODE_OAUTH_SCOPES` names \
                others. Print mode sends its requests with `ANTHROPIC_API_KEY` instead wherever \
@@ -1688,15 +1675,17 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     key's source in print mode, the variables the scrub takes out of a child's \
                     environment and what turns it on, and the `where.exe` lookup the Git Bash \
                     finder falls back to, started with `env:process.env`, in the win32-x64 and \
-                    win32-arm64 builds of 2.1.303, read as bytes on 2026-10-19 and 2026-10-20",
-        verified_against: "2.1.303",
+                    win32-arm64 builds of 2.1.303, read as bytes on 2026-10-19 and 2026-10-20, \
+                    and again in those of 2.1.309 on 2026-10-23",
+        verified_against: "2.1.309",
         depends: "Claude Code's warm-up command on Windows, which hands a run the access token \
                   alone in `CLAUDE_CODE_OAUTH_TOKEN`, with the scrub on and no other variable \
                   that signs it in, and names in `CLAUDE_CODE_GIT_BASH_PATH` the Git Bash \
                   Pitboard finds, so no `where.exe` is asked for `git` where it finds one",
         probe: &[
-            r#"return{source:"ANTHROPIC_AUTH_TOKEN",hasToken:!0};if(a.CLAUDE_CODE_OAUTH_TOKEN)return{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
-            "(){if(a.CLAUDE_CODE_OAUTH_TOKEN)return{accessToken:a.CLAUDE_CODE_OAUTH_TOKEN,refreshToken:null,expiresAt:null",
+            r#"return{source:"ANTHROPIC_AUTH_TOKEN",hasToken:!0};if(i.CLAUDE_CODE_OAUTH_TOKEN||QI()!==null)return{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
+            "(){if(i.CLAUDE_CODE_OAUTH_TOKEN)return Zf(i.CLAUDE_CODE_OAUTH_TOKEN);",
+            "{accessToken:e,refreshToken:null,expiresAt:null,scopes:zw(),",
             r#""ANTHROPIC_API_KEY","CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CODE_ARTIFACTS_API_TOKEN""#,
             "process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
             "windowsHide:!0,env:process.env}).trim().split(",
