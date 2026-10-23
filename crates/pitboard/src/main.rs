@@ -1,6 +1,6 @@
 use anstream::{ColorChoice, eprint, eprintln, print, println};
 use anstyle::{AnsiColor, Style};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
 use pitboard_core::error::Error;
@@ -80,21 +80,6 @@ const STOW: &str = if cfg!(windows) {
     "Put away the login Claude Code left in a file behind the keychain, then delete the file"
 };
 
-// On Windows it is under the profile whatever `LOCALAPPDATA` says (`default_pitboard_home`).
-const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
-    "Renew as the daily renewal schedule does: %USERPROFILE%\\AppData\\Local\\Pitboard, \
-     whatever PITBOARD_HOME says"
-} else {
-    "Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says"
-};
-
-const WATCHES_THE_DEFAULT: &str = if cfg!(windows) {
-    "Watch as the watch service does: %USERPROFILE%\\AppData\\Local\\Pitboard, whatever \
-     PITBOARD_HOME says"
-} else {
-    "Watch as the watch service does: ~/.pitboard, whatever PITBOARD_HOME says"
-};
-
 #[derive(Subcommand)]
 enum Command {
     /// What is signed in, and how much each Claude Code and Codex account has left (the default)
@@ -144,12 +129,8 @@ enum Command {
     Adopt,
     /// Renew every parked login that is due, and nothing else
     Renew {
-        // The marker the daily renewal schedule's job runs this with on Linux, where what
-        // systemd passes a job is not to be relied on. Hidden from help and the man page,
-        // since a person has no reason to type it, but clap_complete writes hidden
-        // arguments into every shell's completions, so `RENEWS_THE_DEFAULT` is what they
-        // show, as written: it has no Markdown for that reason.
-        #[arg(long, hide = true, help = RENEWS_THE_DEFAULT)]
+        // Given by `--scheduled`, which only the parser knows (`with_the_jobs_markers`).
+        #[arg(skip)]
         scheduled: bool,
     },
     /// Keep parked logins alive without running anything yourself
@@ -201,9 +182,8 @@ enum Command {
         /// service for usage, and stop. Warms nothing up
         #[arg(long)]
         once: bool,
-        // The marker the watch service's job runs this with on every system. Hidden as
-        // `renew --scheduled` is, for the same reason.
-        #[arg(long, hide = true, conflicts_with = "once", help = WATCHES_THE_DEFAULT)]
+        // Given by `--scheduled`, as `renew`'s is.
+        #[arg(skip)]
         scheduled: bool,
         #[command(subcommand)]
         what: Option<watch::WatchCommand>,
@@ -1265,10 +1245,39 @@ fn agreed(question: &str) -> bool {
     matches!(answer.trim(), "y" | "Y" | "yes")
 }
 
+// `--scheduled`, the marker each job runs `renew` or `watch` with. Only the parser is given it:
+// clap_complete writes even a hidden argument into every shell's completions.
+fn with_the_jobs_markers(cli: clap::Command) -> clap::Command {
+    let marker = clap::Arg::new("scheduled")
+        .long("scheduled")
+        .action(clap::ArgAction::SetTrue)
+        .hide(true);
+    cli.mut_subcommand("renew", |renew| renew.arg(marker.clone()))
+        .mut_subcommand("watch", |watch| watch.arg(marker.conflicts_with("once")))
+}
+
+fn command_line<I, T>(args: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let mut matches = with_the_jobs_markers(Cli::command()).try_get_matches_from(args)?;
+    let marked = matches
+        .subcommand()
+        .is_some_and(|(_, given)| matches!(given.try_get_one::<bool>("scheduled"), Ok(Some(true))));
+    let mut cli =
+        Cli::from_arg_matches_mut(&mut matches).map_err(|e| e.format(&mut Cli::command()))?;
+    if let Some(Command::Renew { scheduled } | Command::Watch { scheduled, .. }) = &mut cli.command
+    {
+        *scheduled = marked;
+    }
+    Ok(cli)
+}
+
 /// A usage error keeps clap's own rendering, unless the caller asked for JSON, which is
 /// promised for every outcome.
 fn parse() -> Result<Cli, ExitCode> {
-    Cli::try_parse().map_err(|e| {
+    command_line(std::env::args_os()).map_err(|e| {
         let wants_json = std::env::args_os().any(|arg| arg == "--json");
         if wants_json && e.use_stderr() {
             let message = e.render().to_string().trim().to_string();
@@ -1826,84 +1835,74 @@ mod tests {
         }
     }
 
-    /// What the schedule's job runs, as the core writes it into the systemd unit, is a
-    /// command line this one takes, and the marker in it is said only where it is given.
-    /// It is hidden: a person has no reason to type it.
+    // What each job runs, as the core writes it into the job, is a command line this one takes.
     #[test]
-    fn the_schedules_marker_is_a_run_of_renew_this_command_line_takes() {
-        let scheduled = std::iter::once("pitboard").chain(pitboard_core::schedule::SCHEDULED_RUN);
+    fn each_jobs_marker_is_a_run_this_command_line_takes() {
+        let run = |args: &[&str]| {
+            command_line(std::iter::once("pitboard").chain(args.iter().copied()))
+                .expect("parsed")
+                .command
+        };
         assert!(matches!(
-            Cli::try_parse_from(scheduled).expect("parsed").command,
+            run(&pitboard_core::schedule::SCHEDULED_RUN),
             Some(Command::Renew { scheduled: true })
         ));
         assert!(matches!(
-            Cli::try_parse_from(["pitboard", "renew"])
-                .expect("parsed")
-                .command,
+            run(&["renew"]),
             Some(Command::Renew { scheduled: false })
         ));
-        let help = Cli::command()
-            .find_subcommand_mut("renew")
-            .expect("renew")
-            .render_long_help()
-            .to_string();
-        assert!(!help.contains("--scheduled"), "{help}");
+        let watched = [&pitboard_core::schedule::WATCH_RUN[..], &["--at", "90"]].concat();
+        assert!(matches!(
+            run(&watched),
+            Some(Command::Watch {
+                scheduled: true,
+                once: false,
+                what: None,
+                ..
+            })
+        ));
+        assert!(matches!(
+            run(&["watch"]),
+            Some(Command::Watch {
+                scheduled: false,
+                ..
+            })
+        ));
+        assert!(
+            command_line(["pitboard", "watch", "--scheduled", "--once"]).is_err(),
+            "a run of the service watches until it is stopped"
+        );
+        assert!(command_line(["pitboard", "status", "--scheduled"]).is_err());
     }
 
-    /// The shells' completions offer `--scheduled`, as they offer the hidden `manpage`:
-    /// clap_complete writes hidden arguments and commands into every shell's file. Where a
-    /// shell shows a description, it is the marker's help, which says what such a run
-    /// renews, since that is all a person who picks it gets, in plain text, since a shell
-    /// shows Markdown as written.
     #[test]
-    fn the_completions_offer_the_schedules_marker_and_say_what_it_renews() {
+    fn the_jobs_markers_are_in_no_help_or_completions() {
         use clap_complete::Shell;
-        let said = "Renew as the daily renewal schedule does";
-        for (shell, offered, described) in [
-            (Shell::Bash, "--scheduled", false),
-            (Shell::Zsh, "'--scheduled[", true),
-            (Shell::Fish, "-l scheduled", true),
+        for shell in [
+            Shell::Bash,
+            Shell::Zsh,
+            Shell::Fish,
+            Shell::Elvish,
+            Shell::PowerShell,
         ] {
             let mut out = Vec::new();
             clap_complete::generate(shell, &mut Cli::command(), "pitboard", &mut out);
             let file = String::from_utf8(out).expect("text");
-            let line = file
-                .lines()
-                .find(|line| line.contains(offered))
-                .unwrap_or_else(|| panic!("{shell}: {file}"));
-            assert_eq!(line.contains(said), described, "{shell}: {line}");
-            assert!(
-                !line.contains('`'),
-                "{shell} shows Markdown as written: {line}"
-            );
+            assert!(!file.contains("scheduled"), "{shell}: {file}");
             assert!(
                 file.contains("manpage"),
                 "{shell}: as the hidden command is"
             );
-            assert!(!file.contains("systemd"), "{shell}: {file}");
         }
-    }
-
-    #[test]
-    fn the_schedules_marker_names_the_default_folder_as_each_system_does() {
-        let renew = Cli::command();
-        let scheduled = renew
-            .find_subcommand("renew")
-            .and_then(|renew| {
-                renew
-                    .get_arguments()
-                    .find(|arg| arg.get_id() == "scheduled")
-            })
-            .and_then(|arg| arg.get_help())
-            .map(ToString::to_string)
-            .expect("its help");
-        let folder = if cfg!(windows) {
-            r"%USERPROFILE%\AppData\Local\Pitboard"
-        } else {
-            "~/.pitboard"
-        };
-        assert!(scheduled.contains(folder), "{scheduled}");
-        assert!(!scheduled.contains("LOCALAPPDATA"), "{scheduled}");
+        for job in ["renew", "watch"] {
+            let mut cli = with_the_jobs_markers(Cli::command());
+            let help = cli
+                .find_subcommand_mut(job)
+                .expect(job)
+                .render_long_help()
+                .to_string();
+            assert!(!help.contains("scheduled"), "{help}");
+        }
     }
 
     // A file under `path`, as before; Task Scheduler's task under `task`, with no `path`.
@@ -2001,7 +2000,7 @@ mod tests {
     #[test]
     fn every_command_but_a_generated_file_asks_whether_this_build_may_run() {
         let asks = |args: &[&str]| {
-            let cli = Cli::try_parse_from(std::iter::once("pitboard").chain(args.iter().copied()))
+            let cli = command_line(std::iter::once("pitboard").chain(args.iter().copied()))
                 .unwrap_or_else(|e| panic!("{args:?}: {e}"));
             cli.command
                 .unwrap_or(Command::Status {

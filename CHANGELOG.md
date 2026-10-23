@@ -27,6 +27,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On a Linux that systemd did not start, as in many containers, `pitboard schedule install`
   refuses with `schedule_unsupported` and says so, instead of a `home_unwritable` error that
   named `systemctl`.
+- Shell completions leave out `pitboard renew --scheduled`, which only the daily renewal
+  schedule runs.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

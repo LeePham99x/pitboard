@@ -1173,14 +1173,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
   launchd's job label in `XPC_SERVICE_NAME`, or, since what systemd passes a job is best
   effort and not to be relied on and Task Scheduler passes none, by the marker the unit's
   `ExecStart` and the task's action carry, `renew --scheduled` (`schedule::SCHEDULED_RUN`),
-  which the command line passes on through `Context::started_by_the_schedule`. The command
-  line leaves `renew` to the gate, which asks of the homes the run renews in, so an empty or
-  relative `PITBOARD_HOME` stops no run of the schedule. In a build for tests, such a run
-  whose home is the account's own panics before it reads anything. For the same reason
-  `schedule::install` refuses, with `schedule_not_default_home`, wherever `schedule::serves`
-  is false, that is while `PITBOARD_HOME` names another directory. `uninstall` is not
-  refused, so a schedule can be taken away from any home, and `repair` does nothing there, as
-  before, without an error.
+  which the command line passes on through `Context::started_by_the_schedule`. Only its
+  parser knows the marker, as clap_complete writes a hidden argument into every shell's
+  completions. The command line leaves `renew` to the gate, which asks of the homes the run
+  renews in, so an empty or relative `PITBOARD_HOME` stops no run of the schedule. In a build
+  for tests, such a run whose home is the account's own panics before it reads anything. For
+  the same reason `schedule::install` refuses, with `schedule_not_default_home`, wherever
+  `schedule::serves` is false, that is while `PITBOARD_HOME` names another directory.
+  `uninstall` is not refused, so a schedule can be taken away from any home, and `repair` does
+  nothing there, as before, without an error.
 - The schedule's job is started with the system's environment, not the person's shell, so
   `schedule::install` gives it, through `Scheduler::put`, `PITBOARD_NO_ARGV` where the
   installing context refuses the argument line, and every proxy variable that context
