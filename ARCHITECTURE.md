@@ -3515,6 +3515,16 @@ treated, and only the macOS build shows it. The run reads both builds since.
   counts only where neither holds a policy. Pitboard reads all three through the host, and
   the folder and `HKLM` both, so it may name an override a session would not take, never
   miss one.
+- Read on 23 October 2026 from the four builds of 2.1.309 (`auth_precedence`,
+  `anthropic_profiles`, `profile_folder`, `windows_profile_folder`, `organisation_pin`): a
+  session also signs in another way under `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile, or
+  managed settings that require the Cloud gateway's sign-in. `settings::overrides` names
+  each, as it names a variable. `settings::Profiles` reads the profile variables from the
+  environment only: Claude Code reads them from `process.env`, and Pitboard does not follow
+  which settings `env` blocks reach it. A managed `forceLoginOrgUUID` makes Claude Code refuse
+  a login of another organisation as a session starts, so `Provider::refuses` asks it of the
+  account going in, by the organisation Pitboard recorded for it. Where several managed
+  sources set it, a login none of them names is refused.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_version_resource`): `claude.exe` carries a version resource whose product
   version is `2.1.300.0`. So doctor reads the release there on Windows, once npm's

@@ -24,7 +24,10 @@ A variable that names a folder must hold a full path: [`home_not_absolute`](/ref
 | `USER` | macOS | Both | The keychain account of Claude Code's item and of parked logins. Unset or empty, your login name. With a character other than letters, digits, `.`, `_` and `-`, `claude-code-user`. |
 | `USERNAME` | Windows | Command line | Your user name, which `pitboard doctor --json` hides. |
 | `CLAUDE_CODE_CUSTOM_OAUTH_URL` | All | Both | Not empty: Pitboard does not act on Claude Code. See [Custom OAuth endpoint](#custom-oauth-endpoint). |
-| `ANTHROPIC_API_KEY` and eight more | All | Both | Not empty: Claude Code ignores the login Pitboard switches. See [Variables that override the login](#variables-that-override-the-login). |
+| `ANTHROPIC_API_KEY` and nine more | All | Both | Not empty: Claude Code ignores the login Pitboard switches. See [Variables that override the login](#variables-that-override-the-login). |
+| `ANTHROPIC_PROFILE`, `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID` | All | Both | Can make Claude Code sign in with an Anthropic profile, not the login Pitboard switches. See [Anthropic profiles](#anthropic-profiles). |
+| `ANTHROPIC_CONFIG_DIR` | All | Both | The folder that holds Claude Code's [Anthropic profiles](#anthropic-profiles). |
+| `XDG_CONFIG_HOME` | macOS, Linux | Both | Its `anthropic` folder holds Claude Code's [Anthropic profiles](#anthropic-profiles) while `ANTHROPIC_CONFIG_DIR` is unset. |
 | `CLAUDE_CODE_HOVER_REST` | All | Both | `1` or `true`: `pitboard doctor`'s `storage v5` check reads as on. Measured in 2.1.278, the login stays in the keychain. |
 | `CODEX_HOME` | All | Both | Codex's directory, in place of `~/.codex`, or on Windows `.codex` in your profile folder. Empty counts as unset. On Windows, one that names no folder stops Codex, and Pitboard refuses with `codex_home_missing`. |
 | `CODEX_INSTALL_DIR` | Windows | App | Where Codex's installer put `codex`, which the app looks in after the `PATH`. Unset, `Programs\OpenAI\Codex\bin` in `LOCALAPPDATA`. |
@@ -53,11 +56,23 @@ Changes to Codex accounts go ahead. The automatic switch decides nothing for Cla
 
 ## Variables that override the login
 
-As read in Claude Code 2.1.278, each of these makes Claude Code ignore the login Pitboard switches:
+As read in Claude Code 2.1.309, each of these makes Claude Code ignore the login Pitboard switches:
 
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_GATEWAY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`, `CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD`.
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_GATEWAY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`, `CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD`, `CLAUDE_CODE_USE_MANTLE`.
 
-Pitboard reads them from its environment and from Claude Code's settings, along with `apiKeyHelper` and [Claude Code's remote token files](/reference/files#claude-code-files). While any is set, changes to Claude Code accounts go ahead but warn with `auth_overridden`, as does `pitboard doctor`. The automatic switch holds back.
+Pitboard reads them from its environment and from Claude Code's settings, along with `apiKeyHelper` and [Claude Code's remote token files](/reference/files#claude-code-files). Managed settings that set `forceLoginMethod` to `gateway`, or name a `forceLoginGatewayUrl`, send every session through the Cloud gateway and count the same way. In your own `settings.json`, those two only aim `/login` at a gateway. While any is set, changes to Claude Code accounts go ahead but warn with `auth_overridden`, as does `pitboard doctor`. The automatic switch holds back.
+
+## Anthropic profiles
+
+As read in Claude Code 2.1.309, a session signs in with an Anthropic profile before the login Pitboard switches:
+
+- The profile `ANTHROPIC_PROFILE` names, where it signs in with `oidc_federation`, or with `user_oauth` and a login in its credentials file.
+- With `ANTHROPIC_PROFILE` unset, the federation `ANTHROPIC_FEDERATION_RULE_ID` and `ANTHROPIC_ORGANIZATION_ID` set together.
+- Otherwise the active profile, the one `active_config` names or `default`, where it signs in with `oidc_federation`.
+
+Claude Code keeps the profiles in `configs` in `~/.config/anthropic`, or in `anthropic` in `XDG_CONFIG_HOME`. On Windows, they are in `%APPDATA%\Anthropic`. `ANTHROPIC_CONFIG_DIR` names another folder on every system.
+
+Pitboard reads these variables from its environment, not from Claude Code's settings. A profile counts as a [variable that overrides the login](#variables-that-override-the-login) does.
 
 ## Proxies
 

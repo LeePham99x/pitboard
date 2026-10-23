@@ -827,3 +827,46 @@ fn a_codex_login_its_settings_rule_out_is_refused_before_anything_moves() {
     .expect("a config");
     switch(settled(&m), &m.key("there")).expect("a workspace it allows");
 }
+
+// Claude Code 2.1.309 refuses, as a session starts, a login of an organisation that a managed
+// `forceLoginOrgUUID` leaves out (organisation_pin), so it would not use the account switched to.
+#[test]
+fn a_claude_code_login_of_an_organisation_the_managed_settings_leave_out_is_refused() {
+    let m = machine("organisation-pin");
+    let file = crate::settings::managed_dir(m.ctx.os).join("managed-settings.json");
+    let there = || {
+        state::load(&m.ctx)
+            .expect("state")
+            .get(&m.key("there"))
+            .and_then(|account| account.parked.clone())
+    };
+    let (live, vault, parked) = (m.live(), m.mem.vault().services(), there());
+    for pin in [
+        serde_json::json!("org-here"),
+        serde_json::json!(["org-here", "org-elsewhere"]),
+    ] {
+        m.mem.administers(
+            &file,
+            &serde_json::json!({ "forceLoginOrgUUID": pin }).to_string(),
+        );
+        let refused = switch(settled(&m), &m.key("there")).expect_err("refused");
+        assert_eq!(refused.code(), "login_restricted", "{refused:?}");
+        assert_eq!(refused.exit_code(), 3);
+        let said = refused.to_string();
+        assert!(
+            said.starts_with("Claude Code would not keep `there`'s login:")
+                && said.contains(&format!("{} sets `forceLoginOrgUUID`", file.display()))
+                && said.contains("this login is of `org-there`"),
+            "{said}"
+        );
+        assert_eq!(m.live(), live, "{pin}: the login in use stays");
+        assert_eq!(m.mem.vault().services(), vault, "{pin}");
+        assert_eq!(there(), parked, "{pin}: and so does the park");
+    }
+
+    m.mem.administers(
+        &file,
+        &serde_json::json!({"forceLoginOrgUUID": ["org-here", "org-there"]}).to_string(),
+    );
+    switch(settled(&m), &m.key("there")).expect("an organisation it allows");
+}

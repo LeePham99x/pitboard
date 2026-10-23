@@ -22,6 +22,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `forced_login_method`, `forced_chatgpt_workspace_id`, `allowed_login_methods` or
   `allowed_chatgpt_workspaces` rules out, since Codex would sign out of it and delete it. Switch
   to an account those settings allow, or change them.
+- **Breaking:** Pitboard refuses with `login_restricted` to switch Claude Code to an account of an
+  organisation that a managed `forceLoginOrgUUID` leaves out, since Claude Code would refuse its
+  login. Switch to an account of an organisation the setting names.
 
 ### Fixed
 
@@ -31,6 +34,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Codex login it asked about.
 - Pitboard keeps a parked Codex login that OpenAI refuses to renew as another client than its
   own, and says why, instead of dropping it.
+- Pitboard warns with `auth_overridden`, and the automatic switch holds back, while
+  `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile or managed settings that require the Cloud
+  gateway make Claude Code sign in another way.
 
 ## [1.0.0-beta.5] - 2026-10-23
 

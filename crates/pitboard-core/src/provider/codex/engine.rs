@@ -389,7 +389,7 @@ impl Provider for Codex {
         Vec::new()
     }
 
-    fn refuses(&self, ctx: &Context, document: &Value) -> Option<String> {
+    fn refuses(&self, ctx: &Context, document: &Value, _owner: &Owner) -> Option<String> {
         let tokens = &document["tokens"];
         let claimed = tokens["id_token"]
             .as_str()

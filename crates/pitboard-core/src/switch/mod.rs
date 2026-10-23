@@ -667,7 +667,7 @@ fn put_in(
     let live = live_store(ctx, tool)?;
     let gone = going_out(ctx, &state, tool, &live, going)?;
     let incoming = park::load(ctx, tool, key, &held)?;
-    kept(ctx, tool, &to, &incoming)?;
+    kept(ctx, tool, &to, &incoming, &target.owner())?;
     let (held, incoming) =
         prove_incoming(ctx, permit, &mut state, tool, key, target, held, incoming)?;
 
@@ -907,7 +907,7 @@ fn switch_from(
         return Err(Error::ParkedLoginExpired { label: to });
     }
     let incoming = park::load(ctx, tool, key, &held)?;
-    kept(ctx, tool, &to, &incoming)?;
+    kept(ctx, tool, &to, &incoming, &target.owner())?;
     // Asked before the tool's lock is taken, like the outgoing question, so the round trip
     // does not hold up its writes.
     let (held, incoming) =
@@ -1433,8 +1433,9 @@ pub(super) fn kept(
     tool: &'static dyn Provider,
     label: &str,
     document: &Value,
+    owner: &provider::Owner,
 ) -> Result<()> {
-    tool.refuses(ctx, document).map_or(Ok(()), |reason| {
+    tool.refuses(ctx, document, owner).map_or(Ok(()), |reason| {
         Err(Error::LoginRestricted {
             tool: tool.id(),
             label: label.to_owned(),

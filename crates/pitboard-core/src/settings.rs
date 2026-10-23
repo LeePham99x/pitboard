@@ -21,15 +21,15 @@
 //! directory, not about the machine, and an answer true in the directory Pitboard happened
 //! to be run from is worse than no answer at all.
 
-use crate::context::Context;
+use crate::context::{Context, Environment};
 use crate::host::{Administered, Hive, Os};
 use crate::provider::claude::paths as claude;
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Set, any of these makes Claude Code authenticate with something other than the login in
 /// the credential store, so moving that login changes nothing a session would notice.
-pub(crate) const OVERRIDING_ENV: [&str; 9] = [
+pub(crate) const OVERRIDING_ENV: [&str; 10] = [
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CODE_OAUTH_TOKEN",
@@ -39,6 +39,7 @@ pub(crate) const OVERRIDING_ENV: [&str; 9] = [
     "CLAUDE_CODE_USE_GATEWAY",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
     "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+    "CLAUDE_CODE_USE_MANTLE",
 ];
 
 /// One reason a session would not use the login Pitboard moves.
@@ -56,7 +57,7 @@ impl std::fmt::Display for Override {
     }
 }
 
-fn managed_dir(os: Os) -> PathBuf {
+pub(crate) fn managed_dir(os: Os) -> PathBuf {
     match os {
         Os::MacOs => "/Library/Application Support/ClaudeCode".into(),
         Os::Linux => "/etc/claude-code".into(),
@@ -198,7 +199,7 @@ fn is_set(value: &str) -> bool {
 
 // As Claude Code reads a settings file: UTF-16LE after FF FE, UTF-8 otherwise, and one byte
 // order mark dropped (`settings_byte_order_mark`).
-fn own(path: &std::path::Path) -> Option<Layer> {
+fn own(path: &Path) -> Option<Layer> {
     let bytes = std::fs::read(path).ok()?;
     let text = match bytes.strip_prefix(&[0xFF, 0xFE]) {
         Some(wide) => String::from_utf16(
@@ -261,6 +262,155 @@ fn overrides_in(layer: &Layer) -> Vec<Override> {
     found
 }
 
+// Set in managed settings, these send every session through the Cloud gateway (auth_precedence).
+fn gateway_in(layer: &Layer) -> Vec<Override> {
+    let Ok(json) = serde_json::from_str::<Value>(&layer.text) else {
+        return Vec::new();
+    };
+    let required = [
+        json.get("forceLoginMethod").and_then(Value::as_str) == Some("gateway"),
+        json.get("forceLoginGatewayUrl")
+            .and_then(Value::as_str)
+            .is_some_and(|url| !url.is_empty()),
+    ];
+    ["forceLoginMethod", "forceLoginGatewayUrl"]
+        .into_iter()
+        .zip(required)
+        .filter(|(_, set)| *set)
+        .map(|(key, _)| Override {
+            layer: layer.name.clone(),
+            key: key.into(),
+        })
+        .collect()
+}
+
+// Managed settings, then the `settings.json` given.
+fn layered(ctx: &Context, settings: &Path) -> Vec<Override> {
+    managed(ctx)
+        .iter()
+        .flat_map(|layer| overrides_in(layer).into_iter().chain(gateway_in(layer)))
+        .chain(own(settings).iter().flat_map(overrides_in))
+        .collect()
+}
+
+const FEDERATION: &str = "oidc_federation";
+const OAUTH: &str = "user_oauth";
+
+// Where Claude Code finds its Anthropic profiles, and which one the environment names.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Profiles {
+    folder: Option<PathBuf>,
+    named: Option<String>,
+    federated: bool,
+}
+
+impl Profiles {
+    // Each trimmed, as Claude Code reads them, and an empty one unset.
+    pub(crate) fn read(env: &Environment) -> Profiles {
+        let set = |name| env.text(name).map(str::trim).filter(|v| !v.is_empty());
+        let under = |name, path: &[&str]| {
+            set(name).map(|dir| path.iter().fold(PathBuf::from(dir), |p, part| p.join(part)))
+        };
+        let folder = set("ANTHROPIC_CONFIG_DIR")
+            .map(PathBuf::from)
+            .or_else(|| match env.os() {
+                Os::Windows => under("APPDATA", &["Anthropic"])
+                    .or_else(|| under("USERPROFILE", &["AppData", "Roaming", "Anthropic"])),
+                Os::MacOs | Os::Linux => under("XDG_CONFIG_HOME", &["anthropic"])
+                    .or_else(|| under("HOME", &[".config", "anthropic"])),
+            });
+        Profiles {
+            folder,
+            named: set("ANTHROPIC_PROFILE").map(str::to_owned),
+            federated: set("ANTHROPIC_FEDERATION_RULE_ID").is_some()
+                && set("ANTHROPIC_ORGANIZATION_ID").is_some(),
+        }
+    }
+}
+
+fn profile_file(folder: &Path, name: &str) -> PathBuf {
+    folder.join("configs").join(format!("{name}.json"))
+}
+
+// A profile's `authentication.type`. Claude Code takes a `user_oauth` one only with a login in
+// its credentials file.
+fn mode(folder: &Path, name: &str) -> Option<String> {
+    let profile: Value =
+        serde_json::from_str(&std::fs::read_to_string(profile_file(folder, name)).ok()?).ok()?;
+    let authentication = profile.get("authentication")?;
+    let mode = authentication.get("type")?.as_str()?;
+    if mode == OAUTH {
+        let credentials = authentication
+            .get("credentials_path")
+            .and_then(Value::as_str)
+            .map_or_else(
+                || folder.join("credentials").join(format!("{name}.json")),
+                PathBuf::from,
+            );
+        std::fs::read_to_string(credentials)
+            .ok()
+            .filter(|login| !login.trim().is_empty())?;
+    }
+    Some(mode.to_owned())
+}
+
+// The profile a session takes before the stored login: the one `ANTHROPIC_PROFILE` names, else
+// the federation both variables set, else the active profile where it federates. Claude Code
+// takes a claude.ai login before an active profile that signs in with OAuth.
+fn profile(ctx: &Context) -> Option<Override> {
+    let Profiles {
+        folder,
+        named,
+        federated,
+    } = &ctx.anthropic;
+    let environment = |key: &str| Override {
+        layer: "the environment".into(),
+        key: key.into(),
+    };
+    if let Some(name) = named {
+        let mode = mode(folder.as_deref()?, name)?;
+        return [FEDERATION, OAUTH]
+            .contains(&mode.as_str())
+            .then(|| environment("ANTHROPIC_PROFILE"));
+    }
+    if *federated {
+        return Some(environment(
+            "ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID",
+        ));
+    }
+    let folder = folder.as_deref()?;
+    let active = std::fs::read_to_string(folder.join("active_config"))
+        .ok()
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "default".into());
+    (mode(folder, &active)? == FEDERATION).then(|| Override {
+        layer: profile_file(folder, &active).display().to_string(),
+        key: format!("the `{FEDERATION}` profile `{active}`"),
+    })
+}
+
+// Each managed source a session takes that sets `forceLoginOrgUUID`, with the organisations it
+// names (organisation_pin). None where one cannot be read: Claude Code then refuses every login.
+pub(crate) fn organisation_pins(ctx: &Context) -> Vec<(String, Vec<String>)> {
+    managed_taken(ctx)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|layer| {
+            let json = serde_json::from_str::<Value>(&layer.text).ok()?;
+            let ids = match json.get("forceLoginOrgUUID")? {
+                Value::String(id) => vec![id.clone()],
+                Value::Array(ids) => ids
+                    .iter()
+                    .map(|id| id.as_str().map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()?,
+                _ => return None,
+            };
+            Some((layer.name, ids))
+        })
+        .collect()
+}
+
 // It renames Claude Code's keychain item and config file, so it is a refusal, not a warning.
 pub(crate) fn custom_oauth(ctx: &Context) -> bool {
     if ctx.custom_oauth() {
@@ -311,7 +461,7 @@ fn remote_tokens(ctx: &Context, files: &[(&str, &str)]) -> Vec<Override> {
         .filter(|(path, _)| {
             matches!(
                 ctx.host()
-                    .administered_file_up_to(std::path::Path::new(path), REMOTE_TOKEN_LIMIT),
+                    .administered_file_up_to(Path::new(path), REMOTE_TOKEN_LIMIT),
                 Administered::Set(text) if !text.trim().is_empty()
             )
         })
@@ -323,11 +473,8 @@ fn remote_tokens(ctx: &Context, files: &[(&str, &str)]) -> Vec<Override> {
 }
 
 pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
-    let mut found: Vec<Override> = managed(ctx)
-        .into_iter()
-        .chain(own(&claude::config_dir(ctx).join("settings.json")))
-        .flat_map(|layer| overrides_in(&layer))
-        .collect();
+    let mut found = layered(ctx, &claude::config_dir(ctx).join("settings.json"));
+    found.extend(profile(ctx));
     found.extend(remote_tokens(ctx, &[OAUTH_TOKEN, API_KEY]));
     // What this process was started with, which a command line sees and an app does not.
     found.extend(ctx.overriding_auth().iter().map(|key| Override {
@@ -386,13 +533,9 @@ pub(crate) fn status_line_command(ctx: &Context) -> Option<String> {
 }
 
 // A warm-up's run gets none of this process's environment, and its own token comes before
-// `.oauth_token`.
-pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
-    let mut found: Vec<Override> = managed(ctx)
-        .into_iter()
-        .chain(own(&config.join("settings.json")))
-        .flat_map(|layer| overrides_in(&layer))
-        .collect();
+// `.oauth_token` and any profile.
+pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &Path) -> Vec<Override> {
+    let mut found = layered(ctx, &config.join("settings.json"));
     found.extend(remote_tokens(ctx, &[API_KEY]));
     found
 }
@@ -414,7 +557,7 @@ pub(crate) mod tests_support {
         (ctx, config, scratch)
     }
 
-    pub(crate) fn write(path: &std::path::Path, value: Value) {
+    pub(crate) fn write(path: &Path, value: Value) {
         std::fs::write(path, value.to_string()).expect("written");
     }
 }
@@ -498,11 +641,10 @@ mod tests {
     #[test]
     fn a_third_party_provider_is_an_override_too() {
         let (ctx, config, _s) = home();
-        write(
-            &config.join("settings.json"),
-            json!({"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}),
-        );
-        assert_eq!(overrides(&ctx)[0].key, "env.CLAUDE_CODE_USE_BEDROCK");
+        for name in ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_MANTLE"] {
+            write(&config.join("settings.json"), json!({"env": {name: "1"}}));
+            assert_eq!(overrides(&ctx)[0].key, format!("env.{name}"));
+        }
     }
 
     /// Claude Code reads an empty string, `0` and `false` as not set, and so does this.
@@ -784,6 +926,87 @@ mod managed_tests {
         );
     }
 
+    // Read in 2.1.309 (auth_precedence): managed settings that require the Cloud gateway's
+    // sign-in send every session there, a warm-up's run included. The person's own only aim
+    // `/login` at it.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test sets up its scratch files as a person or a tool would"
+    )]
+    fn managed_settings_that_require_the_gateway_sign_in_override_the_login() {
+        for (os, dir) in [
+            (Os::MacOs, "/Library/Application Support/ClaudeCode"),
+            (Os::Linux, "/etc/claude-code"),
+            (Os::Windows, r"C:\Program Files\ClaudeCode"),
+        ] {
+            let file = PathBuf::from(dir).join("managed-settings.json");
+            let memory = MemoryHost::new();
+            let (ctx, scratch) = on(os, &memory);
+            let own = scratch.path().join(".claude").join("settings.json");
+            std::fs::create_dir_all(own.parent().expect("its folder")).expect("a config dir");
+            std::fs::write(
+                &own,
+                json!({"forceLoginMethod": "gateway", "forceLoginGatewayUrl": "https://gw.example"})
+                    .to_string(),
+            )
+            .expect("written");
+            memory.administers(&file, &json!({"forceLoginMethod": "claudeai"}).to_string());
+            assert_eq!(overrides(&ctx), Vec::new(), "{os:?}");
+
+            let run = scratch.path().join("warm").join("config");
+            for (set, key) in [
+                (json!({"forceLoginMethod": "gateway"}), "forceLoginMethod"),
+                (
+                    json!({"forceLoginGatewayUrl": "https://gw.example"}),
+                    "forceLoginGatewayUrl",
+                ),
+            ] {
+                memory.administers(&file, &set.to_string());
+                let expected = [(file.display().to_string(), key.to_string())];
+                assert_eq!(said(&overrides(&ctx)), expected, "{os:?}");
+                assert_eq!(said(&overrides_of_a_run_in(&ctx, &run)), expected, "{os:?}");
+            }
+        }
+    }
+
+    // Read in 2.1.309 (organisation_pin): one organisation or a list of them, from the managed
+    // sources a session takes and not from the person's own settings.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test sets up its scratch files as a person or a tool would"
+    )]
+    fn a_managed_organisation_pin_is_read_as_one_or_a_list() {
+        let memory = MemoryHost::new();
+        let (ctx, scratch) = on(Os::Linux, &memory);
+        let own = scratch.path().join(".claude").join("settings.json");
+        std::fs::create_dir_all(own.parent().expect("its folder")).expect("a config dir");
+        std::fs::write(&own, json!({"forceLoginOrgUUID": "org-own"}).to_string()).expect("written");
+        assert_eq!(organisation_pins(&ctx), Vec::new());
+
+        let dir = PathBuf::from("/etc/claude-code");
+        let (file, drop_in) = (
+            dir.join("managed-settings.json"),
+            dir.join("managed-settings.d").join("10-org.json"),
+        );
+        memory.administers(&file, &json!({"forceLoginOrgUUID": "org-a"}).to_string());
+        memory.administers(
+            &drop_in,
+            &json!({"forceLoginOrgUUID": ["org-b", "org-c"]}).to_string(),
+        );
+        assert_eq!(
+            organisation_pins(&ctx),
+            [
+                (file.display().to_string(), vec!["org-a".to_string()]),
+                (
+                    drop_in.display().to_string(),
+                    vec!["org-b".to_string(), "org-c".to_string()]
+                ),
+            ]
+        );
+    }
+
     #[test]
     fn a_managed_file_keeps_the_persons_policy_out() {
         let memory = MemoryHost::new();
@@ -799,5 +1022,165 @@ mod managed_tests {
         );
         let (ctx, _scratch) = on(Os::Windows, &memory);
         assert_eq!(overrides(&ctx), Vec::new());
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
+mod profile_tests {
+    use super::*;
+    use crate::context::Environment;
+    use serde_json::json;
+
+    fn on(os: Os, scratch: &Path, set: &[(&str, &str)]) -> Context {
+        let home = scratch.to_string_lossy().into_owned();
+        let config = scratch.join(".claude").to_string_lossy().into_owned();
+        let mut pairs = vec![
+            ("HOME", home.as_str()),
+            ("USERPROFILE", home.as_str()),
+            ("CLAUDE_CONFIG_DIR", config.as_str()),
+        ];
+        pairs.extend_from_slice(set);
+        Context::for_command_line(&Environment::on(os, pairs))
+    }
+
+    fn profile(folder: &Path, name: &str, mode: &str) -> PathBuf {
+        let path = folder.join("configs").join(format!("{name}.json"));
+        std::fs::create_dir_all(path.parent().expect("its folder")).expect("a folder");
+        std::fs::write(&path, json!({"authentication": {"type": mode}}).to_string())
+            .expect("written");
+        path
+    }
+
+    fn signed_in(folder: &Path, name: &str) {
+        let path = folder.join("credentials").join(format!("{name}.json"));
+        std::fs::create_dir_all(path.parent().expect("its folder")).expect("a folder");
+        std::fs::write(path, json!({"refresh_token": "not-a-token"}).to_string()).expect("written");
+    }
+
+    fn said(ctx: &Context) -> Vec<String> {
+        overrides(ctx).iter().map(ToString::to_string).collect()
+    }
+
+    // Read in 2.1.309 (anthropic_profiles): the active profile comes before the stored login
+    // only where it federates; a claude.ai login comes before one signed in with OAuth.
+    #[test]
+    fn the_active_profile_overrides_the_login_where_it_federates() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let folder = scratch.path().join(".config").join("anthropic");
+        let ctx = on(Os::Linux, scratch.path(), &[]);
+        assert_eq!(said(&ctx), Vec::<String>::new());
+
+        let default = profile(&folder, "default", "oidc_federation");
+        assert_eq!(
+            said(&ctx),
+            [format!(
+                "the `oidc_federation` profile `default` in {}",
+                default.display()
+            )]
+        );
+
+        std::fs::write(folder.join("active_config"), "work\n").expect("written");
+        profile(&folder, "work", "user_oauth");
+        signed_in(&folder, "work");
+        assert_eq!(said(&ctx), Vec::<String>::new());
+    }
+
+    // `ANTHROPIC_PROFILE` takes a profile of either mode, but only one there: a user_oauth
+    // profile with no login in its credentials file is none, and then nothing else is looked at.
+    #[test]
+    fn a_named_profile_overrides_the_login_where_it_is_there() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let folder = scratch.path().join(".config").join("anthropic");
+        let named = [
+            ("ANTHROPIC_PROFILE", " work "),
+            ("ANTHROPIC_FEDERATION_RULE_ID", "rule"),
+            ("ANTHROPIC_ORGANIZATION_ID", "org"),
+        ];
+        let ctx = on(Os::MacOs, scratch.path(), &named);
+        profile(&folder, "default", "oidc_federation");
+        profile(&folder, "work", "user_oauth");
+        assert_eq!(said(&ctx), Vec::<String>::new());
+
+        signed_in(&folder, "work");
+        assert_eq!(said(&ctx), ["ANTHROPIC_PROFILE in the environment"]);
+    }
+
+    // Both variables, with no `ANTHROPIC_PROFILE`, are a federation of their own.
+    #[test]
+    fn a_federation_the_environment_sets_overrides_the_login() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let pair = [
+            ("ANTHROPIC_FEDERATION_RULE_ID", "rule"),
+            ("ANTHROPIC_ORGANIZATION_ID", "org"),
+        ];
+        assert_eq!(
+            said(&on(Os::Linux, scratch.path(), &pair)),
+            ["ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID in the environment"]
+        );
+        assert_eq!(
+            said(&on(Os::Linux, scratch.path(), &pair[..1])),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            said(&on(
+                Os::Linux,
+                scratch.path(),
+                &[pair[0], ("ANTHROPIC_ORGANIZATION_ID", " ")]
+            )),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn profiles_are_where_claude_code_looks_for_them_on_each_system() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let elsewhere = scratch.path().join("elsewhere");
+        let named = elsewhere.to_string_lossy().into_owned();
+        let roaming = scratch.path().join("Roaming");
+        let app_data = roaming.to_string_lossy().into_owned();
+        for (ctx, folder) in [
+            (
+                on(Os::Linux, scratch.path(), &[("XDG_CONFIG_HOME", &named)]),
+                elsewhere.join("anthropic"),
+            ),
+            (
+                on(
+                    Os::MacOs,
+                    scratch.path(),
+                    &[
+                        ("ANTHROPIC_CONFIG_DIR", &named),
+                        ("XDG_CONFIG_HOME", "/xdg"),
+                    ],
+                ),
+                elsewhere.clone(),
+            ),
+            (
+                on(Os::Windows, scratch.path(), &[("APPDATA", &app_data)]),
+                roaming.join("Anthropic"),
+            ),
+            (
+                on(Os::Windows, scratch.path(), &[]),
+                scratch
+                    .path()
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("Anthropic"),
+            ),
+        ] {
+            let path = profile(&folder, "default", "oidc_federation");
+            assert_eq!(
+                said(&ctx),
+                [format!(
+                    "the `oidc_federation` profile `default` in {}",
+                    path.display()
+                )],
+                "{folder:?}"
+            );
+            std::fs::remove_file(path).expect("removed");
+        }
     }
 }

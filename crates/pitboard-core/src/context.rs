@@ -48,6 +48,11 @@ const READ: &[&str] = &[
     "CLAUDE_CODE_HOVER_REST",
     "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
     "CLAUDE_CODE_GIT_BASH_PATH",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_CONFIG_DIR",
+    "XDG_CONFIG_HOME",
     "WSL_DISTRO_NAME",
     "CODEX_HOME",
     "CODEX_INSTALL_DIR",
@@ -336,6 +341,8 @@ pub struct Context {
     /// something other than the login Pitboard moves. Only half the answer: the rest is in
     /// files, which [`crate::settings::overrides`] reads and an app can see too.
     pub(crate) overriding_auth: Vec<String>,
+    // Where Claude Code finds an Anthropic profile, and which one the environment names.
+    pub(crate) anthropic: crate::settings::Profiles,
     /// Whether a login too large for `security -i` may be written the way Claude Code
     /// writes it: as a command argument, where `ps` can see it for the length of the call.
     /// On by default, because there is no third way and Claude Code writes the same
@@ -494,6 +501,7 @@ impl Context {
             custom_oauth: false,
             argv_fallback: true,
             overriding_auth: Vec::new(),
+            anthropic: crate::settings::Profiles::default(),
             caller: "unknown".into(),
             programs: programs(|tool, _| PathBuf::from(tool.program())),
             api_base: None,
@@ -871,6 +879,7 @@ impl Context {
                 .filter(|name| env.set(name))
                 .map(|name| (*name).to_string())
                 .collect(),
+            anthropic: crate::settings::Profiles::read(env),
             caller: caller.into(),
             programs: programs(program),
             api_base: owned("PITBOARD_API_BASE"),

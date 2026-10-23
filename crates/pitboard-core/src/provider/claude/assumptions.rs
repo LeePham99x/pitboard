@@ -77,6 +77,17 @@ const fn answers(name: &'static str) -> PerSystem {
     }
 }
 
+// Read as bytes on 2026-10-23 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64
+// builds of 2.1.309.
+const fn read_from_2_1_309(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("2.1.309"),
+        linux: Read("2.1.309"),
+        windows: Read("2.1.309"),
+    }
+}
+
 /// What each fact below is on each system. The Windows readings are a reading of the
 /// Windows builds' code for each fact, and of every literal its entry probes for, which
 /// both Windows builds hold. Where Claude Code does something else on Windows, that is a
@@ -482,6 +493,23 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     answers("token_refusals"),
     answers("validate_names_the_login"),
     answers("token_answer_names_the_login"),
+    read_from_2_1_309("auth_precedence"),
+    read_from_2_1_309("anthropic_profiles"),
+    PerSystem {
+        name: "profile_folder",
+        macos: Read("2.1.309"),
+        linux: Read("2.1.309"),
+        windows: NotRead(
+            "the Windows build looks in `APPDATA`, which windows_profile_folder reads",
+        ),
+    },
+    PerSystem {
+        name: "windows_profile_folder",
+        macos: NotRead("where macOS's profiles are is profile_folder's"),
+        linux: NotRead("where Linux's profiles are is profile_folder's"),
+        windows: Read("2.1.309"),
+    },
+    read_from_2_1_309("organisation_pin"),
 ];
 
 pub(crate) const ASSUMPTIONS: &[Assumption] = &[
@@ -1986,6 +2014,115 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         probe: &["account.email_address", "tokenAccount:"],
         absent: &[],
     },
+    Assumption {
+        name: "auth_precedence",
+        fact: "a session signs in with the stored claude.ai login only where nothing before it \
+               names another way: `ANTHROPIC_API_KEY`, then for a token `ANTHROPIC_AUTH_TOKEN`, \
+               `CLAUDE_CODE_OAUTH_TOKEN`, a token on a descriptor or in its well-known file, \
+               `apiKeyHelper` and an Anthropic profile (anthropic_profiles). It does so only while \
+               its provider is Anthropic's own: any of `CLAUDE_CODE_USE_BEDROCK`, \
+               `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS`, \
+               `CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD`, `CLAUDE_CODE_USE_MANTLE` and \
+               `CLAUDE_CODE_USE_VERTEX` set chooses another, and the Cloud gateway is chosen by a \
+               gateway sign-in held, by `CLAUDE_CODE_USE_GATEWAY`, or by managed settings that set \
+               `forceLoginMethod` to `gateway` or name a `forceLoginGatewayUrl`. The person's own \
+               settings with those two only aim `/login` at a gateway, and the sign-in it makes \
+               is kept as `enterpriseGateway`, which account_scoped_keys moves with the account",
+        read_from: "the token source check and the session's provider choice, the managed \
+                    sign-in pins the gateway check reads, the pre-fill that takes the person's \
+                    own `forceLoginGatewayUrl`, and the gateway sign-in's save and restore, in the \
+                    darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds of 2.1.309, read as \
+                    bytes on 2026-10-23",
+        verified_against: "2.1.309",
+        depends: "settings::OVERRIDING_ENV and settings::overrides, so doctor's auth_source \
+                  check, a switch's auth_overridden warning and the automatic switch name each, \
+                  and overrides_of_a_run_in, so a warm-up holds back under managed settings that \
+                  require the gateway",
+        probe: &[
+            r#"mantle:"CLAUDE_CODE_USE_MANTLE""#,
+            r#"because managed settings on this machine require the gateway sign-in (forceLoginMethod "gateway" / forceLoginGatewayUrl)."#,
+            "Honored from admin-controlled managed settings (MDM / managed-settings.json / \
+             policy helper) and, on a machine with none of those, from your own user settings",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "anthropic_profiles",
+        fact: "an Anthropic profile is `configs/<name>.json` in the profile folder \
+               (profile_folder, windows_profile_folder), its mode `authentication.type`, and a \
+               session takes one before the stored login. Where `ANTHROPIC_PROFILE` is set it \
+               takes the profile that names where its mode is `oidc_federation`, or \
+               `user_oauth` with a login in its credentials file, \
+               `authentication.credentials_path` or `credentials/<name>.json`, and looks at \
+               nothing else. Without it, `ANTHROPIC_FEDERATION_RULE_ID` and \
+               `ANTHROPIC_ORGANIZATION_ID` both set are a federation of their own. Without \
+               those, it takes the profile `active_config` names, or `default`, where its mode is \
+               `oidc_federation`; a `user_oauth` one comes after a claude.ai login. Each variable \
+               is trimmed, and read from the process's environment",
+        read_from: "the profile precedence, the profile's mode and credentials file readers, the \
+                    active profile reader, and the token source check that takes a profile after \
+                    `apiKeyHelper`, in the darwin-arm64, linux-x64, win32-x64 and win32-arm64 \
+                    builds of 2.1.309, read as bytes on 2026-10-23",
+        verified_against: "2.1.309",
+        depends: "settings::Profiles and settings::overrides, so doctor's auth_source check, a \
+                  switch's auth_overridden warning and the automatic switch name the profile",
+        probe: &[
+            r#"["ANTHROPIC_FEDERATION_RULE_ID","ANTHROPIC_ORGANIZATION_ID"]"#,
+            "An Anthropic profile (~/.config/anthropic) is configured, but a claude.ai login \
+             exists",
+            r#"{source:"profile",hasToken:!0}"#,
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "profile_folder",
+        fact: "the profile folder is `ANTHROPIC_CONFIG_DIR`, else `anthropic` in \
+               `XDG_CONFIG_HOME`, else `.config/anthropic` in `HOME`, each trimmed",
+        read_from: "the profile folder's resolver in the darwin-arm64 and linux-x64 builds of \
+                    2.1.309, read as bytes on 2026-10-23",
+        verified_against: "2.1.309",
+        depends: "settings::Profiles::read off Windows",
+        probe: &[
+            ".ANTHROPIC_CONFIG_DIR?.trim();if(",
+            r#".config","anthropic"),space:"home"}"#,
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_profile_folder",
+        fact: "on Windows the profile folder is `ANTHROPIC_CONFIG_DIR`, else `Anthropic` in \
+               `APPDATA`, else `AppData\\Roaming\\Anthropic` in `USERPROFILE`, each trimmed",
+        read_from: "the profile folder's resolver in the win32-x64 and win32-arm64 builds of \
+                    2.1.309, read as bytes on 2026-10-23",
+        verified_against: "2.1.309",
+        depends: "settings::Profiles::read on Windows",
+        probe: &[r#""AppData","Roaming","Anthropic"),space:"home"}"#],
+        absent: &[],
+    },
+    Assumption {
+        name: "organisation_pin",
+        fact: "`forceLoginOrgUUID`, one organisation's uuid or a list of them, any one \
+               permitted, from the managed sources a session takes, makes Claude Code refuse a \
+               claude.ai login of an organisation it does not name, as a session starts and at a \
+               sign-in. A session it refuses stops with the reason and leaves the login stored; a \
+               sign-in it refuses puts back the login before it. An empty list, or a managed \
+               source it cannot read, refuses every login. The person's own settings with it \
+               only pre-fill the sign-in",
+        read_from: "the organisation check a session runs as it starts and a sign-in runs on \
+                    the login it makes, the schema's description, and the restore a refused \
+                    sign-in runs, in the darwin-arm64, linux-x64, win32-x64 and win32-arm64 \
+                    builds of 2.1.309, read as bytes on 2026-10-23",
+        verified_against: "2.1.309",
+        depends: "settings::organisation_pins and Claude's Provider::refuses, so a switch and a \
+                  sign-in that would replace the login in use refuse with `login_restricted` an \
+                  account of an organisation no managed source names",
+        probe: &[
+            "Organization UUID to require for OAuth login. Accepts a single UUID string or an \
+             array of UUIDs (any one is permitted).",
+            "forceLoginOrgUUID in managed settings is set to an empty array.",
+        ],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -2057,6 +2194,10 @@ mod tests {
                 "token_refusals",
                 "validate_names_the_login",
                 "token_answer_names_the_login",
+                "auth_precedence",
+                "anthropic_profiles",
+                "windows_profile_folder",
+                "organisation_pin",
             ]
         );
         for name in [

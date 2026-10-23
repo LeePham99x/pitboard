@@ -905,7 +905,7 @@ fn install_signed_in(
     let slice = tool
         .slice(login.document)
         .map_err(|e| super::shape(which, e))?;
-    super::kept(ctx, tool, &name, login.document)?;
+    super::kept(ctx, tool, &name, login.document, owner)?;
     let guard = super::write_lock(ctx, permit, tool)?;
     let Readied {
         before_raw,
