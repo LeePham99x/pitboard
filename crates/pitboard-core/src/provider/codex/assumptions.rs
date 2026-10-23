@@ -63,10 +63,10 @@ const fn later_on_windows(
 /// on a Mac, or of the builds an entry names, and the conformance run reads the facts from
 /// the macOS, Linux and Windows builds alike.
 ///
-/// Three facts were read on a Mac alone: the ChatGPT app's codex, the app server's parent
-/// and the keychain stores. They stay read on Linux, since the code that stands on them,
-/// `holders` and the refusal of a keychain store, runs there as it does on macOS. A Linux
-/// reading of each of its own is no part of the Windows work.
+/// Two facts were read on a Mac alone: the app server's parent and the keychain stores. They
+/// stay read on Linux, since the code that stands on them, `holders` and the refusal of a
+/// keychain store, runs there as it does on macOS. A Linux reading of each of its own is no
+/// part of the Windows work.
 pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "codex_login_location",
@@ -89,13 +89,17 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     everywhere("codex_usage_endpoint", VERIFIED_AGAINST),
     everywhere("codex_revokes_on_its_own_sign_out", VERIFIED_AGAINST),
     read_from_0_164_0("codex_never_follows_a_switch"),
-    later_on_windows(
-        "codex_runs_inside_the_chatgpt_app",
-        "26.928.31416",
-        &["W27"],
-        "whether the app codex_windows_app_identity names runs its own codex inside its \
-         package, and whether closing its windows leaves it running, session step 10",
-    ),
+    PerSystem {
+        name: "codex_runs_inside_the_chatgpt_app",
+        macos: Read("26.928.31416"),
+        linux: NotRead("ChatGPT for Linux is a package of its own, which codex_linux_app reads"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "whether the app codex_windows_app_identity names runs its own codex inside \
+                    its package, and whether closing its windows leaves it running, session \
+                    step 10",
+        },
+    },
     PerSystem {
         name: "codex_app_server_daemon",
         macos: Read("0.159.3"),
@@ -116,7 +120,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: NotRead(
             "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
         ),
-        linux: NotRead("OpenAI makes no desktop app for Linux"),
+        linux: NotRead("ChatGPT for Linux is a package of its own, which codex_linux_app reads"),
         windows: Read(WINDOWS_VERIFIED_AGAINST),
     },
     PerSystem {
@@ -227,6 +231,16 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: NotRead("WSL runs Codex's Linux build"),
         linux: Read("0.163.0"),
         windows: NotRead("WSL runs Codex's Linux build"),
+    },
+    PerSystem {
+        name: "codex_linux_app",
+        macos: NotRead(
+            "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
+        ),
+        linux: Read("26.1016.61520"),
+        windows: NotRead(
+            "ChatGPT for Windows is a Store package, which codex_windows_app_identity reads",
+        ),
     },
 ];
 
@@ -971,6 +985,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         ],
         absent: &[],
     },
+    Assumption {
+        name: "codex_linux_app",
+        fact: "OpenAI's ChatGPT app for Linux, the package `chatgpt`, installs to \
+               `/usr/lib/chatgpt`, and `/usr/bin/chatgpt` links to its launcher. It runs a codex \
+               of its own, `/usr/lib/chatgpt/resources/codex`, as `codex app-server` over stdio \
+               with the app's own environment, so it reads `$CODEX_HOME/auth.json` as any codex \
+               does. Whether it stays open after its last window closes turns on something of \
+               its own, not traced",
+        read_from: "the amd64 `.deb` of 26.1016.61520 from persistent.oaistatic.com, read as \
+                    bytes on 2026-10-23 and never run: its file list, launcher and desktop file, \
+                    and in `app.asar` the code that finds the bundled codex and starts it, and its \
+                    `window-all-closed` handler. Its codex is 0.163.0-alpha.11. The `.rpm` and \
+                    the Arch package were not read",
+        verified_against: "26.1016.61520",
+        depends: "provider::codex::holders's chatgpt_app on Linux",
+        probe: &[],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -1028,14 +1060,19 @@ mod tests {
             "codex_windows_store_layers",
             "codex_windows_system_proxy",
         ];
+        let linux = ["codex_wsl", "codex_linux_app"];
         for line in PER_SYSTEM
             .iter()
-            .filter(|l| !windows.contains(&l.name) && l.name != "codex_wsl")
+            .filter(|l| !windows.contains(&l.name) && !linux.contains(&l.name))
         {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),
-                line.name != "codex_managed_preferences",
+                ![
+                    "codex_managed_preferences",
+                    "codex_runs_inside_the_chatgpt_app"
+                ]
+                .contains(&line.name),
                 "{} on linux",
                 line.name
             );
