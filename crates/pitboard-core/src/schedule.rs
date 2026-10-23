@@ -34,6 +34,25 @@ use std::path::{Path, PathBuf};
 /// that was asleep for one of them still has two.
 pub(crate) const EVERY_SECONDS: u32 = 86_400;
 
+/// A job Pitboard hands the system's own scheduler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Job {
+    /// `pitboard renew`, daily.
+    Renew,
+    /// `pitboard watch`, from sign-in on ([`crate::watch_service`]).
+    Watch,
+}
+
+impl Job {
+    /// What the job runs Pitboard with, marked as its run ([`SCHEDULED_RUN`], [`WATCH_RUN`]).
+    pub(crate) fn marked(self) -> [&'static str; 2] {
+        match self {
+            Job::Renew => SCHEDULED_RUN,
+            Job::Watch => WATCH_RUN,
+        }
+    }
+}
+
 /// Whether the schedule is installed, and what it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Installed {
@@ -65,14 +84,19 @@ impl std::fmt::Display for Location {
     }
 }
 
-fn scheduler(ctx: &Context) -> Option<&dyn Scheduler> {
+pub(crate) fn scheduler(ctx: &Context) -> Option<&dyn Scheduler> {
     ctx.host().scheduler()
 }
 
 // The file a test's machine keeps the job in: Task Scheduler's own as a pretend keeps it.
 #[cfg(test)]
 pub(crate) fn path(ctx: &Context) -> Option<PathBuf> {
-    Some(match scheduler(ctx)?.location(ctx) {
+    job_path(ctx, Job::Renew)
+}
+
+#[cfg(test)]
+pub(crate) fn job_path(ctx: &Context, job: Job) -> Option<PathBuf> {
+    Some(match scheduler(ctx)?.location(ctx, job) {
         Location::File(path) => path,
         Location::Task(task) => crate::host::task::pretend_file(ctx, &task),
     })
@@ -81,8 +105,8 @@ pub(crate) fn path(ctx: &Context) -> Option<PathBuf> {
 pub(crate) fn status(ctx: &Context) -> Installed {
     match scheduler(ctx) {
         None => Installed::Unsupported,
-        Some(s) if s.installed(ctx) => Installed::Yes {
-            location: s.location(ctx),
+        Some(s) if s.installed(ctx, Job::Renew) => Installed::Yes {
+            location: s.location(ctx, Job::Renew),
             every_seconds: EVERY_SECONDS,
         },
         Some(_) => Installed::No,
@@ -98,21 +122,24 @@ pub(crate) fn status(ctx: &Context) -> Installed {
 /// job in `XPC_SERVICE_NAME`, so the LaunchAgent runs plain `renew`.
 pub const SCHEDULED_RUN: [&str; 2] = ["renew", "--scheduled"];
 
-// The schedule renews the default home alone, whatever `PITBOARD_HOME` its job is given.
+/// What the watch service's job runs Pitboard with on every system, before its options: the
+/// marker [`Context::started_by_the_watch_service`] follows.
+pub const WATCH_RUN: [&str; 2] = ["watch", "--scheduled"];
+
+// Each job serves the default home alone, whatever `PITBOARD_HOME` it is given.
 pub(crate) fn serves(ctx: &Context) -> bool {
     ctx.os
         .same_path(&crate::home::dir(ctx), &ctx.default_pitboard_home())
 }
 
-/// Whether this process is a run the schedule itself started: as the system's scheduler
-/// says, where it says, or as the marker its job is started with says
-/// ([`SCHEDULED_RUN`]).
-pub(crate) fn started_this_run(ctx: &Context) -> bool {
-    ctx.marked_as_scheduled()
-        || scheduler(ctx).is_some_and(|s| s.started_this_process(ctx.scheduled_job()))
+/// Whether this process is a run `job` itself started: as the system's scheduler says,
+/// where it says, or as the marker its job is started with says ([`Job::marked`]).
+pub(crate) fn started_this_run(ctx: &Context, job: Job) -> bool {
+    ctx.started_by() == Some(job)
+        || scheduler(ctx).is_some_and(|s| s.started_this_process(job, ctx.scheduled_job()))
 }
 
-/// The context a renewal runs in: where the schedule started this run, the default home's,
+/// The context a run of `job` runs in: where the job started this run, the default home's,
 /// whatever `PITBOARD_HOME` says, and otherwise `ctx` as it is.
 ///
 /// The schedule belongs to the default home alone ([`serves`]), whichever home installed
@@ -125,32 +152,33 @@ pub(crate) fn started_this_run(ctx: &Context) -> bool {
 /// In a build for tests, a run the schedule started whose home is this account's own is
 /// stopped here, before it reads anything: it would renew the real `~/.pitboard`, and a
 /// test gives a run of the schedule a home of its own.
-pub(crate) fn for_its_run(ctx: &Context) -> Context {
-    if !started_this_run(ctx) {
+pub(crate) fn for_its_run(ctx: &Context, job: Job) -> Context {
+    if !started_this_run(ctx, job) {
         return ctx.clone();
     }
     #[cfg(any(test, feature = "test-support"))]
     assert!(
         !crate::host::user::is_the_accounts_own_home(ctx.home()),
-        "a build for tests ran as the daily renewal schedule with this account's own home, \
-         where it would renew the real Pitboard directory: give it a home of its own"
+        "a build for tests ran as the system's job {job:?} with this account's own home, \
+         where it would change the real Pitboard directory: give it a home of its own"
     );
     let run = ctx.clone().with_pitboard_home(ctx.default_pitboard_home());
-    match scheduler(&run).map(|s| s.read_by_its_runs(&run)) {
+    match scheduler(&run).map(|s| s.read_by_its_runs(&run, job)) {
         Some(given) if !given.is_empty() => run.with_proxy_variables_over(&given),
         _ => run,
     }
 }
 
-/// The Pitboard the schedule should run: the one the context names, or this one, by the
-/// path it was started by.
-fn program(ctx: &Context) -> Result<PathBuf> {
-    program_of(ctx.schedule_program(), crate::host::current_program)
+/// The Pitboard `job` should run: the one the context names, or this one, by the path it was
+/// started by.
+pub(crate) fn program(ctx: &Context, job: Job) -> Result<PathBuf> {
+    program_of(ctx.schedule_program(), crate::host::current_program, job)
 }
 
 fn program_of(
     named: Option<&Path>,
     running: impl FnOnce() -> std::io::Result<PathBuf>,
+    job: Job,
 ) -> Result<PathBuf> {
     let program = match named {
         Some(named) => named.to_path_buf(),
@@ -159,7 +187,7 @@ fn program_of(
             source,
         })?,
     };
-    lasting(&program)?;
+    lasting(&program, job)?;
     Ok(program)
 }
 
@@ -169,15 +197,17 @@ fn program_of(
 ///
 /// A path inside the copy macOS makes of an app opened where it was downloaded leads
 /// somewhere while that app runs and nowhere once it quits, so it is refused as well.
-fn lasting(program: &Path) -> Result<&Path> {
+fn lasting(program: &Path, job: Job) -> Result<&Path> {
     if in_a_temporary_copy(program) {
         return Err(Error::ScheduleProgramTemporary {
             path: program.to_path_buf(),
+            job,
         });
     }
     if !program.is_file() {
         return Err(Error::ScheduleProgramMissing {
             path: program.to_path_buf(),
+            job,
         });
     }
     Ok(program)
@@ -207,23 +237,23 @@ pub(crate) fn opened_from_a_zip(program: &Path) -> bool {
     })
 }
 
-pub(crate) fn task(ctx: &Context) -> Option<crate::host::task::Task> {
-    scheduler(ctx)?.task(ctx)
+pub(crate) fn task(ctx: &Context, job: Job) -> Option<crate::host::task::Task> {
+    scheduler(ctx)?.task(ctx, job)
 }
 
 /// The Pitboard the installed schedule runs, read back from what `install` wrote. `None`
 /// where nothing is installed, and where what is there does not name one the way `install`
 /// writes it.
 pub(crate) fn installed_program(ctx: &Context) -> Option<PathBuf> {
-    scheduler(ctx)?.program(ctx)
+    scheduler(ctx)?.program(ctx, Job::Renew)
 }
 
-/// What the schedule's job is given of the installing Pitboard's environment, since the
-/// system starts it with its own and not the person's shell: `PITBOARD_NO_ARGV` where this
-/// context refuses the argument line, and `proxy`, the proxy variables, each by the name and
-/// with the value it was set with, so that its runs read the proxy the way those that set it
-/// did ([`crate::proxy`]).
-fn environment(
+/// What a job is given of the installing Pitboard's environment, since the system starts it
+/// with its own and not the person's shell: `PITBOARD_NO_ARGV` where this context refuses
+/// the argument line, and `proxy`, the proxy variables, each by the name and with the value
+/// it was set with, so that its runs read the proxy the way those that set it did
+/// ([`crate::proxy`]).
+pub(crate) fn environment(
     ctx: &Context,
     proxy: impl IntoIterator<Item = (String, String)>,
 ) -> Vec<(String, String)> {
@@ -238,7 +268,7 @@ fn installed_proxy_variables(ctx: &Context) -> Vec<(String, String)> {
         return Vec::new();
     };
     scheduler
-        .environment(ctx)
+        .environment(ctx, Job::Renew)
         .into_iter()
         .filter(|(name, _)| {
             crate::proxy::NAMING
@@ -252,7 +282,7 @@ fn installed_proxy_variables(ctx: &Context) -> Vec<(String, String)> {
 /// What the installed schedule's runs make of the proxy variables its file gives them, read
 /// as this run's are. `None` where nothing is installed.
 pub(crate) fn installed_proxies(ctx: &Context) -> Option<crate::proxy::Proxies> {
-    if !scheduler(ctx)?.installed(ctx) {
+    if !scheduler(ctx)?.installed(ctx, Job::Renew) {
         return None;
     }
     let given: crate::context::Environment = installed_proxy_variables(ctx).into_iter().collect();
@@ -274,16 +304,27 @@ pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<Location> {
         return Err(Error::ScheduleNotDefaultHome {
             home: crate::home::dir(ctx),
             default: ctx.default_pitboard_home(),
+            job: Job::Renew,
         });
     }
-    let proxy = ctx
-        .proxy
-        .variables()
-        .iter()
-        .map(|(name, value)| ((*name).to_string(), value.clone()));
-    let location = put(ctx, permit, &program(ctx)?, &environment(ctx, proxy))?;
+    let location = put(
+        ctx,
+        permit,
+        Job::Renew,
+        &program(ctx, Job::Renew)?,
+        &[],
+        &environment(ctx, proxy_variables(ctx)),
+    )?;
     crate::audit::record(ctx, permit, "schedule", "install", "ok");
     Ok(location)
+}
+
+/// This context's proxy variables, as [`environment`] takes them.
+pub(crate) fn proxy_variables(ctx: &Context) -> impl Iterator<Item = (String, String)> + '_ {
+    ctx.proxy
+        .variables()
+        .iter()
+        .map(|(name, value)| ((*name).to_string(), value.clone()))
 }
 
 // The app calls this as it starts. An app up to 0.3.0 scheduled itself, which launchd started
@@ -291,20 +332,20 @@ pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<Location> {
 // from the schedule's own run, which launchd stops as a repair unloads its job, and never with
 // the app's proxy, which names none a shell set.
 pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
-    if scheduler(ctx).is_none() || started_this_run(ctx) {
+    if scheduler(ctx).is_none() || started_this_run(ctx, Job::Renew) {
         return Ok(false);
     }
     let Some(named) = ctx.schedule_program() else {
         return Ok(false);
     };
     if !serves(ctx)
-        || lasting(named).is_err()
+        || lasting(named, Job::Renew).is_err()
         || !installed_program(ctx).is_some_and(|program| broken(ctx, &program))
     {
         return Ok(false);
     }
     let kept = installed_proxy_variables(ctx);
-    let repaired = put(ctx, permit, named, &environment(ctx, kept));
+    let repaired = put(ctx, permit, Job::Renew, named, &[], &environment(ctx, kept));
     crate::audit::record(
         ctx,
         permit,
@@ -321,7 +362,7 @@ pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
 // A task whose settings were changed in Task Scheduler stays as it is: the change may be the
 // person's, and doctor names the way back.
 fn broken(ctx: &Context, program: &Path) -> bool {
-    match task(ctx) {
+    match task(ctx, Job::Renew) {
         Some(task) if !task.drifted.is_empty() => false,
         Some(_) => an_apps_own_program(program) || !program.is_file(),
         None => an_apps_own_program(program),
@@ -338,26 +379,34 @@ pub(crate) fn an_apps_own_program(program: &Path) -> bool {
     dirs.next() == Some(Some("MacOS")) && dirs.next() == Some(Some("Contents"))
 }
 
-/// Schedule `program`, given `environment`, and ask the system to start it.
-fn put(
+/// Hand `job` to the system's scheduler, running `program` with `options` and given
+/// `environment`, and ask the system to start it.
+pub(crate) fn put(
     ctx: &Context,
     permit: Permit,
+    job: Job,
     program: &Path,
+    options: &[String],
     environment: &[(String, String)],
 ) -> Result<Location> {
     let Some(scheduler) = scheduler(ctx) else {
-        return Err(Error::ScheduleUnsupported);
+        return Err(Error::ScheduleUnsupported { job });
     };
-    scheduler.put(ctx, permit, program, environment)?;
-    Ok(scheduler.location(ctx))
+    scheduler.put(ctx, permit, job, program, options, environment)?;
+    Ok(scheduler.location(ctx, job))
+}
+
+/// Take `job` away. `false` when there was nothing installed.
+pub(crate) fn remove(ctx: &Context, permit: Permit, job: Job) -> Result<bool> {
+    let Some(scheduler) = scheduler(ctx) else {
+        return Err(Error::ScheduleUnsupported { job });
+    };
+    scheduler.remove(ctx, permit, job)
 }
 
 /// Take it away. `false` when there was nothing installed.
 pub(crate) fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
-    let Some(scheduler) = scheduler(ctx) else {
-        return Err(Error::ScheduleUnsupported);
-    };
-    if !scheduler.remove(ctx, permit)? {
+    if !remove(ctx, permit, Job::Renew)? {
         return Ok(false);
     }
     crate::audit::record(ctx, permit, "schedule", "uninstall", "ok");
@@ -366,13 +415,16 @@ pub(crate) fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
 
 // The MSI's full uninstall deletes the app's command line; a task running Scoop's copy stays.
 pub(crate) fn uninstall_for_app(ctx: &Context, permit: Permit) -> Result<bool> {
-    let runs_the_apps = ctx.schedule_program().is_some_and(|named| {
-        installed_program(ctx).is_some_and(|program| ctx.os.same_path(&program, named))
-    });
-    if !runs_the_apps {
-        return Ok(false);
-    }
-    uninstall(ctx, permit)
+    let runs_the_apps = |job| {
+        ctx.schedule_program().is_some_and(|named| {
+            scheduler(ctx)
+                .and_then(|s| s.program(ctx, job))
+                .is_some_and(|program| ctx.os.same_path(&program, named))
+        })
+    };
+    let watch_removed = runs_the_apps(Job::Watch) && crate::watch_service::uninstall(ctx, permit)?;
+    let renew_removed = runs_the_apps(Job::Renew) && uninstall(ctx, permit)?;
+    Ok(watch_removed || renew_removed)
 }
 
 #[cfg(test)]
@@ -422,7 +474,9 @@ mod tests {
 
     /// The variables the installed schedule's job is given, as its file says.
     fn given(ctx: &Context) -> Vec<(String, String)> {
-        scheduler(ctx).expect("a scheduler").environment(ctx)
+        scheduler(ctx)
+            .expect("a scheduler")
+            .environment(ctx, Job::Renew)
     }
 
     fn pairs(given: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -525,7 +579,7 @@ mod tests {
     fn the_schedule_runs_the_pitboard_the_context_names_and_otherwise_this_one() {
         let home = Scratch::new();
         let ctx = home.ctx();
-        let scheduled = program(&ctx).expect("this program");
+        let scheduled = program(&ctx, Job::Renew).expect("this program");
         let running = std::env::current_exe().expect("this test's own program");
         assert_eq!(
             std::fs::canonicalize(&scheduled).expect("there"),
@@ -537,7 +591,8 @@ mod tests {
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&bundled);
         assert_eq!(
-            program(&ctx.with_schedule_program(bundled.clone())).expect("the named one"),
+            program(&ctx.with_schedule_program(bundled.clone()), Job::Renew)
+                .expect("the named one"),
             bundled,
             "an app schedules the command line it comes with"
         );
@@ -612,16 +667,17 @@ mod tests {
             .join("Temp1_pitboard-v0.15.0-x86_64-pc-windows-msvc.zip")
             .join("pitboard.exe");
         a_program_at(&unzipped);
-        let refused = program_of(None, || Ok(unzipped.clone())).expect_err("a copy that goes");
+        let refused =
+            program_of(None, || Ok(unzipped.clone()), Job::Renew).expect_err("a copy that goes");
         assert_eq!(refused.code(), "schedule_program_temporary");
         let gone = home.path().join("gone").join("pitboard");
-        let refused = program_of(None, || Ok(gone.clone())).expect_err("nothing there");
+        let refused = program_of(None, || Ok(gone.clone()), Job::Renew).expect_err("nothing there");
         assert_eq!(refused.code(), "schedule_program_missing");
 
         let installed = home.path().join("bin").join("pitboard");
         a_program_at(&installed);
         assert_eq!(
-            program_of(None, || Ok(installed.clone())).expect("one that lasts"),
+            program_of(None, || Ok(installed.clone()), Job::Renew).expect("one that lasts"),
             installed
         );
     }
@@ -906,7 +962,7 @@ mod tests {
         assert!(uninstall_for_app(&the_app, Permit::for_a_test()).expect("taken away"));
         assert_eq!(status(&proxied), Installed::No);
         assert!(
-            !crate::host::task::environment_file(&proxied).exists(),
+            !crate::host::task::environment_file(&proxied, Job::Renew).exists(),
             "nor its proxy"
         );
         let logged = crate::audit::read(&proxied, 1);
@@ -918,6 +974,42 @@ mod tests {
             [("schedule", "uninstall", "ok")]
         );
         assert!(!uninstall_for_app(&the_app, Permit::for_a_test()).expect("nothing there"));
+    }
+
+    // Started at each sign-in, it would fail at each once the removal deletes the program.
+    #[test]
+    fn removing_the_app_takes_away_a_watch_service_that_runs_its_command_line() {
+        let home = Scratch(
+            tempfile::tempdir().expect("a scratch home"),
+            MemoryHost::scheduling_tasks("S-1-5-21-1"),
+        );
+        let scoop = home
+            .path()
+            .join(r"scoop\apps\pitboard\current\pitboard.exe");
+        let bundled = home.path().join(r"Programs\Pitboard\bin\pitboard.exe");
+        a_program_at(&scoop);
+        a_program_at(&bundled);
+        let the_app = home.read(&[]).with_schedule_program(bundled.clone());
+        let at = crate::duty::autoswitch::Threshold::DEFAULT;
+        let watching = |ctx: &Context| {
+            crate::watch_service::status(ctx) != crate::watch_service::Installed::No
+        };
+
+        crate::watch_service::install(
+            &home.read(&[]).with_schedule_program(scoop),
+            Permit::for_a_test(),
+            at,
+        )
+        .expect("installed from Scoop's pitboard");
+        assert!(!uninstall_for_app(&the_app, Permit::for_a_test()).expect("nothing to do"));
+        assert!(watching(&the_app), "Scoop's stays");
+
+        crate::watch_service::install(&the_app, Permit::for_a_test(), at)
+            .expect("installed from the app's");
+        install(&the_app, Permit::for_a_test()).expect("renewal too");
+        assert!(uninstall_for_app(&the_app, Permit::for_a_test()).expect("taken away"));
+        assert!(!watching(&the_app));
+        assert_eq!(status(&the_app), Installed::No);
     }
 
     /// Only what `install` writes is read, and only the way it writes it.
@@ -986,6 +1078,7 @@ mod tests {
             &ctx.clone()
                 .with_pitboard_home(profile.join("elsewhere"))
                 .started_by_the_schedule(),
+            Job::Renew,
         );
         assert_eq!(run.pitboard_home, folder);
     }
@@ -998,7 +1091,7 @@ mod tests {
             let _real = crate::host::user::testing::reaching_the_real_home();
             crate::host::user::home().expect("this account has a home")
         };
-        let _ = for_its_run(&Context::new(own).started_by_the_schedule());
+        let _ = for_its_run(&Context::new(own).started_by_the_schedule(), Job::Renew);
     }
 
     /// The schedule renews the default home alone, so it is installed only from there. With
@@ -1094,7 +1187,7 @@ mod tests {
             // no `PITBOARD_NO_ARGV`, read nowhere there; and the task's definition holds no proxy.
             Os::Windows => (
                 vec![all, https, ("no_proxy", "localhost")],
-                crate::host::task::environment_file(&proxied),
+                crate::host::task::environment_file(&proxied, Job::Renew),
                 "open to you, SYSTEM and Administrators",
             ),
         };

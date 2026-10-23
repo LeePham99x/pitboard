@@ -1,17 +1,18 @@
-//! Daily renewal on macOS: a LaunchAgent, which runs inside the login session so the keychain
+//! Pitboard's jobs on macOS: LaunchAgents, which run inside the login session so the keychain
 //! is unlocked.
 
 use super::super::unix::service::{self, Control};
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::host::Scheduler;
-use crate::schedule::{EVERY_SECONDS, Location};
+use crate::schedule::{EVERY_SECONDS, Job, Location};
 use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// What launchd calls the job, so a person can find it without Pitboard telling them.
+/// What launchd calls each job, so a person can find it without Pitboard telling them.
 const LABEL: &str = "com.datlechin.pitboard.renew";
+const WATCH_LABEL: &str = "com.datlechin.pitboard.watch";
 
 const LAUNCHCTL: &str = "/bin/launchctl";
 
@@ -25,10 +26,17 @@ impl Launchd {
         Launchd { control }
     }
 
-    fn agent(ctx: &Context) -> PathBuf {
+    fn label(job: Job) -> &'static str {
+        match job {
+            Job::Renew => LABEL,
+            Job::Watch => WATCH_LABEL,
+        }
+    }
+
+    fn agent(ctx: &Context, job: Job) -> PathBuf {
         ctx.home()
             .join("Library/LaunchAgents")
-            .join(format!("{LABEL}.plist"))
+            .join(format!("{}.plist", Self::label(job)))
     }
 
     /// launchd's session for this user, which `bootstrap` and `bootout` name.
@@ -39,27 +47,36 @@ impl Launchd {
 }
 
 impl Scheduler for Launchd {
-    fn location(&self, ctx: &Context) -> Location {
-        Location::File(Self::agent(ctx))
+    fn location(&self, ctx: &Context, job: Job) -> Location {
+        Location::File(Self::agent(ctx, job))
     }
 
-    fn installed(&self, ctx: &Context) -> bool {
-        Self::agent(ctx).is_file()
+    fn installed(&self, ctx: &Context, job: Job) -> bool {
+        Self::agent(ctx, job).is_file()
     }
 
-    fn program(&self, ctx: &Context) -> Option<PathBuf> {
-        let body = std::fs::read_to_string(Self::agent(ctx)).ok()?;
-        let (_, after) = body.split_once("<key>ProgramArguments</key>")?;
-        let (_, after) = after.split_once("<string>")?;
-        let (program, _) = after.split_once("</string>")?;
-        Some(PathBuf::from(unescape(program)))
+    fn program(&self, ctx: &Context, job: Job) -> Option<PathBuf> {
+        let body = std::fs::read_to_string(Self::agent(ctx, job)).ok()?;
+        arguments(&body).into_iter().next().map(PathBuf::from)
     }
 
-    fn environment(&self, ctx: &Context) -> Vec<(String, String)> {
-        if !self.installed(ctx) {
+    fn options(&self, ctx: &Context, job: Job) -> Vec<String> {
+        let Ok(body) = std::fs::read_to_string(Self::agent(ctx, job)) else {
+            return Vec::new();
+        };
+        let arguments = arguments(&body);
+        let marked = runs(job);
+        match arguments.get(1..=marked.len()) {
+            Some(words) if words == marked => arguments[1 + marked.len()..].to_vec(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn environment(&self, ctx: &Context, job: Job) -> Vec<(String, String)> {
+        if !self.installed(ctx, job) {
             return Vec::new();
         }
-        std::fs::read_to_string(Self::agent(ctx))
+        std::fs::read_to_string(Self::agent(ctx, job))
             .map(|body| given(&body))
             .unwrap_or_default()
     }
@@ -68,15 +85,17 @@ impl Scheduler for Launchd {
         &self,
         ctx: &Context,
         permit: Permit,
+        job: Job,
         program: &Path,
+        options: &[String],
         environment: &[(String, String)],
     ) -> Result<()> {
         if let Some(refused) = unwritable(program, environment) {
             return Err(refused);
         }
-        let path = Self::agent(ctx);
+        let path = Self::agent(ctx, job);
         let before = std::fs::read_to_string(&path).ok();
-        service::write(permit, &path, &plist(program, environment))?;
+        service::write(permit, &path, &plist(job, program, options, environment))?;
         // `bootstrap` is launchd's own word for this, and replaces the deprecated `load`.
         let domain = Self::domain();
         let target = path.to_string_lossy();
@@ -98,8 +117,8 @@ impl Scheduler for Launchd {
         Ok(())
     }
 
-    fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool> {
-        let path = Self::agent(ctx);
+    fn remove(&self, ctx: &Context, permit: Permit, job: Job) -> Result<bool> {
+        let path = Self::agent(ctx, job);
         if !path.is_file() {
             return Ok(false);
         }
@@ -117,22 +136,34 @@ impl Scheduler for Launchd {
         clippy::disallowed_methods,
         reason = "what launchd started this process as, which no front end passes on"
     )]
-    fn started_this_process(&self, said: Option<&str>) -> bool {
+    fn started_this_process(&self, job: Job, said: Option<&str>) -> bool {
         said.map(str::to_owned)
             .or_else(|| std::env::var("XPC_SERVICE_NAME").ok())
             .as_deref()
-            == Some(LABEL)
+            == Some(Self::label(job))
     }
 }
 
-/// launchd's own format. `RunAtLoad` is off: installing this is not a reason to talk to
-/// Anthropic that second, and the first run comes at the first interval.
+/// What a job's agent runs Pitboard with before its options. launchd names the job it starts,
+/// so renewal's runs plain `renew`; the watch service carries its marker, as on every system.
+fn runs(job: Job) -> &'static [&'static str] {
+    match job {
+        Job::Renew => &["renew"],
+        Job::Watch => &crate::schedule::WATCH_RUN,
+    }
+}
+
+/// launchd's own format. Renewal's `RunAtLoad` is off: installing it is not a reason to talk to
+/// Anthropic that second, and the first run comes at the first interval. The watch service
+/// runs at load, which is at each login too, and launchd starts it again only where a crash
+/// ended it (`KeepAlive`'s `Crashed`): a run that ended itself on an error it cannot mend
+/// would meet the same error again.
 ///
 /// The job runs with launchd's environment, not the person's shell, so a variable they set
 /// would not reach it. `environment` is what it is given of the installing Pitboard's,
 /// `PITBOARD_NO_ARGV` and the proxy variables, under `EnvironmentVariables`, which is left out
 /// where there is nothing to give.
-fn plist(program: &Path, environment: &[(String, String)]) -> String {
+fn plist(job: Job, program: &Path, options: &[String], environment: &[(String, String)]) -> String {
     let environment = if environment.is_empty() {
         String::new()
     } else {
@@ -148,26 +179,53 @@ fn plist(program: &Path, environment: &[(String, String)]) -> String {
                 .collect::<String>()
         )
     };
+    let arguments = std::iter::once(program.to_string_lossy().into_owned())
+        .chain(runs(job).iter().map(|word| (*word).to_owned()))
+        .chain(options.iter().cloned())
+        .map(|argument| format!("    <string>{}</string>\n", escape(&argument)))
+        .collect::<String>();
+    let when = match job {
+        Job::Renew => format!(
+            "  <key>StartInterval</key><integer>{EVERY_SECONDS}</integer>\n  \
+             <key>RunAtLoad</key><false/>\n  \
+             <key>LowPriorityIO</key><true/>\n  \
+             <key>ProcessType</key><string>Background</string>\n"
+        ),
+        Job::Watch => "  <key>RunAtLoad</key><true/>\n  \
+                       <key>KeepAlive</key>\n  <dict>\n    <key>Crashed</key><true/>\n  </dict>\n"
+            .to_string(),
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>{LABEL}</string>
+  <key>Label</key><string>{}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{}</string>
-    <string>renew</string>
-  </array>
-  <key>StartInterval</key><integer>{EVERY_SECONDS}</integer>
-  <key>RunAtLoad</key><false/>
-  <key>LowPriorityIO</key><true/>
-  <key>ProcessType</key><string>Background</string>
-{environment}</dict>
+{arguments}  </array>
+{when}{environment}</dict>
 </plist>
 "#,
-        escape(&program.to_string_lossy())
+        Launchd::label(job)
     )
+}
+
+/// The strings of the `ProgramArguments` array a plist [`plist`] wrote, the program first.
+fn arguments(body: &str) -> Vec<String> {
+    let Some(array) = body
+        .split_once("<key>ProgramArguments</key>")
+        .and_then(|(_, after)| after.split_once("</array>"))
+        .map(|(array, _)| array)
+    else {
+        return Vec::new();
+    };
+    array
+        .split("<string>")
+        .skip(1)
+        .filter_map(|after| after.split_once("</string>"))
+        .map(|(argument, _)| unescape(argument))
+        .collect()
 }
 
 /// The variables a plist [`plist`] wrote gives its job, in the order written. Only what
@@ -339,7 +397,7 @@ mod tests {
             .with_memory_stores(MemoryHost::new())
             .with_schedule_program(bundled.clone());
         install(&ctx, Permit::for_a_test()).expect("installed");
-        let written = std::fs::read_to_string(Launchd::agent(&ctx)).expect("the agent");
+        let written = std::fs::read_to_string(Launchd::agent(&ctx, Job::Renew)).expect("the agent");
         assert!(written.contains("/Tools&amp;Apps/"), "{written}");
         assert!(!written.contains("/Tools&Apps/"), "{written}");
         assert_eq!(installed_program(&ctx), Some(bundled));
@@ -350,7 +408,7 @@ mod tests {
     /// point as what it does.
     #[test]
     fn the_agent_runs_one_verb_and_does_not_run_at_load() {
-        let body = plist(Path::new("/usr/local/bin/pitboard"), &[]);
+        let body = plist(Job::Renew, Path::new("/usr/local/bin/pitboard"), &[], &[]);
         assert!(body.contains("<string>/usr/local/bin/pitboard</string>"));
         assert!(body.contains("<string>renew</string>"));
         assert!(!body.contains("status"), "it never asks for usage");
@@ -362,11 +420,47 @@ mod tests {
         assert!(body.contains(&format!("<integer>{EVERY_SECONDS}</integer>")));
     }
 
+    // At load, which is at each login too, and again only after a crash.
+    #[test]
+    fn the_watch_agent_runs_at_load_and_again_only_after_a_crash() {
+        let at = ["--at".to_string(), "90".to_string()];
+        let body = plist(Job::Watch, Path::new("/usr/local/bin/pitboard"), &at, &[]);
+        assert!(
+            body.contains(
+                "  <key>Label</key><string>com.datlechin.pitboard.watch</string>\n  \
+                 <key>ProgramArguments</key>\n  <array>\n    \
+                 <string>/usr/local/bin/pitboard</string>\n    <string>watch</string>\n    \
+                 <string>--scheduled</string>\n    <string>--at</string>\n    \
+                 <string>90</string>\n  </array>\n  \
+                 <key>RunAtLoad</key><true/>\n  \
+                 <key>KeepAlive</key>\n  <dict>\n    <key>Crashed</key><true/>\n  </dict>\n\
+                 </dict>\n"
+            ),
+            "{body}"
+        );
+        assert!(!body.contains("StartInterval"), "{body}");
+        assert_eq!(
+            arguments(&body),
+            [
+                "/usr/local/bin/pitboard",
+                "watch",
+                "--scheduled",
+                "--at",
+                "90"
+            ]
+        );
+    }
+
     /// launchd refuses a plist that is not well formed, and a folder's name can hold any of
     /// the characters XML gives a meaning to.
     #[test]
     fn the_agent_writes_a_path_as_xml_text() {
-        let body = plist(Path::new("/Users/x/A&B <old>/Pitboard.app"), &[]);
+        let body = plist(
+            Job::Renew,
+            Path::new("/Users/x/A&B <old>/Pitboard.app"),
+            &[],
+            &[],
+        );
         assert!(
             body.contains("<string>/Users/x/A&amp;B &lt;old&gt;/Pitboard.app</string>"),
             "{body}"
@@ -395,7 +489,7 @@ mod tests {
             ("no_proxy", ""),
             ("NO_PROXY", ".anthropic.com,localhost"),
         ]);
-        let body = plist(program, &handed);
+        let body = plist(Job::Renew, program, &[], &handed);
         assert!(
             body.contains(
                 "  <key>EnvironmentVariables</key>\n  <dict>\n    \
@@ -410,8 +504,8 @@ mod tests {
             "{body}"
         );
         assert_eq!(given(&body), handed);
-        assert!(!plist(program, &[]).contains("EnvironmentVariables"));
-        assert_eq!(given(&plist(program, &[])), Vec::new());
+        assert!(!plist(Job::Renew, program, &[], &[]).contains("EnvironmentVariables"));
+        assert_eq!(given(&plist(Job::Renew, program, &[], &[])), Vec::new());
         let (_, after) = body
             .split_once("<key>ProgramArguments</key>")
             .expect("its arguments");
@@ -455,11 +549,19 @@ mod tests {
             said.contains("U+0001 that ALL_PROXY holds") && !said.contains("s3"),
             "{said}"
         );
-        assert!(!Launchd::agent(&ctx).exists(), "nothing was written");
+        assert!(
+            !Launchd::agent(&ctx, Job::Renew).exists(),
+            "nothing was written"
+        );
         let _ = std::fs::remove_dir_all(&home);
 
         let handed = pairs(&[("NO_PROXY", "a\rb")]);
-        let body = plist(Path::new("/usr/local/bin/pitboard"), &handed);
+        let body = plist(
+            Job::Renew,
+            Path::new("/usr/local/bin/pitboard"),
+            &[],
+            &handed,
+        );
         assert!(body.contains("<string>a&#13;b</string>"), "{body}");
         assert_eq!(given(&body), handed);
         assert_eq!(
@@ -494,7 +596,7 @@ mod tests {
         let ctx = Context::for_command_line(&env)
             .with_memory_stores(MemoryHost::new())
             .with_schedule_program(program.clone());
-        let agent = Launchd::agent(&ctx);
+        let agent = Launchd::agent(&ctx, Job::Renew);
         std::fs::create_dir_all(agent.parent().expect("its directory")).expect("made");
         std::fs::write(&agent, "an agent open to others\n").expect("written");
         std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o644))

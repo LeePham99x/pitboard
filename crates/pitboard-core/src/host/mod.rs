@@ -22,6 +22,7 @@
 
 use crate::context::{Context, Environment};
 use crate::error::Result;
+use crate::schedule::Job;
 use crate::service::Permit;
 use crate::store::RawStore;
 use std::path::{Path, PathBuf};
@@ -940,60 +941,69 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     }
 }
 
-/// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,
-/// a systemd user timer on Linux, Task Scheduler on Windows. Never a homemade daemon.
+/// The system's own scheduler, which starts Pitboard's jobs ([`crate::schedule::Job`]):
+/// `pitboard renew` once a day, and `pitboard watch` from sign-in on. launchd on macOS, a
+/// systemd user unit on Linux, Task Scheduler on Windows. Never a homemade daemon.
 ///
-/// What Pitboard decides about the schedule, which program it runs, how often, and whether
-/// it is this home's to change, is [`crate::schedule`]'s. This is only how the system is
-/// asked, and what it says back.
+/// What Pitboard decides about a job, which program it runs, with what, and whether it is
+/// this home's to change, is [`crate::schedule`]'s. This is only how the system is asked, and
+/// what it says back.
 pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
-    /// Where the schedule is kept, where a person would look for it.
-    fn location(&self, ctx: &Context) -> crate::schedule::Location;
+    /// Where the job is kept, where a person would look for it.
+    fn location(&self, ctx: &Context, job: Job) -> crate::schedule::Location;
 
-    /// Whether a schedule is there.
-    fn installed(&self, ctx: &Context) -> bool;
+    /// Whether the job is there.
+    fn installed(&self, ctx: &Context, job: Job) -> bool;
 
-    /// The Pitboard the schedule runs, read back from what [`Scheduler::put`] wrote. `None`
-    /// where nothing is installed, and where what is there does not name one the way `put`
-    /// writes it.
-    fn program(&self, ctx: &Context) -> Option<PathBuf>;
+    /// The Pitboard the job runs, read back from what [`Scheduler::put`] wrote. `None` where
+    /// nothing is installed, and where what is there does not name one the way `put` writes
+    /// it.
+    fn program(&self, ctx: &Context, job: Job) -> Option<PathBuf>;
 
-    /// The variables the schedule's job is given, by name, as [`Scheduler::put`] wrote them,
-    /// read back. Empty where nothing is installed, and where what is there gives none the way
-    /// `put` writes them. The system can give a job more of its own, which this does not say.
-    fn environment(&self, ctx: &Context) -> Vec<(String, String)>;
+    /// The options the job runs Pitboard with after its marker ([`Job::marked`]), such as
+    /// `--at 90`, as [`Scheduler::put`] wrote them, read back. Empty where nothing is
+    /// installed, and where what is there does not run Pitboard the way `put` writes it.
+    fn options(&self, ctx: &Context, job: Job) -> Vec<String>;
 
-    /// Schedule `program renew`, given `environment`, each variable by name, besides what the
-    /// system gives every job, and ask the system to start it. What is written can hold a
-    /// proxy's password, so only the person can read it, whatever was there before.
+    /// The variables the job is given, by name, as [`Scheduler::put`] wrote them, read back.
+    /// Empty where nothing is installed, and where what is there gives none the way `put`
+    /// writes them. The system can give a job more of its own, which this does not say.
+    fn environment(&self, ctx: &Context, job: Job) -> Vec<(String, String)>;
+
+    /// Hand the system `job`, which runs `program` with the job's marker and `options`, given
+    /// `environment`, each variable by name, besides what the system gives every job, and ask
+    /// the system to start it. What is written can hold a proxy's password, so only the person
+    /// can read it, whatever was there before.
     ///
     /// Where the system will not start it, what was there goes back as it was, and is
-    /// started again. The status, doctor and the app all read what is there, so a schedule
-    /// left written that nothing runs would say renewal is on while it is not, which is the
-    /// failure nobody would notice until the parked logins had run out.
+    /// started again. The status, doctor and the app all read what is there, so a job left
+    /// written that nothing runs would say it is on while it is not, which is the failure
+    /// nobody would notice until the parked logins had run out or an account had.
     fn put(
         &self,
         ctx: &Context,
         permit: Permit,
+        job: Job,
         program: &Path,
+        options: &[String],
         environment: &[(String, String)],
     ) -> Result<()>;
 
-    /// Stop the schedule and take it away. `false` when nothing was there.
-    fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool>;
+    /// Stop the job and take it away. `false` when nothing was there.
+    fn remove(&self, ctx: &Context, permit: Permit, job: Job) -> Result<bool>;
 
-    /// Whether this process is a run the schedule itself started. `said` is the job a test
-    /// says this process runs as; `None` leaves it to what the system says.
-    fn started_this_process(&self, said: Option<&str>) -> bool;
+    /// Whether this process is a run `job` started. `said` is the job a test says this
+    /// process runs as; `None` leaves it to what the system says.
+    fn started_this_process(&self, job: Job, said: Option<&str>) -> bool;
 
     // What a run it started reads for itself of what `put` was given: none where the system
     // hands the job its variables.
-    fn read_by_its_runs(&self, _ctx: &Context) -> Vec<(String, String)> {
+    fn read_by_its_runs(&self, _ctx: &Context, _job: Job) -> Vec<(String, String)> {
         Vec::new()
     }
 
     // What the system says of the job beyond what Pitboard wrote: Task Scheduler's alone.
-    fn task(&self, _ctx: &Context) -> Option<task::Task> {
+    fn task(&self, _ctx: &Context, _job: Job) -> Option<task::Task> {
         None
     }
 }

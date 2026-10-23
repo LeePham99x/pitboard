@@ -293,33 +293,36 @@ pub enum Error {
     )]
     StateWrongMachine { path: PathBuf },
 
-    #[error("{}", crate::words::no_scheduler(crate::host::OS))]
-    ScheduleUnsupported,
+    #[error("{}", crate::words::no_scheduler(crate::host::OS, *job))]
+    ScheduleUnsupported { job: crate::schedule::Job },
 
     #[error("the scheduler refused: {detail}")]
     ScheduleRefused { detail: String },
 
-    /// The schedule renews the default home alone, so it is installed only where
-    /// `PITBOARD_HOME` names that home or nothing. `home` is the directory it names, and
-    /// `default` the default home, `~/.pitboard`.
-    #[error(
-        "the renewal schedule renews only the parked logins in {}, not those in {}, which \
-         PITBOARD_HOME names. Nothing was scheduled. To schedule it for {}, unset \
-         PITBOARD_HOME and install it again.",
-        default.display(),
-        home.display(),
-        default.display()
-    )]
-    ScheduleNotDefaultHome { home: PathBuf, default: PathBuf },
+    /// Each job serves the default home alone, so it is installed only where `PITBOARD_HOME`
+    /// names that home or nothing. `home` is the directory it names, and `default` the
+    /// default home, `~/.pitboard`.
+    #[error("{}", not_default_home(home, default, *job))]
+    ScheduleNotDefaultHome {
+        home: PathBuf,
+        default: PathBuf,
+        job: crate::schedule::Job,
+    },
 
-    #[error("the renewal schedule would run {path}, which is not there. Nothing was scheduled.")]
-    ScheduleProgramMissing { path: PathBuf },
+    #[error("{} would run {}, which is not there. Nothing was {}.", job_named(*job), path.display(), job_done(*job))]
+    ScheduleProgramMissing {
+        path: PathBuf,
+        job: crate::schedule::Job,
+    },
 
     /// macOS runs an app opened where it was downloaded from a copy it makes somewhere
     /// temporary, which is there while the app runs and gone once it quits. Windows' Explorer
     /// runs a program opened inside a zip from a copy of it.
-    #[error("{}", temporary_copy(.path))]
-    ScheduleProgramTemporary { path: PathBuf },
+    #[error("{}", temporary_copy(.path, *job))]
+    ScheduleProgramTemporary {
+        path: PathBuf,
+        job: crate::schedule::Job,
+    },
 
     /// An app that names no command line for the schedule, where the only other thing to
     /// schedule is the app itself, which renews nothing.
@@ -990,7 +993,7 @@ impl Error {
             StateNamesUnknownTool { .. } => "state_names_unknown_tool",
             StateWrongMachine { .. } => "state_wrong_machine",
             StateWriteFailed { .. } => "state_write_failed",
-            ScheduleUnsupported => "schedule_unsupported",
+            ScheduleUnsupported { .. } => "schedule_unsupported",
             ScheduleRefused { .. } => "schedule_refused",
             ScheduleNotDefaultHome { .. } => "schedule_not_default_home",
             ScheduleProgramMissing { .. } => "schedule_program_missing",
@@ -1201,19 +1204,58 @@ pub(crate) fn codex_home_no_folder(path: &std::path::Path) -> String {
 
 pub(crate) const CODEX_HOME_REMEDY: &str = "Make that folder, or unset CODEX_HOME";
 
-fn temporary_copy(path: &std::path::Path) -> String {
+fn job_named(job: crate::schedule::Job) -> &'static str {
+    match job {
+        crate::schedule::Job::Renew => "the renewal schedule",
+        crate::schedule::Job::Watch => "the watch service",
+    }
+}
+
+fn job_done(job: crate::schedule::Job) -> &'static str {
+    match job {
+        crate::schedule::Job::Renew => "scheduled",
+        crate::schedule::Job::Watch => "installed",
+    }
+}
+
+fn not_default_home(
+    home: &std::path::Path,
+    default: &std::path::Path,
+    job: crate::schedule::Job,
+) -> String {
+    let (serves, which) = match job {
+        crate::schedule::Job::Renew => ("renews only the parked logins", "To schedule it"),
+        crate::schedule::Job::Watch => ("watches only the accounts", "To install it"),
+    };
+    format!(
+        "{} {serves} in {}, not those in {}, which PITBOARD_HOME names. Nothing was {}. \
+         {which} for {}, unset PITBOARD_HOME and install it again.",
+        job_named(job),
+        default.display(),
+        home.display(),
+        job_done(job),
+        default.display()
+    )
+}
+
+fn temporary_copy(path: &std::path::Path, job: crate::schedule::Job) -> String {
+    let turn_on = match job {
+        crate::schedule::Job::Renew => "turn on daily renewal",
+        crate::schedule::Job::Watch => "install the watch service",
+    };
     if crate::schedule::opened_from_a_zip(path) {
         return format!(
-            "the renewal schedule would run {}, which is in a temporary copy Windows made of a \
-             zip it opened. Install Pitboard, or extract the zip, and turn on daily renewal \
-             from there.",
+            "{} would run {}, which is in a temporary copy Windows made of a zip it opened. \
+             Install Pitboard, or extract the zip, and {turn_on} from there.",
+            job_named(job),
             path.display()
         );
     }
     format!(
-        "the renewal schedule would run {}, which is in a temporary copy macOS made of the app \
-         and is gone once the app quits. Move Pitboard to your Applications folder, open it \
-         from there, and turn on daily renewal again.",
+        "{} would run {}, which is in a temporary copy macOS made of the app and is gone once \
+         the app quits. Move Pitboard to your Applications folder, open it from there, and \
+         {turn_on} again.",
+        job_named(job),
         path.display()
     )
 }

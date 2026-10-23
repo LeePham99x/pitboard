@@ -485,35 +485,39 @@ mod tests {
     // Asked nothing: a test's task would be the person's own, whatever home the test gives.
     #[test]
     fn the_real_task_scheduler_refuses_a_build_for_tests() {
-        use crate::schedule::Location;
+        use crate::schedule::{Job, Location};
         let ctx = ctx();
         let real = host();
         let tasks = real.scheduler().expect("Task Scheduler");
         let sid = user::sid().expect("this account's SID");
-        assert_eq!(
-            tasks.location(&ctx),
-            Location::Task(format!(r"\Pitboard\Renew {sid}"))
-        );
-        assert!(!tasks.installed(&ctx));
-        assert_eq!(tasks.task(&ctx), None);
-        let refused = tasks
-            .put(
-                &ctx,
-                crate::service::Permit::for_a_test(),
-                Path::new(r"C:\Program Files\Pitboard\bin\pitboard.exe"),
-                &[],
-            )
-            .expect_err("refused");
-        assert_eq!(refused.code(), "schedule_refused");
-        assert!(
-            refused.to_string().contains("a build for tests"),
-            "{refused}"
-        );
-        assert!(
-            !tasks
-                .remove(&ctx, crate::service::Permit::for_a_test())
-                .expect("nothing there")
-        );
+        for (job, named) in [(Job::Renew, "Renew"), (Job::Watch, "Watch")] {
+            assert_eq!(
+                tasks.location(&ctx, job),
+                Location::Task(format!(r"\Pitboard\{named} {sid}"))
+            );
+            assert!(!tasks.installed(&ctx, job));
+            assert_eq!(tasks.task(&ctx, job), None);
+            let refused = tasks
+                .put(
+                    &ctx,
+                    crate::service::Permit::for_a_test(),
+                    job,
+                    Path::new(r"C:\Program Files\Pitboard\bin\pitboard.exe"),
+                    &[],
+                    &[],
+                )
+                .expect_err("refused");
+            assert_eq!(refused.code(), "schedule_refused");
+            assert!(
+                refused.to_string().contains("a build for tests"),
+                "{refused}"
+            );
+            assert!(
+                !tasks
+                    .remove(&ctx, crate::service::Permit::for_a_test(), job)
+                    .expect("nothing there")
+            );
+        }
         assert!(matches!(
             crate::schedule::status(&ctx),
             crate::schedule::Installed::No
@@ -521,7 +525,9 @@ mod tests {
         assert!(
             crate::host::memory::MemoryHost::new()
                 .scheduler()
-                .is_some_and(|pretend| pretend.location(&ctx) == tasks.location(&ctx))
+                .is_some_and(|pretend| {
+                    pretend.location(&ctx, Job::Renew) == tasks.location(&ctx, Job::Renew)
+                })
         );
     }
 

@@ -4,6 +4,7 @@ use super::{Result, Settled, purge};
 use crate::context::Context;
 use crate::error::Error;
 use crate::provider::{self, LoginKind, ProviderId};
+use crate::schedule::Job;
 use crate::service::{Permit, Warning};
 use crate::state::Account;
 use crate::{home, schedule, state};
@@ -33,16 +34,19 @@ pub struct Removed {
     pub warming_up: bool,
     /// Whether the daily renewal schedule was taken away. `false` where there was none.
     pub schedule_removed: bool,
+    /// Whether the watch service was stopped and taken away. `false` where there was none.
+    pub watch_service_removed: bool,
     // A move of an app's login that waited, as it was settled first.
     pub warnings: Vec<Warning>,
 }
 
-/// Takes away the daily renewal schedule, deletes every parked login this Pitboard wrote,
-/// then removes Pitboard's own directory. Each tool's login is left exactly as it is:
-/// whoever is signed in stays signed in.
+/// Takes away the watch service and the daily renewal schedule, deletes every parked login
+/// this Pitboard wrote, then removes Pitboard's own directory. Each tool's login is left
+/// exactly as it is: whoever is signed in stays signed in.
 ///
-/// The schedule goes first. It runs `pitboard renew` every day, which would make a new
-/// directory once this one is gone.
+/// The jobs go first. The watch service writes in the directory as it runs, and the schedule
+/// runs `pitboard renew` every day, so either would make a new directory once this one is
+/// gone.
 ///
 /// The directory is removed last and only when every parked login is gone, because
 /// state.json is the only index of those keychain items. Deleting it first would leave live
@@ -95,7 +99,8 @@ fn take_away(
     state: &mut state::State,
     exclusive: std::fs::File,
 ) -> Result<Removed> {
-    let schedule_removed = remove_schedule(ctx, permit)?;
+    let watch_service_removed = remove_job(ctx, permit, Job::Watch)?;
+    let schedule_removed = remove_job(ctx, permit, Job::Renew)?;
     let held = state.accounts.iter().filter_map(|a| a.parked.as_ref());
     let left = held
         .clone()
@@ -140,6 +145,7 @@ fn take_away(
             _ => Vec::new(),
         },
         schedule_removed,
+        watch_service_removed,
         warnings: Vec::new(),
     })
 }
@@ -160,14 +166,18 @@ fn discard_signins(ctx: &Context, permit: Permit) {
     super::enroll::discard_signins(ctx, permit, &super::enroll::signin_dir(ctx));
 }
 
-/// The schedule, where it is this home's. One that renews another home is that home's to
-/// take away, and a machine with no scheduler has nothing to take.
-fn remove_schedule(ctx: &Context, permit: Permit) -> Result<bool> {
+/// `job`, where it is this home's. One that serves another home is that home's to take away,
+/// and a machine with no scheduler has nothing to take.
+fn remove_job(ctx: &Context, permit: Permit, job: Job) -> Result<bool> {
     if !schedule::serves(ctx) {
         return Ok(false);
     }
-    match schedule::uninstall(ctx, permit) {
-        Err(Error::ScheduleUnsupported) => Ok(false),
+    let removed = match job {
+        Job::Renew => schedule::uninstall(ctx, permit),
+        Job::Watch => crate::watch_service::uninstall(ctx, permit),
+    };
+    match removed {
+        Err(Error::ScheduleUnsupported { .. }) => Ok(false),
         removed => removed,
     }
 }
@@ -212,6 +222,35 @@ mod tests {
             assert!(removed.schedule_removed);
             assert!(removed.home_removed);
             assert_eq!(schedule::status(&m.ctx), schedule::Installed::No);
+        }
+    }
+
+    // Left running, the watch service would write a new Pitboard directory as it goes.
+    #[test]
+    fn uninstalling_takes_the_watch_service_with_it() {
+        for make in [machine, codex_machine] {
+            let m = make("uninstall-watch").in_the_default_home();
+            crate::watch_service::install(
+                &m.ctx,
+                Permit::for_a_test(),
+                crate::duty::autoswitch::Threshold::DEFAULT,
+            )
+            .expect("installed");
+
+            let removed = uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled");
+
+            assert!(removed.watch_service_removed);
+            assert!(!removed.schedule_removed, "none was there");
+            assert!(removed.home_removed);
+            assert_eq!(
+                crate::watch_service::status(&m.ctx),
+                crate::watch_service::Installed::No
+            );
         }
     }
 

@@ -1,16 +1,17 @@
-// Daily renewal on Windows: a task in Task Scheduler's `\Pitboard\` folder, written and read
-// apart from the system so every system's tests read the task Pitboard registers.
+// Pitboard's jobs on Windows: tasks in Task Scheduler's `\Pitboard\` folder, written and read
+// apart from the system so every system's tests read the tasks Pitboard registers.
 
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::host::Scheduler;
-use crate::schedule::{EVERY_SECONDS, Location, SCHEDULED_RUN};
+use crate::schedule::{EVERY_SECONDS, Job, Location};
 use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(crate) const FOLDER: &str = r"\Pitboard";
 const ENVIRONMENT: &str = "schedule.env";
+const WATCH_ENVIRONMENT: &str = "watch.env";
 // Task Scheduler's own results that are no failure: RF-E1 read `NOT_RUN_YET` off a task whose
 // person was not signed in.
 const RUNNING: i32 = 0x0004_1301;
@@ -19,12 +20,15 @@ const QUEUED: i32 = 0x0004_1325;
 
 // Task names are global within a folder, so each person's carries their SID. A second person
 // registers in the folder the first made (RF-E1c, run 38922866517).
-pub(crate) fn name(sid: &str) -> String {
-    format!("Renew {sid}")
+pub(crate) fn name(job: Job, sid: &str) -> String {
+    match job {
+        Job::Renew => format!("Renew {sid}"),
+        Job::Watch => format!("Watch {sid}"),
+    }
 }
 
-pub(crate) fn path(sid: &str) -> String {
-    format!(r"{FOLDER}\{}", name(sid))
+pub(crate) fn path(job: Job, sid: &str) -> String {
+    format!(r"{FOLDER}\{}", name(job, sid))
 }
 
 // A task as Task Scheduler keeps it: its definition, and how its last run went.
@@ -41,6 +45,10 @@ pub(crate) trait Service: Send + Sync + std::fmt::Debug {
     fn read(&self, ctx: &Context, name: &str) -> Result<Option<Registered>>;
     fn register(&self, permit: Permit, ctx: &Context, name: &str, xml: &str) -> Result<()>;
     fn delete(&self, permit: Permit, ctx: &Context, name: &str) -> Result<()>;
+    // Start the task now, as its trigger would.
+    fn run(&self, permit: Permit, ctx: &Context, name: &str) -> Result<()>;
+    // End each of its runs under way; a task with none, or none at all, is already stopped.
+    fn stop(&self, permit: Permit, ctx: &Context, name: &str) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,22 +75,53 @@ impl Task {
 }
 
 // InteractiveToken runs only while the person is signed in, when DPAPI and Credential Manager
-// open (RF-D2), and keeps no password. The proxy is in `schedule.env`: a definition has no
-// environment, and an argument would show a proxy's password.
-pub(crate) fn definition(program: &Path, start: &str) -> String {
+// open (RF-D2), and keeps no password. The proxy is in `schedule.env` or `watch.env`: a
+// definition has no environment, and an argument would show a proxy's password.
+//
+// The watch service starts at the person's own sign-in (`UserId`, documented to take a SID) and
+// runs with no time limit (`PT0S`); renewal runs daily at `start`, for 10 minutes at most.
+pub(crate) fn definition(
+    job: Job,
+    program: &Path,
+    options: &[String],
+    start: &str,
+    sid: &str,
+) -> String {
+    let (description, trigger, limit) = match job {
+        Job::Renew => (
+            "Renew Pitboard's parked logins",
+            format!(
+                "<CalendarTrigger>
+      <StartBoundary>{}</StartBoundary>
+      <ScheduleByDay>
+        <DaysInterval>{}</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>",
+                escaped(start),
+                EVERY_SECONDS / 86_400
+            ),
+            "PT10M",
+        ),
+        Job::Watch => (
+            "Switch Claude Code before an account runs out, and warm up accounts",
+            format!(
+                "<LogonTrigger>
+      <UserId>{}</UserId>
+    </LogonTrigger>",
+                escaped(sid)
+            ),
+            "PT0S",
+        ),
+    };
+    let arguments = [job.marked().join(" "), options.join(" ")].join(" ");
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Renew Pitboard's parked logins</Description>
+    <Description>{description}</Description>
   </RegistrationInfo>
   <Triggers>
-    <CalendarTrigger>
-      <StartBoundary>{start}</StartBoundary>
-      <ScheduleByDay>
-        <DaysInterval>{days}</DaysInterval>
-      </ScheduleByDay>
-    </CalendarTrigger>
+    {trigger}
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -97,7 +136,7 @@ pub(crate) fn definition(program: &Path, start: &str) -> String {
     <StartWhenAvailable>true</StartWhenAvailable>
     <Hidden>true</Hidden>
     <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+    <ExecutionTimeLimit>{limit}</ExecutionTimeLimit>
   </Settings>
   <Actions Context="Author">
     <Exec>
@@ -107,10 +146,8 @@ pub(crate) fn definition(program: &Path, start: &str) -> String {
   </Actions>
 </Task>
 "#,
-        start = escaped(start),
-        days = EVERY_SECONDS / 86_400,
         command = escaped(&program.to_string_lossy()),
-        arguments = SCHEDULED_RUN.join(" "),
+        arguments = escaped(arguments.trim_end()),
     )
 }
 
@@ -123,10 +160,20 @@ fn first_start(ctx: &Context) -> String {
         .to_string()
 }
 
-// Only what `definition` writes, and only as it writes it.
-pub(crate) fn program(xml: &str) -> Option<PathBuf> {
+// Only what `definition` writes, and only as it writes it: the job's marker, then its options.
+pub(crate) fn options(xml: &str, job: Job) -> Option<Vec<String>> {
+    let arguments = unescaped(element(element(xml, "Exec")?, "Arguments")?.trim());
+    let mut words = arguments.split_whitespace();
+    let marked = job.marked();
+    if words.by_ref().take(marked.len()).ne(marked) {
+        return None;
+    }
+    Some(words.map(str::to_owned).collect())
+}
+
+pub(crate) fn program(xml: &str, job: Job) -> Option<PathBuf> {
     let exec = element(xml, "Exec")?;
-    if unescaped(element(exec, "Arguments")?.trim()) != SCHEDULED_RUN.join(" ") {
+    if job == Job::Renew && !options(xml, job)?.is_empty() {
         return None;
     }
     let command = unescaped(element(exec, "Command")?.trim());
@@ -190,9 +237,12 @@ fn unescaped(text: &str) -> String {
         .replace("&amp;", "&")
 }
 
-// Beside the parked logins it renews, private as they are.
-pub(crate) fn environment_file(ctx: &Context) -> PathBuf {
-    ctx.default_pitboard_home().join(ENVIRONMENT)
+// Beside the parked logins the job serves, private as they are.
+pub(crate) fn environment_file(ctx: &Context, job: Job) -> PathBuf {
+    ctx.default_pitboard_home().join(match job {
+        Job::Renew => ENVIRONMENT,
+        Job::Watch => WATCH_ENVIRONMENT,
+    })
 }
 
 fn proxy_variable(name: &str) -> bool {
@@ -240,8 +290,8 @@ pub(crate) fn environment_read(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn keep_environment(permit: Permit, ctx: &Context, text: Option<&str>) -> Result<()> {
-    let file = environment_file(ctx);
+fn keep_environment(permit: Permit, ctx: &Context, job: Job, text: Option<&str>) -> Result<()> {
+    let file = environment_file(ctx, job);
     let kept = match text {
         Some(text) => file
             .parent()
@@ -270,55 +320,87 @@ impl Tasks {
         Tasks { sid, service }
     }
 
-    fn registered(&self, ctx: &Context) -> Result<Option<Registered>> {
-        self.service.read(ctx, &name(&self.sid))
+    fn registered(&self, ctx: &Context, job: Job) -> Result<Option<Registered>> {
+        self.service.read(ctx, &name(job, &self.sid))
     }
 }
 
 impl Scheduler for Tasks {
-    fn location(&self, _ctx: &Context) -> Location {
-        Location::Task(path(&self.sid))
+    fn location(&self, _ctx: &Context, job: Job) -> Location {
+        Location::Task(path(job, &self.sid))
     }
 
-    fn installed(&self, ctx: &Context) -> bool {
-        self.registered(ctx).is_ok_and(|task| task.is_some())
+    fn installed(&self, ctx: &Context, job: Job) -> bool {
+        self.registered(ctx, job).is_ok_and(|task| task.is_some())
     }
 
-    fn program(&self, ctx: &Context) -> Option<PathBuf> {
-        program(&self.registered(ctx).ok()??.xml)
+    fn program(&self, ctx: &Context, job: Job) -> Option<PathBuf> {
+        program(&self.registered(ctx, job).ok()??.xml, job)
     }
 
-    fn environment(&self, ctx: &Context) -> Vec<(String, String)> {
-        if !self.installed(ctx) {
+    fn options(&self, ctx: &Context, job: Job) -> Vec<String> {
+        self.registered(ctx, job)
+            .ok()
+            .flatten()
+            .and_then(|task| options(&task.xml, job))
+            .unwrap_or_default()
+    }
+
+    fn environment(&self, ctx: &Context, job: Job) -> Vec<(String, String)> {
+        if !self.installed(ctx, job) {
             return Vec::new();
         }
-        self.read_by_its_runs(ctx)
+        self.read_by_its_runs(ctx, job)
     }
 
-    // `PITBOARD_NO_ARGV` means nothing on Windows, so only the proxy is kept.
+    // `PITBOARD_NO_ARGV` means nothing on Windows, so only the proxy is kept. A logon task
+    // registered while the person is signed in would wait for the next sign-in, so the watch
+    // service is started at once, after its run under the definition before is ended.
     fn put(
         &self,
         ctx: &Context,
         permit: Permit,
+        job: Job,
         program: &Path,
+        options: &[String],
         environment: &[(String, String)],
     ) -> Result<()> {
-        let previous = self.registered(ctx)?;
-        let before = std::fs::read_to_string(environment_file(ctx)).ok();
+        let previous = self.registered(ctx, job)?;
+        let before = std::fs::read_to_string(environment_file(ctx, job)).ok();
         let given: Vec<(String, String)> = environment
             .iter()
             .filter(|(name, _)| proxy_variable(name))
             .cloned()
             .collect();
         let text = (!given.is_empty()).then(|| environment_text(&given));
-        keep_environment(permit, ctx, text.as_deref())?;
-        let named = name(&self.sid);
-        let xml = definition(program, &first_start(ctx));
-        if let Err(refused) = self.service.register(permit, ctx, &named, &xml) {
-            let _ = keep_environment(permit, ctx, before.as_deref());
+        let named = name(job, &self.sid);
+        if job == Job::Watch && previous.is_some() {
+            self.service.stop(permit, ctx, &named)?;
+        }
+        keep_environment(permit, ctx, job, text.as_deref())?;
+        let xml = definition(job, program, options, &first_start(ctx), &self.sid);
+        let started = self
+            .service
+            .register(permit, ctx, &named, &xml)
+            .and_then(|()| match job {
+                Job::Renew => Ok(()),
+                Job::Watch => self.service.run(permit, ctx, &named),
+            });
+        if let Err(refused) = started {
+            let _ = keep_environment(permit, ctx, job, before.as_deref());
             // Whether a refused update leaves the old definition is not measured.
-            if let Some(previous) = previous {
-                let _ = self.service.register(permit, ctx, &named, &previous.xml);
+            match previous {
+                Some(previous) => {
+                    let _ = self.service.register(permit, ctx, &named, &previous.xml);
+                    if job == Job::Watch {
+                        let _ = self.service.run(permit, ctx, &named);
+                    }
+                }
+                // Registered, it would start at the next sign-in all the same.
+                None if job == Job::Watch => {
+                    let _ = self.service.delete(permit, ctx, &named);
+                }
+                None => {}
             }
             return Err(refused);
         }
@@ -326,29 +408,31 @@ impl Scheduler for Tasks {
     }
 
     // A task Task Scheduler cannot say is there or not stops an uninstall, which would leave
-    // it running every day.
-    fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool> {
-        let there = self.registered(ctx)?.is_some();
+    // it running every day. Its run under way is ended first, as no deletion is documented to.
+    fn remove(&self, ctx: &Context, permit: Permit, job: Job) -> Result<bool> {
+        let named = name(job, &self.sid);
+        let there = self.registered(ctx, job)?.is_some();
         if there {
-            self.service.delete(permit, ctx, &name(&self.sid))?;
+            self.service.stop(permit, ctx, &named)?;
+            self.service.delete(permit, ctx, &named)?;
         }
-        keep_environment(permit, ctx, None)?;
+        keep_environment(permit, ctx, job, None)?;
         Ok(there)
     }
 
     // Task Scheduler names no task to the program it starts, so a run is told by its marker.
-    fn started_this_process(&self, said: Option<&str>) -> bool {
-        said == Some(path(&self.sid).as_str())
+    fn started_this_process(&self, job: Job, said: Option<&str>) -> bool {
+        said == Some(path(job, &self.sid).as_str())
     }
 
-    fn read_by_its_runs(&self, ctx: &Context) -> Vec<(String, String)> {
-        std::fs::read_to_string(environment_file(ctx))
+    fn read_by_its_runs(&self, ctx: &Context, job: Job) -> Vec<(String, String)> {
+        std::fs::read_to_string(environment_file(ctx, job))
             .map(|text| environment_read(&text))
             .unwrap_or_default()
     }
 
-    fn task(&self, ctx: &Context) -> Option<Task> {
-        let registered = self.registered(ctx).ok()??;
+    fn task(&self, ctx: &Context, job: Job) -> Option<Task> {
+        let registered = self.registered(ctx, job).ok()??;
         Some(Task {
             last_run: registered
                 .last_run
@@ -428,6 +512,23 @@ impl Service for Pretend {
             _ => Ok(()),
         }
     }
+
+    // Started as the system would start it: refused once where a test says so.
+    fn run(&self, _: Permit, _ctx: &Context, _name: &str) -> Result<()> {
+        if self
+            .refuse_start
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(Error::ScheduleRefused {
+                detail: "Task Scheduler would not start it in a test".into(),
+            });
+        }
+        Ok(())
+    }
+
+    fn stop(&self, _: Permit, _ctx: &Context, _name: &str) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -445,7 +546,7 @@ mod tests {
     #[test]
     fn the_task_is_defined_with_every_setting_and_names_no_proxy() {
         let exe = Path::new(r"C:\Users\Dana\Tools & Apps\pitboard.exe");
-        let xml = definition(exe, "2026-10-17T09:30:00");
+        let xml = definition(Job::Renew, exe, &[], "2026-10-17T09:30:00", SID);
         for setting in [
             "<StartBoundary>2026-10-17T09:30:00</StartBoundary>",
             "<DaysInterval>1</DaysInterval>",
@@ -466,30 +567,75 @@ mod tests {
         for never in ["Password", "S4U", "Highest", "UserId", "PROXY", "proxy"] {
             assert!(!xml.contains(never), "{never}\n{xml}");
         }
-        assert_eq!(program(&xml).as_deref(), Some(exe));
+        assert_eq!(program(&xml, Job::Renew).as_deref(), Some(exe));
         assert_eq!(drifted(&xml), []);
-        assert_eq!(path(SID), format!(r"\Pitboard\Renew {SID}"));
+        assert_eq!(path(Job::Renew, SID), format!(r"\Pitboard\Renew {SID}"));
+    }
+
+    // Documented and not measured: a SID in UserId, and PT0S as no limit (ARCHITECTURE.md).
+    #[test]
+    fn the_watch_task_starts_at_the_persons_own_sign_in_and_runs_with_no_limit() {
+        let exe = Path::new(r"C:\Users\Dana\Tools & Apps\pitboard.exe");
+        let at = ["--at".to_string(), "90".to_string()];
+        let xml = definition(Job::Watch, exe, &at, "2026-10-17T09:30:00", SID);
+        for setting in [
+            &format!("<LogonTrigger>\n      <UserId>{SID}</UserId>\n    </LogonTrigger>")[..],
+            "<LogonType>InteractiveToken</LogonType>",
+            "<RunLevel>LeastPrivilege</RunLevel>",
+            "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
+            "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+            "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
+            "<Hidden>true</Hidden>",
+            "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
+            r"<Command>C:\Users\Dana\Tools &amp; Apps\pitboard.exe</Command>",
+            "<Arguments>watch --scheduled --at 90</Arguments>",
+        ] {
+            assert_eq!(xml.matches(setting).count(), 1, "{setting}\n{xml}");
+        }
+        for never in [
+            "CalendarTrigger",
+            "StartBoundary",
+            "Password",
+            "S4U",
+            "Highest",
+        ] {
+            assert!(!xml.contains(never), "{never}\n{xml}");
+        }
+        assert_eq!(program(&xml, Job::Watch).as_deref(), Some(exe));
+        assert_eq!(options(&xml, Job::Watch), Some(at.to_vec()));
+        assert_eq!(program(&xml, Job::Renew), None, "not renewal's");
+        assert_eq!(drifted(&xml), []);
+        assert_eq!(path(Job::Watch, SID), format!(r"\Pitboard\Watch {SID}"));
     }
 
     #[test]
     fn only_a_task_run_the_way_pitboard_writes_it_names_its_program() {
         let exe = Path::new(r"C:\Program Files\Pitboard\bin\pitboard.exe");
-        let xml = definition(exe, "2026-10-17T09:30:00");
+        let xml = definition(Job::Renew, exe, &[], "2026-10-17T09:30:00", SID);
         let quoted = xml
             .replace("<Command>C", "<Command>\"C")
             .replace(".exe</Command>", ".exe\"</Command>");
         assert_eq!(
-            program(&quoted).as_deref(),
+            program(&quoted, Job::Renew).as_deref(),
             Some(exe),
             "as Task Scheduler's own editor quotes it"
         );
-        assert_eq!(program(&xml.replace("renew --scheduled", "renew")), None);
-        assert_eq!(program("not a task"), None);
+        assert_eq!(
+            program(&xml.replace("renew --scheduled", "renew"), Job::Renew),
+            None
+        );
+        assert_eq!(program("not a task", Job::Renew), None);
     }
 
     #[test]
     fn a_setting_changed_in_task_scheduler_is_read_as_it_leaves_it() {
-        let xml = definition(Path::new(r"C:\p.exe"), "2026-10-17T09:30:00");
+        let xml = definition(
+            Job::Renew,
+            Path::new(r"C:\p.exe"),
+            &[],
+            "2026-10-17T09:30:00",
+            SID,
+        );
         let changed = xml
             .replace(
                 "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
@@ -642,7 +788,7 @@ mod tests {
             !definition.contains("alice") && !definition.contains("PROXY"),
             "{definition}"
         );
-        let file = environment_file(&proxied);
+        let file = environment_file(&proxied, Job::Renew);
         assert_eq!(
             std::fs::read_to_string(&file).expect("the proxy"),
             "HTTPS_PROXY=http://alice:s3cret@proxy.example.com:3128\nNO_PROXY=localhost\n",
@@ -659,7 +805,7 @@ mod tests {
         );
 
         let by_hand = machine.ctx(&[("ALL_PROXY", ""), ("HTTPS_PROXY", "http://other:3128")]);
-        let run = schedule::for_its_run(&by_hand.clone().started_by_the_schedule());
+        let run = schedule::for_its_run(&by_hand.clone().started_by_the_schedule(), Job::Renew);
         assert_eq!(
             run.proxy.variables(),
             [
@@ -674,13 +820,15 @@ mod tests {
         );
         assert!(run.proxy.same_way(&proxied.proxy));
         assert_eq!(
-            schedule::for_its_run(&by_hand).proxy.variables(),
+            schedule::for_its_run(&by_hand, Job::Renew)
+                .proxy
+                .variables(),
             by_hand.proxy.variables(),
             "a run by hand reads its own"
         );
         let tasks = proxied.host().scheduler().expect("Task Scheduler");
-        assert!(tasks.started_this_process(Some(&format!(r"\Pitboard\Renew {SID}"))));
-        assert!(!tasks.started_this_process(None));
+        assert!(tasks.started_this_process(Job::Renew, Some(&format!(r"\Pitboard\Renew {SID}"))));
+        assert!(!tasks.started_this_process(Job::Renew, None));
 
         let direct = machine.ctx(&[]);
         schedule::install(&direct, Permit::for_a_test()).expect("installed again");
@@ -707,12 +855,15 @@ mod tests {
         let refused = schedule::uninstall(&proxied, Permit::for_a_test()).expect_err("unknown");
         assert_eq!(refused.code(), "schedule_refused");
         assert!(
-            task.exists() && environment_file(&proxied).exists(),
+            task.exists() && environment_file(&proxied, Job::Renew).exists(),
             "nothing taken away"
         );
         let refused = schedule::install(&proxied, Permit::for_a_test()).expect_err("unknown");
         assert_eq!(refused.code(), "schedule_refused");
-        assert!(environment_file(&proxied).exists(), "nothing written");
+        assert!(
+            environment_file(&proxied, Job::Renew).exists(),
+            "nothing written"
+        );
     }
 
     #[test]
@@ -723,10 +874,14 @@ mod tests {
         let refused = schedule::install(&proxied, Permit::for_a_test()).expect_err("refused");
         assert_eq!(refused.code(), "schedule_refused");
         assert_eq!(schedule::status(&proxied), Installed::No);
-        assert!(!environment_file(&proxied).exists(), "nothing left written");
+        assert!(
+            !environment_file(&proxied, Job::Renew).exists(),
+            "nothing left written"
+        );
 
         schedule::install(&proxied, Permit::for_a_test()).expect("installed");
-        let before = std::fs::read_to_string(environment_file(&proxied)).expect("the proxy");
+        let before =
+            std::fs::read_to_string(environment_file(&proxied, Job::Renew)).expect("the proxy");
         let elsewhere = machine.0.path().join("elsewhere").join("pitboard.exe");
         std::fs::create_dir_all(elsewhere.parent().expect("its folder")).expect("made");
         std::fs::write(&elsewhere, "").expect("another program");
@@ -744,7 +899,7 @@ mod tests {
             Some(machine.program())
         );
         assert_eq!(
-            std::fs::read_to_string(environment_file(&proxied)).expect("the proxy"),
+            std::fs::read_to_string(environment_file(&proxied, Job::Renew)).expect("the proxy"),
             before
         );
     }

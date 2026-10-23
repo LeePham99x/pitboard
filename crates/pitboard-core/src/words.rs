@@ -11,6 +11,7 @@
 
 use crate::doctor::{Level, renewal_due};
 use crate::host::{Os, WINDOWS_FLOOR, token};
+use crate::schedule::Job;
 use crate::usage::pace::{Pace, Standing};
 use crate::usage::whole;
 use std::fmt::Write as _;
@@ -304,6 +305,10 @@ pub(crate) fn out_of_reach(os: Os) -> &'static str {
 
 // A network logon, which has no Credential Manager (MC-net).
 pub(crate) const SSH_SIGN_IN: &str = "a sign-in over SSH with a key";
+
+/// Said where switching by itself and warming up are turned on, in each front end.
+pub const IS_THIS_ALLOWED: &str = "Anthropic's terms may cover automatic switching and \
+     warm-ups: https://docs.usepitboard.com/concepts/limits#is-this-allowed";
 
 pub(crate) fn past_credential_manager(bytes: usize, limit: usize) -> String {
     format!("{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager")
@@ -1263,16 +1268,24 @@ pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
     }
 }
 
-pub(crate) fn no_scheduler(os: Os) -> &'static str {
+pub(crate) fn no_scheduler(os: Os, job: Job) -> String {
+    let (unit, instead) = match job {
+        Job::Renew => (
+            "timer",
+            "Keeping parked logins alive here means running `pitboard` yourself from time to time.",
+        ),
+        Job::Watch => (
+            "service",
+            "Switching by itself here means leaving `pitboard watch` running in a terminal.",
+        ),
+    };
     match os {
-        Os::Linux => {
+        Os::Linux => format!(
             "systemd did not start this system, as it does not start many containers, so it has \
-             no systemd user timer for Pitboard to write. Keeping parked logins alive here means \
-             running `pitboard` yourself from time to time."
-        }
+             no systemd user {unit} for Pitboard to write. {instead}"
+        ),
         Os::MacOs | Os::Windows => {
-            "this platform has no scheduler Pitboard knows how to write. Keeping parked logins \
-             alive here means running `pitboard` yourself from time to time."
+            format!("this platform has no scheduler Pitboard knows how to write. {instead}")
         }
     }
 }
@@ -1685,14 +1698,20 @@ mod tests {
     #[test]
     fn a_system_with_no_scheduler_says_what_it_lacks() {
         assert_eq!(
-            no_scheduler(Os::Linux),
+            no_scheduler(Os::Linux, Job::Renew),
             "systemd did not start this system, as it does not start many containers, so it has \
              no systemd user timer for Pitboard to write. Keeping parked logins alive here means \
              running `pitboard` yourself from time to time."
         );
+        assert_eq!(
+            no_scheduler(Os::Linux, Job::Watch),
+            "systemd did not start this system, as it does not start many containers, so it has \
+             no systemd user service for Pitboard to write. Switching by itself here means \
+             leaving `pitboard watch` running in a terminal."
+        );
         for os in [Os::MacOs, Os::Windows] {
             assert_eq!(
-                no_scheduler(os),
+                no_scheduler(os, Job::Renew),
                 "this platform has no scheduler Pitboard knows how to write. Keeping parked \
                  logins alive here means running `pitboard` yourself from time to time."
             );

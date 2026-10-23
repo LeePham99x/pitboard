@@ -434,7 +434,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     decides what daily renewal runs and whose it is, and refuses a program in the temporary
     copy macOS runs an app from, or Explorer one opened inside a zip, by
     `in_a_temporary_copy`, which an app asks of the command line inside it too; the host's
-    scheduler writes it.
+    scheduler writes it. `watch_service.rs` decides the same of the watch service, a second
+    job on that scheduler (`schedule::Job`).
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
@@ -1198,6 +1199,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
   (`Proxies::same_way`). In the app, whose environment is the system's as the job's is,
   the same line is `ok` and says how each way of installing the schedule chooses its
   proxy: the app's switch would take a terminal's proxy away.
+- The watch service is a second job on the same scheduler (`schedule::Job::Watch`,
+  `watch_service.rs`). It runs `pitboard watch --scheduled --at <share>` on every system
+  (`schedule::WATCH_RUN`): a LaunchAgent that runs at load and again only after a crash
+  (`KeepAlive`'s `Crashed`), a systemd user service enabled under `default.target` and started
+  again only `on-abnormal`, or a task `\Pitboard\Watch <SID>` with a `LogonTrigger` for the
+  person's SID and no time limit, which `put` starts at once after ending the run under the
+  definition before. A run that ended itself on an error it cannot mend starts again at the
+  next sign-in, not sooner. Its rules are the schedule's: it serves the default home alone
+  (`schedule::serves`, `schedule_not_default_home`), a run of it watches that home whatever
+  `PITBOARD_HOME` says (`Context::started_by_the_watch_service`, `schedule::for_its_run`), it
+  is given the installing Pitboard's proxy variables, in `watch.env` on Windows, and the gate
+  refuses it where Pitboard may change nothing. `uninstall` stops and removes it before the
+  schedule, since it writes in the directory as it runs, and `doctor` reports it as
+  `watch_service`. The app may be switching too: a switch is decided again under the lock
+  (`switch::auto`), and `tests/watch.rs` has four processes decide from one reading and make
+  one switch.
 - On Windows `doctor` also reads what Task Scheduler keeps of the task (`Scheduler::task`):
   when it last ran and how that run ended, and the settings Pitboard writes that were changed
   there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
@@ -1206,9 +1223,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. The
   app's start-up repair (`schedule::repair`) points a task at the command line inside the app
   only where the Pitboard it runs is gone and its settings are as Pitboard wrote them. The
-  MSI's full uninstall, through `Pitboard.exe --unregister`, takes the task away
-  (`schedule::uninstall_for_app`) only where it runs the `bin\pitboard.exe` beside that
-  `Pitboard.exe`, whatever its settings, since the removal deletes that program. A task that
+  MSI's full uninstall, through `Pitboard.exe --unregister`, takes each task away, renewal's
+  and the watch service's (`schedule::uninstall_for_app`), only where it runs the
+  `bin\pitboard.exe` beside that `Pitboard.exe`, whatever its settings, since the removal
+  deletes that program. A task that
   runs Scoop's, WinGet's or another copy stays, and so do the parked logins and the Pitboard
   directory. A read Task Scheduler answers with an error, not with no such task, stops an
   install and an uninstall before either changes anything, so an uninstall never leaves the
@@ -3121,6 +3139,9 @@ measured on 18 October 2026, and those CI and the runner facts measured by 20 Oc
 | WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
 | `longPathAware` in a manifest lifts nothing where `LongPathsEnabled` is 0 or absent, as on a PC no policy or installer changed | [Maximum path length limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation) | Both images set it to 1, where the manifest lifts the limit (RF-T8, runs 39310064516 and 39320680285), and AGENTS.md does not let runner-facts.ps1 change it. |
 | `StartWhenAvailable` runs, about 10 minutes later, a start missed while the PC slept or was off | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. Task Scheduler took no missed start of the renewal's daily trigger begun before the task was registered, or passed while it was disabled: none of four tasks, two with the setting, ran within 21 to 29 minutes, each `0x00041303` with no missed run counted (RF-T8, runs 39310064516 and 39320680285). |
+| A `LogonTrigger` whose `UserId` is the person's SID starts the task at their sign-in, for the watch service | [LogonTrigger.UserId](https://learn.microsoft.com/en-us/windows/win32/taskschd/logontrigger-userid) | No run of `windows-facts.yml` has registered the watch service's task yet. |
+| `ExecutionTimeLimit` of `PT0S` lets the watch service's task run with no limit | [TaskSettings.ExecutionTimeLimit](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-executiontimelimit) | As above. |
+| `IRegisteredTask::Run` starts the task at once, and `Stop` ends its run under way | [IRegisteredTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nn-taskschd-iregisteredtask) | As above. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
 | `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |

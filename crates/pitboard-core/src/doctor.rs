@@ -107,6 +107,8 @@ pub(crate) struct Facts {
     pub desktop: Option<DesktopFacts>,
     /// The daily renewal schedule, where this home has one installed.
     pub(crate) schedule: Option<ScheduleFact>,
+    // The watch service, where this home has one installed.
+    pub(crate) watch_service: Option<WatchServiceFact>,
     /// How Pitboard's requests leave this machine, as its environment says.
     pub(crate) network: NetworkFact,
     /// Whether this is the app's doctor, whose environment is the one the system started the
@@ -202,6 +204,16 @@ pub(crate) struct ScheduleFact {
     /// Whether its runs send requests another way than this run does: through another proxy
     /// or none, with another user name or password, or with other hosts exempt.
     pub(crate) network_differs: bool,
+}
+
+// The watch service as it is installed, read from what Pitboard wrote.
+pub(crate) struct WatchServiceFact {
+    pub(crate) location: crate::schedule::Location,
+    pub(crate) program: Option<PathBuf>,
+    pub(crate) program_found: bool,
+    pub(crate) at: Option<crate::duty::autoswitch::Threshold>,
+    // Task Scheduler's word on its runs and its settings; none from launchd or systemd.
+    pub(crate) task: Option<Task>,
 }
 
 /// What is read about Codex CLI on this machine.
@@ -549,6 +561,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         interrupted: switch::interrupted(ctx),
         service,
         schedule: schedule_fact(ctx),
+        watch_service: watch_service_fact(ctx),
         network: network_fact(&ctx.proxy),
         in_the_app: ctx.caller == "app",
         elevation: ctx.host().elevation(ctx),
@@ -655,9 +668,28 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
         location,
-        task: crate::schedule::task(ctx),
+        task: crate::schedule::task(ctx, crate::schedule::Job::Renew),
         network: network_fact(&proxies),
         network_differs: !proxies.same_way(&ctx.proxy),
+    })
+}
+
+// The watch service, where this home has one.
+fn watch_service_fact(ctx: &Context) -> Option<WatchServiceFact> {
+    if !crate::schedule::serves(ctx) {
+        return None;
+    }
+    let crate::watch_service::Installed::Yes { location, at } = crate::watch_service::status(ctx)
+    else {
+        return None;
+    };
+    let program = crate::watch_service::installed_program(ctx);
+    Some(WatchServiceFact {
+        program_found: program.as_deref().is_some_and(std::path::Path::is_file),
+        program,
+        location,
+        at,
+        task: crate::watch_service::task(ctx),
     })
 }
 
@@ -1706,6 +1738,7 @@ pub(crate) fn evaluate_with(facts: &Facts, moment: &dyn Fn(i64, i64) -> String) 
     checks.push(judge_pending(facts));
     checks.extend(judge_schedule(facts));
     checks.extend(judge_schedule_proxy(facts));
+    checks.extend(judge_watch_service(facts));
     checks.push(judge_claude_version(facts));
     checks.extend(judge_status_line(facts.status_line.as_ref()));
     checks.push(judge_auth(facts));
@@ -2716,6 +2749,46 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
             "renewal schedule",
             format!("{runs}  ·  not run yet"),
         ),
+    })
+}
+
+// Nothing is said where there is no service. A Pitboard gone from its path or a last run that
+// failed stops every switch it would make, where nobody looks.
+fn judge_watch_service(facts: &Facts) -> Option<Check> {
+    let service = facts.watch_service.as_ref()?;
+    let again = "Install it again with `pitboard watch install`.";
+    let Some(program) = &service.program else {
+        return Some(warn(
+            "watch_service",
+            "watch service",
+            format!("{} does not say which Pitboard it runs", service.location),
+            again,
+        ));
+    };
+    if !service.program_found {
+        return Some(fail(
+            "watch_service",
+            "watch service",
+            format!("runs {}, which is not there any more", program.display()),
+            again,
+        ));
+    }
+    let runs = match service.at {
+        Some(at) => format!(
+            "from sign-in  ·  switches at {}%  ·  runs {}",
+            at.percent(),
+            program.display()
+        ),
+        None => format!("from sign-in  ·  runs {}", program.display()),
+    };
+    Some(match service.task.as_ref().and_then(Task::failed) {
+        Some(result) => warn(
+            "watch_service",
+            "watch service",
+            format!("{runs}, and its last run ended {}", ended(result)),
+            "Run `pitboard watch` to see what it says.",
+        ),
+        None => ok("watch_service", "watch service", runs),
     })
 }
 
@@ -4666,6 +4739,7 @@ mod tests {
             desktop: None,
             claude_present: true,
             schedule: None,
+            watch_service: None,
             network: direct(),
             in_the_app: false,
             elevation: crate::host::Elevation::Normal,
@@ -5796,6 +5870,64 @@ mod tests {
         let unread = check(&checks, "schedule");
         assert_eq!(unread.level, Level::Warn);
         assert!(!unread.advice.is_empty());
+    }
+
+    #[test]
+    fn the_watch_service_is_judged_by_its_pitboard_and_its_last_run() {
+        let mut f = facts();
+        assert!(
+            evaluate(&f).iter().all(|c| c.code != "watch_service"),
+            "nothing is said where there is no service"
+        );
+        let service = |program: Option<&str>, task: Option<Task>| WatchServiceFact {
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.watch.plist",
+            )),
+            program: program.map(PathBuf::from),
+            program_found: true,
+            at: crate::duty::autoswitch::Threshold::new(90),
+            task,
+        };
+
+        f.watch_service = Some(service(Some("/opt/homebrew/bin/pitboard"), None));
+        let checks = evaluate(&f);
+        let found = check(&checks, "watch_service");
+        assert_eq!(found.level, Level::Ok);
+        assert_eq!(
+            found.detail,
+            "from sign-in  ·  switches at 90%  ·  runs /opt/homebrew/bin/pitboard"
+        );
+        assert_eq!(found.name, "watch service");
+        assert_eq!(section("watch_service"), None, "Pitboard's own");
+
+        f.watch_service.as_mut().expect("set above").program_found = false;
+        let checks = evaluate(&f);
+        let gone = check(&checks, "watch_service");
+        assert_eq!(gone.level, Level::Fail, "it switches nothing from now on");
+        assert_eq!(
+            gone.advice,
+            "Install it again with `pitboard watch install`."
+        );
+
+        f.watch_service = Some(service(None, None));
+        assert_eq!(check(&evaluate(&f), "watch_service").level, Level::Warn);
+
+        let ran = Task {
+            last_run: Some(NOW - 60),
+            last_result: Some(1),
+            drifted: Vec::new(),
+        };
+        f.watch_service = Some(service(Some(r"C:\bin\pitboard.exe"), Some(ran)));
+        let checks = evaluate(&f);
+        let failed = check(&checks, "watch_service");
+        assert_eq!(failed.level, Level::Warn);
+        assert!(
+            failed
+                .detail
+                .ends_with("and its last run ended with exit code 1"),
+            "{}",
+            failed.detail
+        );
     }
 
     #[test]
