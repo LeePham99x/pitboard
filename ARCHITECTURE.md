@@ -68,7 +68,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
       tests never address, and by which doctor counts Codex's items.
     - Claude Desktop keeps items of Claude's data folder and keys of its settings file, and
       `desktop` implements the `Folder` trait in `provider/folder.rs`. Its files say where
-      the data folder is (`paths.rs`), which first-level entries are an account's
+      the data folder is (`paths.rs`), which part of an item's store no item names
       (`layout.rs`), what `config.json` and its sidecar hold (`settings.rs`), the session
       cookie's fingerprint (`jar.rs`) and which processes are Claude (`running.rs`). It
       reads no keychain item, decrypts nothing and sends no request. A person signs in
@@ -1715,8 +1715,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   just answered for that login, or a fingerprint ties it to an earlier answer. A Claude
   Desktop record is written only by a change of Claude Desktop, which reads the folder with
   Claude closed.
-- A read of Claude Desktop opens `config.json` and `config.json.journal` and nothing else
-  of Claude's, and none of it while no Claude Desktop account is enrolled. It lists no
+- A read of Claude Desktop opens `config.json` and `config.json.journal`, and
+  `Claude-3p/claude_desktop_config.json` where `Claude-3p/config.json` is there, and nothing
+  else of Claude's, and none of it while no Claude Desktop account is enrolled. It lists no
   process, records nothing, and says the record with when a change last read the login
   (`read_at`).
 - Claude Code's config is a sign that something signed in, and the words of a warning, never
@@ -1890,7 +1891,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - Pitboard and a browser meet at the Share extension, which hands the app the one link the
   browser shares, as a Pitboard link. Pitboard reads nothing a browser keeps.
 - Pitboard and Claude meet at Claude's data folder. Pitboard reads `config.json`,
-  `config.json.journal` and the names of the folder's first-level entries. From `Cookies` it
+  `config.json.journal` and the names of the folder's first-level entries and of
+  `IndexedDB`'s. Beside it, it looks for `Claude-3p/config.json`, and where that is there
+  reads `deploymentMode` in `Claude-3p/claude_desktop_config.json`. From `Cookies` it
   reads the store's versions in `meta`. It reads the host, name, path, expiry and stored
   value of every cookie for `claude.ai` or `.claude.ai`, and of any cookie with a session
   cookie's name. It keeps only the `sessionKey`'s expiry and an 8-byte fingerprint of its
@@ -3825,11 +3828,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 
 ### Claude Desktop
 
-Read from three builds of Claude for macOS, and on no other system. The contributor measured
+Read from five builds of Claude for macOS, and on no other system. The contributor measured
 2.19675.0 with two claude.ai accounts: an inspection on 3 October 2026, experiments E1 to
 E18 on 4 October and a reading of `main.log` on 5 October. This repository read the
-`app.asar` and `Info.plist` of 2.7032.0 on 11 and 13 October, and the `app.asar` and
-`Electron Framework` of 2.42304.0 on 19 October, and never ran either. The register is
+`app.asar` and `Info.plist` of 2.7032.0 on 11 and 13 October, the `app.asar` and
+`Electron Framework` of 2.42304.0 on 19 October, and the `app.asar` of 3.1623.0 and 3.6556.2
+on 23 October, and never ran any. The register is
 `provider/desktop/assumptions.rs`, and each entry says who read it, when and how. Each fact
 here gives its build.
 
@@ -3841,22 +3845,27 @@ here gives its build.
 - Claude keeps its data in `Library/Application Support/Claude` under the home the passwd
   entry names, and a packaged build deletes `CLAUDE_USER_DATA_DIR` from its environment
   (2.7032.0).
-- A third-party deployment keeps its data in `Claude-3p` beside it (2.7032.0).
+- Claude runs from `Claude-3p` beside it, and keeps its settings there, once its managed
+  configuration turns on a third-party deployment. Picking claude.ai in its chooser writes
+  `deploymentMode` `1p` there, and Claude runs from `Claude` again. A `Claude-3p` can hold
+  only `claude_desktop_config.json`, as an earlier build left it on a Mac with no deployment
+  (3.6556.2, 23 October 2026; issue 271).
 - `Cookies`, `Cookies-journal`, `Local Storage`, `Session Storage`, the two
   `IndexedDB/https_claude.ai_0.indexeddb` stores, `WebStorage` and `File System`, with
   `config.json`'s `oauth:tokenCache`, `oauth:tokenCacheV2` and `lastKnownAccountUuid`, move
   an account whole, both ways (E2, 2.19675.0, 4 October 2026).
 - The token caches are keyed by `lastKnownAccountUuid` and hold the account's OAuth tokens
   (E2 and E9, 2.19675.0; read again in 2.7032.0).
-- The data folder's first level holds the names `desktop::layout` lists: those a listing
-  under 2.7032.0 held (11 October 2026), the items E2 moved, three names 2.7032.0's code
-  makes for installed extensions, and the names 2.42304.0 makes, as the entries below say. A
-  name 2.42304.0 makes only on Windows, only in `Claude-3p` or only under a home starting
-  `//` is unread.
-- From Electron 44.4.4, Claude keeps Chromium's GPU caches `ShaderCache`, `GrShaderCache`,
-  `GraphiteDawnCache` and `GPUPersistentCache` in the data folder, beside `GPUCache`. They
-  hold compiled shaders, so they stay (Electron's pull request 54161; 2.42304.0's framework,
-  Electron 44.7.2, 19 October 2026).
+- Claude keeps every name of its data folder across another account's sign-in but those it
+  clears, below. 2.42304.0, 3.1623.0 and 3.6556.2 run the same seventeen named resets on that
+  change, while each build makes names of its own, such as `design`, Claude Design's window,
+  from 3.1623.0. So a switch moves the account's items and leaves every other name in place
+  (3.6556.2, 23 October 2026).
+- A database's `-journal`, `-wal` and `-shm`, and a Claude store's `.journal`, are part of
+  it, and Chromium names claude.ai's IndexedDB stores for `https_claude.ai_0`. Such a part
+  that no item names stops the start of a move. So does a `Network` folder, where Chromium
+  keeps the jar once it moves its network service's files, which Electron does on macOS
+  only under a feature flag (SQLite's documentation; Electron 44.9.0's and 44.9.3's source).
 - When another account signs in, Claude empties its preview browsers under `Partitions` and
   `chrome-import-sites.json`, and, under a Microsoft 365 policy, the connector's
   `custom3pMcpOAuth`, `builtin-mcp-auth` and `custom3p-builtin-mcp.json`. A switch puts the
@@ -3870,16 +3879,6 @@ here gives its build.
   `declarative_performance_observer.db` are Chromium's stores for each site, and
   `session-popouts.json` and an earlier build's `local-sessions.json` name no account, so
   they move with the login too (2.42304.0 and Chromium 152.0.7977.149's source).
-- Every other name 2.42304.0's code makes in the data folder names its account,
-  organisation or session, or holds nothing of an account, so it stays. Its writers'
-  temporaries pass, each beside a name the layout classifies (2.42304.0).
-- Chromium writes a file through a temporary beside it, which in Claude is named
-  `.Q6L2SF6YDW.com.anthropic.claudefordesktop.<file>.` and six letters or digits (Electron
-  44.4.3's and Chromium 152.0.7977.130's source, the versions 2.7032.0 runs; no listing has
-  held one).
-- `claude-code-sessions`, `local-agent-mode-sessions`, `spaces-present`, `fcache` and
-  `cowork-enabled-cli-ops.json` each carry their account or organisation, so they stay in
-  the data folder (2.7032.0).
 - `Cookies` is SQLite at `meta.version` 24, and every value starts `v10`. A session cookie
   expires about four weeks after it is set. With Claude open, `Cookies-journal` is empty
   between writes and there is no `Cookies-wal` (2.19675.0, 3 October 2026).
@@ -3904,7 +3903,12 @@ here gives its build.
   the one it holds (2.7032.0).
 - As it quits, Claude writes `Cookies`, `config.json`, `Local Storage`, `Session Storage`,
   `WebStorage` and `Preferences` (E8, 2.19675.0).
-- Claude takes no single-instance lock and writes no `SingletonLock` (E14, 2.19675.0).
+- Claude takes its single-instance lock only while it runs Reset App Data, and otherwise
+  writes no `SingletonLock` (E14, 2.19675.0; 3.6556.2).
+- From 3.1623.0, Reset App Data writes `reset-app-data` in the data folder and opens Claude
+  again, which deletes what the folder holds before it shows a window. Beside
+  `reset-app-data.given-up`, it deletes nothing. Pitboard moves nothing in a folder waiting
+  for a reset, the recovery of an interrupted move included (3.6556.2, 23 October 2026).
 - The helpers are gone once the main program has exited (E18, 2.19675.0).
 - Claude does not open itself again after a quit, checked at 0, 2, 5 and 30 seconds (E12,
   2.19675.0, one quit).
@@ -3928,12 +3932,10 @@ These were not measured. Each row says what Pitboard does where it cannot know.
 | --- | --- |
 | Whether a sign-in over a stale `lastKnownAccountUuid`, followed by a quit within seconds, leaves the new session under the old name | A session it has not seen is taken as named in one case and is never deleted. Beside a token cache holding the emptied value it is a sign-in not finished, for every reader |
 | How often Claude replaces a session in place after a login is put back (seen once) | It parks the session under the fingerprint found and says so. Nothing is deleted |
-| The first-level entries of a build people run. 2.42304.0's were read from its code, not listed | A name `desktop::layout` does not classify stops the start of a move and names itself |
-| Whose `ant-device-registry.json`, `vm-support-probe.json`, `extensions-blocklist.json` and `ca-bundle.pem` are | They stay, as they did in E2 |
+| What the names a build Pitboard has not read makes hold | They stay, as Claude keeps them when another account signs in. Only a part of a store the move carries that no item names stops the start of a move, and names itself |
 | Whether each account keeps its own previews, connector sign-ins and session windows across a switch, and Claude makes a missing `Partitions` or `Service Worker` again (read in 2.42304.0, not run) | They move like the site's storage. An item in neither place is gone on without, and said |
 | Whether 2.19675.0 and the builds people run write `config.json.journal` in 2.7032.0's format | A journal valid by its own hashes is the settings. A stale one is ignored. A header that does not parse refuses every change |
 | Whether a stale journal Pitboard left in place can become valid again | Only where a later write makes `config.json` the file it was written over, and then its body is that run's settings |
-| The names of Chromium's and Claude's temporary files, which no listing has held | The patterns read in 2.42304.0 pass, each beside a name the layout classifies, and Chromium's only beside a file that stays. Any other name stops the start of a move |
 | Whether the builds people run keep the five cookie names, `meta.version` 24 and `v10` | Signed out needs none of the five names and emptied caches. Another shape refuses |
 | Whether Claude ever keeps a `sessionKey` for both `.claude.ai` and `claude.ai` | Refused, whatever the values: one session on both hosts is not told from two |
 | Whether the emptied token cache is 28 characters on the builds people run | A cache of another length is not emptied, so the folder is never read as signed out |

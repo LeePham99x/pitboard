@@ -7,6 +7,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Pitboard says to open Claude when a Claude Desktop change finds Claude's Reset App Data
+  waiting to delete its data folder, instead of asking you to update Pitboard.
+
+### Fixed
+
+- Pitboard adds and switches Claude Desktop accounts with Claude 3.1623.0 and later, and
+  leaves the names it does not move where Claude keeps them, such as `SharedStorage` and
+  `design`, instead of refusing each name it has not read.
+- Pitboard switches Claude Desktop accounts beside a `Claude-3p` folder that Claude does not
+  run from, such as one an earlier build left holding only `claude_desktop_config.json`.
+
+### Security
+
+- Pitboard's HTTPS uses rustls-webpki 0.103.16, which fixes RUSTSEC-2026-0382.
+
 ## [1.0.0-beta.4] - 2026-10-20
 
 ### Added

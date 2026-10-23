@@ -1095,7 +1095,7 @@ fn a_name_that_is_no_account_id_is_never_enrolled() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
-fn a_linked_data_folder_or_a_third_party_one_beside_it_refuses_every_change() {
+fn a_data_folder_pitboard_moves_no_login_in_refuses_every_change() {
     let refuses = |name: &str, spoil: &dyn Fn(&Machine), words: &str| {
         let m = two_accounts(&format!("row-4-{name}"));
         spoil(&m);
@@ -1119,9 +1119,22 @@ fn a_linked_data_folder_or_a_third_party_one_beside_it_refuses_every_change() {
     refuses(
         "third-party",
         &|m| {
-            std::fs::create_dir_all(m.ctx_home().join("claude/data-3p")).expect("a folder beside");
+            let beside = m.ctx_home().join("claude/data-3p");
+            std::fs::create_dir_all(&beside).expect("a folder beside");
+            std::fs::write(beside.join("config.json"), b"{}").expect("Claude's settings there");
         },
-        "has a `Claude-3p` folder beside it, which a third-party deployment of Claude uses",
+        "is not the one Claude runs from: it runs as a third-party deployment, from `Claude-3p` \
+         beside it",
+    );
+    refuses(
+        "reset",
+        &|m| {
+            let asked = br#"{"choice":"restart","tries":0}"#;
+            std::fs::write(data(m).join("reset-app-data"), asked).expect("a reset asked for");
+        },
+        "is waiting for Reset App Data, which deletes what it holds the next time Claude opens, \
+         so Pitboard moves no Claude Desktop login. Open Claude, quit it with Command-Q, then run \
+         this again.",
     );
     refuses(
         "link",
@@ -1132,6 +1145,43 @@ fn a_linked_data_folder_or_a_third_party_one_beside_it_refuses_every_change() {
         },
         "data folder is a link",
     );
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_reset_waiting_stops_the_recovery_of_a_move_as_it_stops_a_move() {
+    let m = desktop_pair("reset-mid-move");
+    killed(&m, "leave.jar_out", "home");
+    let asked = br#"{"choice":"restart","tries":0}"#;
+    std::fs::write(data(&m).join("reset-app-data"), asked).expect("a reset asked for");
+    recover(&m).expect("swept");
+    let before = snapshot(&m);
+    let stopped = refused(&m, "home");
+    assert_eq!(stopped.code(), "login_folder_unknown", "{stopped}");
+    let said = stopped.to_string();
+    assert!(said.contains("is waiting for Reset App Data"), "{said}");
+    assert!(
+        said.contains("Open Claude, quit it with Command-Q"),
+        "{said}"
+    );
+    unchanged(&m, &before, "a reset waiting");
+    assert!(
+        !state_of(&m).moving.is_empty(),
+        "the move waits for its recovery"
+    );
+
+    std::fs::write(data(&m).join("reset-app-data.given-up"), b"").expect("given up");
+    used(&m, "home");
+    assert!(
+        state_of(&m).moving.is_empty(),
+        "settled once Claude gave the reset up"
+    );
+    assert_eq!(in_use(&m).as_deref(), Some("home"));
+    hold(&m, "a reset given up");
+    rested(&m, "a reset given up");
 }
 
 #[test]
@@ -1681,9 +1731,10 @@ fn a_login_is_never_moved_over_anything() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
-fn an_entry_pitboard_has_not_read_stops_the_start_of_a_move_and_not_its_recovery() {
+fn a_part_of_the_accounts_data_pitboard_has_not_read_stops_the_start_of_a_move_and_not_its_recovery()
+ {
     let m = desktop_pair("row-21");
-    std::fs::create_dir(data(&m).join("Network")).expect("an entry not read");
+    std::fs::create_dir(data(&m).join("Network")).expect("the jar's other place");
     recover(&m).expect("swept");
     let before = snapshot(&m);
     let stopped = refused(&m, "home");
@@ -1709,6 +1760,70 @@ fn an_entry_pitboard_has_not_read_stops_the_start_of_a_move_and_not_its_recovery
     assert!(park_of(&m, "work").is_some());
     hold(&m, "recovered beside an entry not read");
     rested(&m, "recovered beside an entry not read");
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_claude_3p_folder_claude_does_not_run_from_stops_no_switch() {
+    let m = desktop_pair("third-party-not-run");
+    let beside = m.ctx_home().join("claude/data-3p");
+    std::fs::create_dir_all(&beside).expect("a folder beside");
+    let left = br#"{"enterpriseConfig": {}, "_cfprefsMigrated": true}"#;
+    let config = beside.join("claude_desktop_config.json");
+    std::fs::write(&config, left).expect("an earlier build's");
+    assert!(matches!(used(&m, "home").0, Outcome::Switched { .. }));
+    std::fs::write(beside.join("config.json"), b"{}").expect("Claude ran from it once");
+    std::fs::write(&config, br#"{"deploymentMode": "1p"}"#).expect("claude.ai picked since");
+    assert!(matches!(used(&m, "work").0, Outcome::Switched { .. }));
+    hold(&m, "beside a `Claude-3p` Claude does not run from");
+    rested(&m, "beside a `Claude-3p` Claude does not run from");
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_name_pitboard_does_not_move_stays_where_claude_keeps_it() {
+    let m = desktop_pair("names-stay");
+    let geometry = br#"{"width":1200,"height":800,"x":0,"y":25,"isMaximized":false}"#;
+    std::fs::write(data(&m).join("design"), geometry).expect("Claude Design's window");
+    // Issue 271's: an earlier Chromium's store, which Chromium 152 no longer opens.
+    for name in ["SharedStorage", "SharedStorage-wal", "SharedStorage-shm"] {
+        std::fs::write(data(&m).join(name), name).expect("a store nothing reads");
+    }
+    std::fs::create_dir(data(&m).join("one-shot-cwd")).expect("a folder of Claude 3's");
+    std::fs::write(data(&m).join("session-popouts.json.tmp"), b"").expect("a write cut short");
+    let elsewhere = data(&m).join("IndexedDB/https_www.example.com_0.indexeddb.leveldb");
+    std::fs::create_dir_all(&elsewhere).expect("another site's store");
+    for label in ["home", "work"] {
+        assert!(
+            matches!(used(&m, label).0, Outcome::Switched { .. }),
+            "{label}"
+        );
+        assert_eq!(in_use(&m).as_deref(), Some(label));
+        assert_eq!(
+            std::fs::read(data(&m).join("design")).expect("still there"),
+            geometry
+        );
+        for name in ["SharedStorage", "SharedStorage-wal", "SharedStorage-shm"] {
+            assert_eq!(
+                std::fs::read(data(&m).join(name)).expect(name),
+                name.as_bytes()
+            );
+        }
+        assert!(data(&m).join("one-shot-cwd").is_dir(), "{label}");
+        assert!(
+            data(&m).join("session-popouts.json.tmp").is_file(),
+            "{label}"
+        );
+        assert!(elsewhere.is_dir(), "{label}");
+    }
+    hold(&m, "names that stay");
+    rested(&m, "names that stay");
 }
 
 #[test]
