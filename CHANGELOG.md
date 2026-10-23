@@ -20,6 +20,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard switches Claude Desktop accounts beside a `Claude-3p` folder that Claude does not
   run from, such as one an earlier build left holding only `claude_desktop_config.json`.
 
+### Security
+
+- Pitboard's HTTPS uses rustls-webpki 0.103.16, which fixes RUSTSEC-2026-0382.
+
 ## [1.0.0-beta.4] - 2026-10-20
 
 ### Added
