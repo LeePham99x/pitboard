@@ -21,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
 - On Linux, Pitboard and its install script work as root in a home root owns, as on a server
   whose only user is root, and refuse only under `sudo` or as root in another user's home.
+- `pitboard --help` wraps to the terminal, lists the commands in the order you use them and
+  ends with three examples.
 
 ### Fixed
 

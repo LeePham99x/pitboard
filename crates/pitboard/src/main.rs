@@ -28,10 +28,16 @@ const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
 #[derive(Parser)]
-#[command(name = "pitboard", bin_name = "pitboard", version, about = ABOUT)]
+#[command(
+    name = "pitboard",
+    bin_name = "pitboard",
+    version,
+    about = ABOUT,
+    max_term_width = 100,
+    after_help = examples()
+)]
 struct Cli {
-    /// Machine-readable output: the same versioned JSON envelope for every command,
-    /// whether it succeeds or fails
+    /// Print JSON instead of text
     #[arg(long, global = true)]
     json: bool,
 
@@ -48,24 +54,33 @@ const ABOUT: &str = if cfg!(windows) {
      out, and see what each Claude Code and Codex account has left"
 };
 
+// Styled as clap styles `Commands:` and the commands under it.
+fn examples() -> String {
+    let styles = clap::builder::Styles::styled();
+    let (heading, literal) = (styles.get_header(), styles.get_literal());
+    let mut said = format!("{heading}Examples:{heading:#}");
+    for (typed, does) in [
+        (
+            "pitboard enroll personal",
+            "Add the account Claude Code is signed in to",
+        ),
+        (
+            "pitboard enroll work --sign-in",
+            "Sign in to another account and add it",
+        ),
+        ("pitboard use work", "Switch Claude Code to work"),
+    ] {
+        said.push_str(&format!("\n  {literal}{typed:<30}{literal:#}  {does}"));
+    }
+    said
+}
+
 const LABEL_TO_ENROLL: &str = if cfg!(windows) {
     "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
      account; a bare name means Claude Code"
 } else {
     "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
      account, `desktop/work` a Claude Desktop one; a bare name means Claude Code"
-};
-
-const SIGN_IN: &str = if cfg!(windows) {
-    "Sign in through the tool's own sign-in, without signing out of the account in use: for \
-     the account in use, this puts its new login in use, and for another enrolled label, it \
-     renews its parked login"
-} else {
-    "For Claude Code and Codex, sign in through the tool's own sign-in, without signing out of \
-     the account in use: for the account in use, this puts its new login in use, and for \
-     another enrolled label, it renews its parked login. For Claude Desktop, Pitboard parks the \
-     account in use, leaving Claude signed out, waits while you sign in inside Claude and quit \
-     it, then puts that login in use under the label"
 };
 
 const LABEL_TO_USE: &str = if cfg!(windows) {
@@ -91,13 +106,6 @@ enum Command {
         #[arg(long, conflicts_with = "offline")]
         fresh: bool,
     },
-    /// Add an account: the one signed in now, or with --sign-in, another one
-    Enroll {
-        #[arg(value_parser = label_to_enroll, help = LABEL_TO_ENROLL)]
-        label: String,
-        #[arg(long, help = SIGN_IN)]
-        sign_in: bool,
-    },
     /// Switch a tool to an enrolled account
     Use {
         #[arg(help = LABEL_TO_USE)]
@@ -107,49 +115,13 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    /// Drop an account and its parked login
-    Forget {
-        /// The label to drop
+    /// Add an account: the one signed in now, or with --sign-in, another one
+    Enroll {
+        #[arg(value_parser = label_to_enroll, help = LABEL_TO_ENROLL)]
         label: String,
-        /// Do not ask first; needed without a terminal or with `--json`
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
-    #[command(about = STOW)]
-    Stow {
-        /// Do not ask first; needed without a terminal or with `--json`
-        #[arg(short = 'y', long)]
-        yes: bool,
-    },
-    /// Give up on an interrupted switch that cannot be finished, keeping every login
-    Abandon,
-    /// Ask the credential store what parked logins are here, and account for every one
-    Repair,
-    /// Take over a Pitboard directory another computer wrote, keeping the accounts
-    Adopt,
-    /// Renew every parked login that is due, and nothing else
-    Renew {
-        // Given by `--scheduled`, which only the parser knows (`with_the_jobs_markers`).
-        #[arg(skip)]
-        scheduled: bool,
-    },
-    /// Keep parked logins alive without running anything yourself
-    Schedule {
-        #[command(subcommand)]
-        what: ScheduleCommand,
-    },
-    /// What Pitboard has changed, and when
-    Log {
-        /// How many changes to show
-        #[arg(short = 'n', long, default_value_t = 20)]
-        lines: usize,
-    },
-    /// Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch
-    /// service and Pitboard's own files
-    Uninstall {
-        /// Do not ask first; needed without a terminal or with `--json`
-        #[arg(short = 'y', long)]
-        yes: bool,
+        /// Sign in through the tool's own sign-in, without signing out of the account in use
+        #[arg(long)]
+        sign_in: bool,
     },
     /// Change the label an account is enrolled under
     Rename {
@@ -159,18 +131,15 @@ enum Command {
         #[arg(value_parser = new_label)]
         to: String,
     },
-    /// Check that what Pitboard relies on still holds on this machine
-    Doctor,
-    /// One line for Claude Code's status bar; reads its session JSON on stdin
-    Statusline,
-    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
-    /// while the app or `pitboard watch` runs
-    Warm {
-        #[command(subcommand)]
-        what: Option<warm::WarmCommand>,
+    /// Drop an account and its parked login
+    Forget {
+        /// The label to drop
+        label: String,
+        /// Do not ask first; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
-    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
-    /// up the accounts `pitboard warm on` turned on, for as long as this runs
+    /// Switch Claude Code before the account in use runs out, and warm up accounts
     #[command(
         after_help = pitboard_core::words::IS_THIS_ALLOWED,
         args_conflicts_with_subcommands = true
@@ -188,6 +157,51 @@ enum Command {
         #[command(subcommand)]
         what: Option<watch::WatchCommand>,
     },
+    /// Start an account's five-hour period early, so it resets sooner
+    Warm {
+        #[command(subcommand)]
+        what: Option<warm::WarmCommand>,
+    },
+    /// One line for Claude Code's status bar; reads its session JSON on stdin
+    Statusline,
+    /// Renew every parked login that is due, and nothing else
+    Renew {
+        // Given by `--scheduled`, which only the parser knows (`with_the_jobs_markers`).
+        #[arg(skip)]
+        scheduled: bool,
+    },
+    /// Keep parked logins alive without running anything yourself
+    Schedule {
+        #[command(subcommand)]
+        what: ScheduleCommand,
+    },
+    /// What Pitboard has changed, and when
+    Log {
+        /// How many changes to show
+        #[arg(short = 'n', long, default_value_t = 20)]
+        lines: usize,
+    },
+    /// Check that what Pitboard relies on still holds on this machine
+    Doctor,
+    /// Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch
+    /// service and Pitboard's own files
+    Uninstall {
+        /// Do not ask first; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    #[command(about = STOW)]
+    Stow {
+        /// Do not ask first; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Ask the credential store what parked logins are here, and account for every one
+    Repair,
+    /// Give up on an interrupted switch that cannot be finished, keeping every login
+    Abandon,
+    /// Take over a Pitboard directory another computer wrote, keeping the accounts
+    Adopt,
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
     /// Print the man page
@@ -2037,8 +2051,13 @@ mod tests {
         assert!(!asks(&["manpage"]));
     }
 
-    // The long help of every command a person can ask about, each under the way it is typed.
+    // The long help of every command a person can ask about, each under the way it is typed,
+    // in a terminal as wide as Pitboard wraps it at.
     fn every_help() -> String {
+        every_help_at(100)
+    }
+
+    fn every_help_at(columns: usize) -> String {
         fn each(command: &mut clap::Command, typed: &str, said: &mut String) {
             said.push_str(&format!("== {typed}\n{}\n", command.render_long_help()));
             let names: Vec<String> = command
@@ -2051,11 +2070,21 @@ mod tests {
                 each(sub, &format!("{typed} {name}"), said);
             }
         }
-        let mut cli = Cli::command();
+        let mut cli = Cli::command().term_width(columns);
         cli.build();
         let mut said = String::new();
         each(&mut cli, "pitboard", &mut said);
         said
+    }
+
+    #[test]
+    fn every_help_fits_an_80_column_terminal() {
+        let every = every_help_at(80);
+        let over: Vec<&str> = every
+            .lines()
+            .filter(|line| ui::columns(line) > 80)
+            .collect();
+        assert!(over.is_empty(), "{over:#?}");
     }
 
     #[test]
@@ -2073,10 +2102,8 @@ mod tests {
         assert!(!every.contains("keychain"), "{every}");
         let read = every.split_whitespace().collect::<Vec<_>>().join(" ");
         for said in [
-            "warm Start the five-hour period of the accounts you choose as soon as the last one \
-             resets, while the app or `pitboard watch` runs",
-            "watch Switch Claude Code to another of your accounts before the one in use runs out, \
-             and warm up the accounts `pitboard warm on` turned on, for as long as this runs",
+            "watch Switch Claude Code before the account in use runs out, and warm up accounts",
+            "warm Start an account's five-hour period early, so it resets sooner",
             "now Start an account's five-hour period now, whatever the span, through one short \
              request Claude Code makes with that account's login",
             "stow Put away the login Claude Code left in a file behind Credential Manager, then \
@@ -2108,14 +2135,11 @@ mod tests {
             let every = every_help();
             assert!(!every.contains("Desktop"), "{every}");
             assert!(!every.contains("desktop/"), "{every}");
-            for said in [
-                "Sign in through the tool's own sign-in, without signing out of the account in \
-                 use: for the account in use, this puts its new login in use, and for another \
-                 enrolled label, it renews its parked login",
-                "`codex/work` names a Codex account; a bare name means Claude Code",
-            ] {
-                assert!(enroll.contains(said), "{said}: {enroll}");
-            }
+            assert!(
+                enroll
+                    .contains("`codex/work` names a Codex account; a bare name means Claude Code"),
+                "{enroll}"
+            );
             assert!(help(Some("use")).contains("such as `work` or `codex/work`"));
             assert!(help(None).contains(
                 "Switch Claude Code and Codex between your own accounts without signing out, \
@@ -2123,18 +2147,13 @@ mod tests {
             ));
             return;
         }
-        for said in [
-            "For Claude Code and Codex, sign in through the tool's own sign-in, without signing \
-             out of the account in use: for the account in use, this puts its new login in use, \
-             and for another enrolled label, it renews its parked login.",
-            "For Claude Desktop, Pitboard parks the account in use, leaving Claude signed out, \
-             waits while you sign in inside Claude and quit it, then puts that login in use \
-             under the label",
-            "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
-             name means Claude Code",
-        ] {
-            assert!(enroll.contains(said), "{said}: {enroll}");
-        }
+        assert!(
+            enroll.contains(
+                "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
+                 name means Claude Code"
+            ),
+            "{enroll}"
+        );
         assert!(help(Some("use")).contains("`desktop/work`"));
         assert!(help(None).contains(
             "Switch Claude Code, Codex and Claude Desktop between your own accounts without \
