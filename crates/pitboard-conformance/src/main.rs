@@ -578,12 +578,12 @@ mod tests {
         // The well-known file read ahead of the variable, in the source check and the login.
         for (read, reordered) in [
             (
-                r#";if(a.CLAUDE_CODE_OAUTH_TOKEN)return{source:"CLAUDE_CODE_OAUTH_TOKEN""#,
-                r#";if(JT())return{source:"CCR_OAUTH_TOKEN_FILE",hasToken:!0};if(a.CLAUDE_CODE_OAUTH_TOKEN)return{source:"CLAUDE_CODE_OAUTH_TOKEN""#,
+                r#";if(i.CLAUDE_CODE_OAUTH_TOKEN||QI()!==null)return{source:"CLAUDE_CODE_OAUTH_TOKEN""#,
+                r#";if(Zv())return{source:"CCR_OAUTH_TOKEN_FILE",hasToken:!0};if(i.CLAUDE_CODE_OAUTH_TOKEN||QI()!==null)return{source:"CLAUDE_CODE_OAUTH_TOKEN""#,
             ),
             (
-                "(){if(a.CLAUDE_CODE_OAUTH_TOKEN)",
-                "(){let e=JT();if(e)return n(e);if(a.CLAUDE_CODE_OAUTH_TOKEN)",
+                "(){if(i.CLAUDE_CODE_OAUTH_TOKEN)",
+                "(){let e=Zv();if(e)return n(e);if(i.CLAUDE_CODE_OAUTH_TOKEN)",
             ),
         ] {
             assert!(windows.contains(read), "{read}");
@@ -593,8 +593,9 @@ mod tests {
             assert_eq!(moved, ["windows_token_env"], "{reordered}");
         }
         for gone in [
-            r#"return{source:"ANTHROPIC_AUTH_TOKEN",hasToken:!0};if(a.CLAUDE_CODE_OAUTH_TOKEN)return{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
-            "(){if(a.CLAUDE_CODE_OAUTH_TOKEN)return{accessToken:a.CLAUDE_CODE_OAUTH_TOKEN,refreshToken:null,expiresAt:null",
+            r#"return{source:"ANTHROPIC_AUTH_TOKEN",hasToken:!0};if(i.CLAUDE_CODE_OAUTH_TOKEN||QI()!==null)return{source:"CLAUDE_CODE_OAUTH_TOKEN",hasToken:!0}"#,
+            "(){if(i.CLAUDE_CODE_OAUTH_TOKEN)return Zf(i.CLAUDE_CODE_OAUTH_TOKEN);",
+            "{accessToken:e,refreshToken:null,expiresAt:null,scopes:zw(),",
             "process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
             "windowsHide:!0,env:process.env}).trim().split(",
         ] {

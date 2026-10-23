@@ -308,6 +308,9 @@ pub(crate) enum ProviderError {
     /// Refused for good: revoked, or already spent somewhere else.
     #[error("{service} no longer accepts this login")]
     InvalidGrant { service: &'static str },
+    // Refused as another client than the login's own, which says nothing of the login.
+    #[error("{detail}")]
+    OtherClient { detail: String },
     /// The credential is not the shape this provider stores.
     #[error("the stored login is not the shape {provider} keeps: {detail}")]
     ShapeUnexpected {
@@ -644,6 +647,11 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// own. Read from files as well as this process's environment, so the app, which has no
     /// shell environment at all, gets the same answer as the command line.
     fn overridden_by(&self, ctx: &Context) -> Vec<String>;
+
+    // Why this tool, as this machine configures it, would sign `document`, `owner`'s login, out
+    // or leave it unused once in place, as a sentence with no full stop. A move-only park is the
+    // only copy.
+    fn refuses(&self, ctx: &Context, document: &Value, owner: &Owner) -> Option<String>;
 
     /// The file behind the store in use, wherever a look says it is there, whatever it
     /// holds. `None` where there is none, and where whether there is one cannot be told: the

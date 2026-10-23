@@ -29,7 +29,22 @@ An automatic switch would miss the `codex` session it was meant to keep going, s
 
 Pitboard moves only logins you already hold, between its own store and the place each tool reads them. It has no way to share an account between people.
 
-Anthropic's and OpenAI's terms decide whether you may use several subscriptions this way. As read on 4 October 2026, Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use) page sets these terms for third-party developers. They may not offer Claude.ai login in their own applications. They may not route requests through Free, Pro or Max plan credentials on behalf of their users. They may not collect, store or intermediate Claude.ai credentials or session tokens. Sign-in to a Claude account must complete through Anthropic's own flow.
+Anthropic's and OpenAI's terms decide whether you may use several subscriptions this way. Pitboard does four things those terms may cover:
+
+- It keeps Claude Code's and Codex's logins in its own store and renews them.
+- It sends their tokens to Anthropic and OpenAI itself, as [What leaves your machine](/security#what-leaves-your-machine) lists.
+- [Automatic switching](/guides/automatic-switching) moves Claude Code to another account before a limit runs out.
+- A [warm-up](/guides/warm-up) sends a request on a schedule to start an account's five-hour period.
+
+As read on 23 October 2026:
+
+- Anthropic's [Authentication](https://code.claude.com/docs/en/authentication#log-in-with-multiple-accounts) page shows how to stay signed in to several accounts at once, "such as work and personal accounts".
+- Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use) page says Pro and Max limits "assume ordinary, individual usage". It says third-party developers "may not collect, store, or intermediate Claude.ai credentials or session tokens".
+- From 12 November 2026, Anthropic's [Usage Policy](https://www.anthropic.com/legal/aup) forbids creating multiple accounts "to avoid detection, circumvent product guardrails". It also forbids bypassing "capabilities, restrictions, or guardrails established within our products" without "prior authorization from Anthropic".
+- Each seat of a [Team plan](https://support.claude.com/en/articles/12004354-purchase-and-manage-seats-on-team-plans) is for one named individual, and users "can't route their work through another user's account to use that user's remaining usage".
+- OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use/) forbid circumventing "any rate limits or restrictions". Its [Services Agreement](https://openai.com/policies/services-agreement/), for Business and Enterprise workspaces, forbids configuring the services "to avoid Usage Limits".
+
+Neither names a tool like Pitboard. Whether either counts what Pitboard does under these terms is not known.
 
 A claude.ai [account window](/concepts/account-windows) signs in on claude.ai's own pages. On macOS, WebKit keeps the sign-in's cookies under Pitboard's bundle identifier, and on Windows, WebView2 keeps them in Pitboard's app data folder. A Claude Desktop switch renames Claude's files, its session cookie among them, into a folder of Pitboard's and back. Whether Anthropic counts either under those terms is not known.
 
@@ -39,8 +54,10 @@ A claude.ai [account window](/concepts/account-windows) signs in on claude.ai's 
 - Windows older than Windows 11 24H2, build 26100. Pitboard reads there and refuses every change with `system_too_old`. Windows Server 2025 meets the floor.
 - Claude Code and Codex inside WSL, from Pitboard on Windows. Pitboard's Linux build, run inside WSL, switches them, as [Install inside WSL](/install#install-inside-wsl) says. A Codex there that uses the Windows Codex home shares its login with Codex on Windows.
 - Claude Code with `CLAUDE_CODE_CUSTOM_OAUTH_URL` set. Its login then sits under a name Pitboard does not read. [Custom OAuth endpoint](/reference/environment-variables#custom-oauth-endpoint) lists what Pitboard refuses.
-- Claude Code set to use `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `apiKeyHelper` or a third-party provider. Its sessions ignore the login Pitboard switches. [Variables that override the login](/reference/environment-variables#variables-that-override-the-login) lists them all.
+- Claude Code set to use `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `apiKeyHelper`, an Anthropic profile, a third-party provider or a Cloud gateway that managed settings require. Its sessions ignore the login Pitboard switches. [Variables that override the login](/reference/environment-variables#variables-that-override-the-login) lists them all.
+- A Claude Code account of an organisation that a managed `forceLoginOrgUUID` leaves out. Claude Code refuses its login, and Pitboard refuses to switch to it with `login_restricted`.
 - Codex signed in with an API key rather than ChatGPT.
+- A Codex account that `forced_login_method`, `forced_chatgpt_workspace_id`, `allowed_login_methods` or `allowed_chatgpt_workspaces` rules out. Codex signs out of its login or leaves it unused, and Pitboard refuses with `login_restricted`. [Codex settings rule out an account](/troubleshooting/codex#codex-settings-rule-out-an-account) says what to change.
 - Codex keeping its login anywhere but its file store, `auth.json`: in a keychain, in Credential Manager, in its encrypted `secrets` store or in memory. [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) shows how to check.
 - Claude Desktop on Windows and Linux.
 - A third-party deployment of Claude, which runs from `Claude-3p`, as read in Claude 3.6556.2, and Claude's own account switcher, as read in 2.7032.0. Pitboard moves no login while Claude's cookie store holds two sessions of one name.

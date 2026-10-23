@@ -100,7 +100,7 @@ Each folder holds:
 
 ## Claude Code files
 
-Each place was read in Claude Code builds 2.1.278 to 2.1.300, and in 2.1.301 on Windows.
+Each place was read in Claude Code builds 2.1.278 to 2.1.309, and in 2.1.301 to 2.1.309 on Windows.
 
 | Path | What Pitboard does with it |
 | --- | --- |
@@ -114,14 +114,15 @@ Each place was read in Claude Code builds 2.1.278 to 2.1.300, and in 2.1.301 on 
 | `~/.claude/.oauth_refresh.lock` and `~/.claude.lock` | The locks Claude Code takes, in that order, before it renews its login. Pitboard holds both through every Claude Code switch, `pitboard stow`, and each renewal of Claude Code's login. |
 | `~/.claude/daemon.lock` | Read by `pitboard doctor` for the daemon Claude Code last started and its version. |
 | `~/.claude/settings.json` | Read for `apiKeyHelper` and for an `env` block that sets a [variable Pitboard checks](/reference/environment-variables#variables-that-override-the-login), `CLAUDE_CODE_CUSTOM_OAUTH_URL` or, on Windows, `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN`. There, `""`, `"0"` and `"false"` count as unset. A project's settings are not read. |
-| `managed-settings.json` and `managed-settings.d/*.json` | Read as `settings.json` is, in `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows or `/etc/claude-code` on Linux. |
+| `managed-settings.json` and `managed-settings.d/*.json` | Read as `settings.json` is, in `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows or `/etc/claude-code` on Linux. Also read for `forceLoginMethod` and `forceLoginGatewayUrl`, which can send sessions through the Cloud gateway, and for `forceLoginOrgUUID`, which limits the organisations Claude Code signs in to. |
+| `~/.config/anthropic/active_config` and `configs/*.json` beside it | Read for the [Anthropic profile](/reference/environment-variables#anthropic-profiles) Claude Code signs in with before the login. On Windows, in `%APPDATA%\Anthropic`. Never written. |
 | The registry value `Settings` under `SOFTWARE\Policies\ClaudeCode` | Windows: read as `settings.json` is, in `HKEY_LOCAL_MACHINE` and in `HKEY_CURRENT_USER`. |
 | `/home/claude/.claude/remote/.oauth_token` and `.api_key` | macOS and Linux: read for a token Claude Code signs in with before the login, as read in 2.1.303. While either holds one, changes to Claude Code accounts warn with `auth_overridden`, and while `.api_key` holds one, Pitboard [warms up](/guides/warm-up#when-it-holds-back) no account. Never written. |
 | `\home\claude\.claude\remote\.oauth_token` and `.api_key` at the root of each fixed drive | Windows: read as `/home/claude/.claude/remote` is elsewhere, since Claude Code's path there names no drive. |
 
 With `CLAUDE_CONFIG_DIR` or `CLAUDE_SECURESTORAGE_CONFIG_DIR` set, the keychain or Credential Manager item's name ends in `-` and the first 8 hex characters of the SHA-256 of that path as written.
 
-Pitboard waits about 7.5 seconds for a held Claude Code lock, then stops with `switch_in_progress`. As read in 2.1.294 and 2.1.284, Claude Code takes over a renewal lock after 60 untouched seconds and a write lock after 15.
+Pitboard waits about 7.5 seconds for a held Claude Code lock, then stops with `switch_in_progress`. As read in 2.1.309 and 2.1.284, Claude Code takes over a renewal lock after 60 untouched seconds and a write lock after 15.
 
 ## Codex files
 
@@ -130,7 +131,7 @@ Each place was read in Codex 0.160.0, and in 0.163.0 on Windows.
 | Path | What Pitboard does with it |
 | --- | --- |
 | `~/.codex/auth.json` | The login in use. A switch reads and replaces it. |
-| `~/.codex/config.toml` | Read for the settings that choose Codex's login store. Never written. |
+| `~/.codex/config.toml` | Read for the settings that choose Codex's login store and the logins it keeps. Never written. |
 
 On Windows, Codex's home is `.codex` in the profile folder Windows names for your account, whatever `USERPROFILE` says, as read in Codex 0.162.1.
 
@@ -161,6 +162,8 @@ The system's `requirements.toml`, in `/etc/codex` or in `%ProgramData%\OpenAI\Co
 The `Codex login store` line of `pitboard doctor` names the place that chose. Codex does not start while one of them is there and unreadable. Pitboard then refuses with `live_store_unsupported`.
 
 Pitboard reads a `profile = "<name>"` line as choosing the `[profiles.<name>]` table, which never sets the store. It refuses a line that names a profile no table defines.
+
+As read in Codex 0.164.0, four settings limit which ChatGPT logins Codex keeps. Codex reads `forced_login_method` and `forced_chatgpt_workspace_id` from the same places as the store. As it starts, it signs out of a login they rule out and deletes it. It reads `allowed_login_methods` and `allowed_chatgpt_workspaces` from the requirements that pin the store, and leaves a login they rule out unused. Pitboard puts no such login in use, and refuses with `login_restricted`. The `Codex login restrictions` line of `pitboard doctor` names each setting and the accounts it rules out.
 
 Pitboard does not read three places Codex also reads:
 

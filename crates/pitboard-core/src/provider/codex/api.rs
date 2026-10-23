@@ -14,12 +14,48 @@ use serde_json::Value;
 /// client can only be renewed as it.
 pub(crate) const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
+const ISSUER: &str = "https://auth.openai.com";
 pub(crate) const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub(crate) const USAGE_BASE: &str = "https://chatgpt.com/backend-api";
 
-fn token_url(ctx: &Context) -> String {
+// Where a login is renewed and as which client (`codex_renewal`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Authority {
+    issuer: String,
+    pub(crate) client_id: String,
+}
+
+impl Authority {
+    // What `tokens.oauth_provenance` records, else Codex's own. Only over https, since the
+    // refresh token goes there.
+    pub(crate) fn of(tokens: &Value) -> Result<Authority, String> {
+        let Some(recorded) = tokens.get("oauth_provenance").filter(|v| !v.is_null()) else {
+            return Ok(Authority {
+                issuer: ISSUER.into(),
+                client_id: CLIENT_ID.into(),
+            });
+        };
+        match (recorded["issuer"].as_str(), recorded["client_id"].as_str()) {
+            (Some(issuer), Some(client_id))
+                if issuer.starts_with("https://") && !client_id.is_empty() =>
+            {
+                Ok(Authority {
+                    issuer: issuer.into(),
+                    client_id: client_id.into(),
+                })
+            }
+            _ => Err("its tokens.oauth_provenance names no https issuer and client".into()),
+        }
+    }
+
+    pub(crate) fn token_url(&self) -> String {
+        format!("{}/oauth/token", self.issuer.trim_end_matches('/'))
+    }
+}
+
+fn token_url(ctx: &Context, authority: &Authority) -> String {
     test_base(ctx).map_or_else(
-        || TOKEN_URL.to_string(),
+        || authority.token_url(),
         |base| format!("{base}/oauth/token"),
     )
 }
@@ -68,17 +104,17 @@ pub(crate) trait OpenAi: Send + Sync + std::fmt::Debug {
         &self,
         ctx: &Context,
         access_token: &str,
-        account_id: &str,
+        login: Login<'_>,
         now: i64,
     ) -> Result<Snapshot, ProviderError>;
 
-    /// The token exchange, which spends `refresh_token` as it answers, so it takes the
-    /// [`Permit`] only the one gate every change passes makes.
+    // Spends `refresh_token` as it answers, so it takes the Permit only the change gate makes.
     fn renew(
         &self,
         ctx: &Context,
         permit: Permit,
         refresh_token: &str,
+        authority: &Authority,
     ) -> Result<Fresh, ProviderError>;
 }
 
@@ -91,10 +127,10 @@ impl OpenAi for Network {
         &self,
         ctx: &Context,
         access_token: &str,
-        account_id: &str,
+        login: Login<'_>,
         now: i64,
     ) -> Result<Snapshot, ProviderError> {
-        ask_usage(ctx, access_token, account_id, now)
+        ask_usage(ctx, access_token, login, now)
     }
 
     fn renew(
@@ -102,8 +138,9 @@ impl OpenAi for Network {
         ctx: &Context,
         permit: Permit,
         refresh_token: &str,
+        authority: &Authority,
     ) -> Result<Fresh, ProviderError> {
-        ask_renew(ctx, permit, refresh_token)
+        ask_renew(ctx, permit, refresh_token, authority)
     }
 }
 
@@ -112,27 +149,41 @@ pub(crate) fn renew(
     ctx: &Context,
     permit: Permit,
     refresh_token: &str,
+    authority: &Authority,
 ) -> Result<Fresh, ProviderError> {
-    ctx.openai().renew(ctx, permit, refresh_token)
+    ctx.openai().renew(ctx, permit, refresh_token, authority)
+}
+
+// The login a usage answer is asked for: its `tokens.account_id`, which the request names, and
+// its ID token's person.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Login<'a> {
+    pub(crate) account_id: &'a str,
+    pub(crate) user_id: Option<&'a str>,
 }
 
 pub(crate) fn usage(
     ctx: &Context,
     access_token: &str,
-    account_id: &str,
+    login: Login<'_>,
     now: i64,
 ) -> Result<Snapshot, ProviderError> {
-    ctx.openai().usage(ctx, access_token, account_id, now)
+    ctx.openai().usage(ctx, access_token, login, now)
 }
 
-fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, ProviderError> {
+fn ask_renew(
+    ctx: &Context,
+    _: Permit,
+    refresh_token: &str,
+    authority: &Authority,
+) -> Result<Fresh, ProviderError> {
     let body = serde_json::json!({
-        "client_id": CLIENT_ID,
+        "client_id": authority.client_id,
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     });
     let mut response = agent(ctx)
-        .post(token_url(ctx))
+        .post(token_url(ctx, authority))
         .header("Content-Type", "application/json")
         .send(body.to_string())
         .map_err(|e| network(e.to_string()))?;
@@ -172,27 +223,23 @@ fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, Pro
     }
 }
 
-/// Whether a failed exchange means the refresh chain is finished, read the way Codex reads
-/// it.
-///
-/// A 401 always does. A 400 does only when it says so: `invalid_grant`, which is how the
-/// current server reports a token that was spent or revoked, or one of the older codes that
-/// named which (`refresh_token_expired`, `refresh_token_reused`,
-/// `refresh_token_invalidated`). Any other 400 is a request the server did not like, and
-/// reading that as a dead login would drop a park that works. The code can be the `error`
-/// string, `error.code`, or a top-level `code`.
+// Read as Codex reads it (`codex_refusal_is_invalid_grant`): a 401, `invalid_grant` with a
+// 400, or one of the older codes. A refusal of the client is never one: it says nothing of
+// the login, and the park may be its only copy.
 fn refused_for_good(status: u16, body: &str) -> bool {
+    let body = serde_json::from_str::<Value>(body).ok();
+    let code = body.as_ref().and_then(|body| {
+        body.get("error")
+            .and_then(Value::as_str)
+            .or_else(|| body.pointer("/error/code").and_then(Value::as_str))
+            .or_else(|| body.get("code").and_then(Value::as_str))
+    });
+    if matches!(code, Some("invalid_client" | "unauthorized_client")) {
+        return false;
+    }
     if status == 401 {
         return true;
     }
-    let Ok(body) = serde_json::from_str::<Value>(body) else {
-        return false;
-    };
-    let code = body
-        .get("error")
-        .and_then(Value::as_str)
-        .or_else(|| body.pointer("/error/code").and_then(Value::as_str))
-        .or_else(|| body.get("code").and_then(Value::as_str));
     match code {
         Some("refresh_token_expired" | "refresh_token_reused" | "refresh_token_invalidated") => {
             true
@@ -202,21 +249,17 @@ fn refused_for_good(status: u16, body: &str) -> bool {
     }
 }
 
-/// How much of the plan is left, for the account this access token belongs to.
-///
-/// A standalone GET: no model request, no quota spent. `ChatGPT-Account-ID` is required and
-/// comes out of the login document, which is why usage takes the whole credential rather
-/// than a bare token.
+// A GET that spends no quota, which needs `ChatGPT-Account-ID` (`codex_usage_endpoint`).
 fn ask_usage(
     ctx: &Context,
     access_token: &str,
-    account_id: &str,
+    login: Login<'_>,
     now: i64,
 ) -> Result<Snapshot, ProviderError> {
     let mut response = agent(ctx)
         .get(usage_url(ctx))
         .header("Authorization", format!("Bearer {access_token}"))
-        .header("ChatGPT-Account-ID", account_id)
+        .header("ChatGPT-Account-ID", login.account_id)
         .call()
         .map_err(|e| network(e.to_string()))?;
     match response.status().as_u16() {
@@ -226,6 +269,7 @@ fn ask_usage(
                 .read_to_string()
                 .map_err(|e| network(e.to_string()))?;
             let body: Value = serde_json::from_str(&text).map_err(|e| malformed(e.to_string()))?;
+            answered_for(&body, login.account_id, login.user_id)?;
             Ok(snapshot(&body, now))
         }
         401 | 403 => Err(ProviderError::Unauthorized),
@@ -240,23 +284,50 @@ fn ask_usage(
     }
 }
 
-/// OpenAI's answer in Pitboard's own shape.
-///
-/// Measured against the live endpoint rather than taken from a description of it. The
-/// windows are under `rate_limit`, the length is `limit_window_seconds` and the reset is
-/// `reset_at`; a reading of the source had all three somewhere else, and the parser built
-/// from it returned no windows at all while the request itself succeeded.
-///
-/// A window that will not normalise is dropped rather than drawn, the same rule the Claude
-/// Code side has always used: a number nobody can explain is worse than no number.
-///
-/// Either window can be null (`codex_usage_endpoint`), and nothing measured says whether a
-/// null one is not running or was left out, so an answer is not taken to list every limit.
+// An answer that names another account or person than the login's gives no numbers of it
+// (`codex_model_limits`). One that names neither is taken as the login's, as an older one is.
+fn answered_for(
+    body: &Value,
+    account_id: &str,
+    user_id: Option<&str>,
+) -> Result<(), ProviderError> {
+    let said = |key: &str| body.get(key).and_then(Value::as_str);
+    let another = said("account_id").is_some_and(|named| named != account_id)
+        || said("user_id")
+            .zip(user_id)
+            .is_some_and(|(named, asked)| named != asked);
+    if another {
+        return Err(malformed(
+            "it is for another account than the login asked about".into(),
+        ));
+    }
+    Ok(())
+}
+
+// The shape measured from a live answer (`codex_usage_endpoint`), and a model's own limits
+// scoped to its `limit_name` (`codex_model_limits`). A window that will not normalise is
+// dropped, and as either can be null, no answer is taken to list every limit.
 fn snapshot(body: &Value, now: i64) -> Snapshot {
-    let limits = &body["rate_limit"];
-    let windows = ["primary_window", "secondary_window"]
+    let windows_of = |limits: &Value, scope: Option<&str>| -> Vec<Window> {
+        ["primary_window", "secondary_window"]
+            .into_iter()
+            .filter_map(|which| window(limits.get(which)?, which, scope))
+            .collect()
+    };
+    let models = body["additional_rate_limits"]
+        .as_array()
         .into_iter()
-        .filter_map(|which| window(limits.get(which)?, which))
+        .flatten()
+        .filter_map(|limit| {
+            let name = limit["limit_name"]
+                .as_str()
+                .filter(|name| !name.is_empty())?;
+            Some(windows_of(&limit["rate_limit"], Some(name)))
+        })
+        .flatten();
+    let windows = windows_of(&body["rate_limit"], None)
+        .into_iter()
+        .chain(models)
         .collect();
     Snapshot {
         windows,
@@ -267,7 +338,7 @@ fn snapshot(body: &Value, now: i64) -> Snapshot {
     }
 }
 
-fn window(value: &Value, which: &str) -> Option<Window> {
+fn window(value: &Value, which: &str, scope: Option<&str>) -> Option<Window> {
     let percent = value.get("used_percent").and_then(Value::as_f64)?;
     if !percent.is_finite() || percent < 0.0 {
         return None;
@@ -275,7 +346,7 @@ fn window(value: &Value, which: &str) -> Option<Window> {
     let seconds = value.get("limit_window_seconds").and_then(Value::as_i64);
     Some(Window {
         kind: kind(seconds, which),
-        scope: None,
+        scope: scope.map(str::to_owned),
         percent,
         resets_at: value.get("reset_at").and_then(moment),
         // OpenAI says which window a request is being judged against only by filling one
@@ -344,8 +415,43 @@ mod tests {
             assert!(refused_for_good(400, &format!(r#"{{"code":"{code}"}}"#)));
         }
         assert!(!refused_for_good(400, r#"{"error":"invalid_request"}"#));
+        assert!(
+            !refused_for_good(401, r#"{"error":"invalid_client"}"#),
+            "a refusal of the client says nothing of the login"
+        );
+        assert!(!refused_for_good(400, r#"{"error":"unauthorized_client"}"#));
         assert!(!refused_for_good(400, "not json"));
         assert!(!refused_for_good(403, r#"{"error":"invalid_grant"}"#));
+    }
+
+    // Codex 0.164.0's refresh_token_endpoint and the client id beside it.
+    #[test]
+    fn a_login_is_renewed_where_its_provenance_says_it_was_issued() {
+        let codex = Authority::of(&serde_json::json!({"refresh_token": "r"})).expect("Codex's");
+        assert_eq!(codex.token_url(), TOKEN_URL);
+        assert_eq!(codex.client_id, CLIENT_ID);
+        let recorded = Authority::of(&serde_json::json!({"oauth_provenance": {
+            "issuer": "https://auth.example.com/", "client_id": "app_other"
+        }}))
+        .expect("recorded");
+        assert_eq!(recorded.client_id, "app_other");
+        assert_eq!(
+            token_url(
+                &Context::new(std::path::PathBuf::from("/nowhere")),
+                &recorded
+            ),
+            "https://auth.example.com/oauth/token"
+        );
+        for refused in [
+            serde_json::json!({"issuer": "http://auth.example.com", "client_id": "app_other"}),
+            serde_json::json!({"issuer": "https://auth.example.com"}),
+            serde_json::json!("https://auth.example.com"),
+        ] {
+            assert!(
+                Authority::of(&serde_json::json!({"oauth_provenance": refused})).is_err(),
+                "{refused}"
+            );
+        }
     }
 
     #[test]
@@ -443,6 +549,73 @@ mod tests {
                 .map(|w| w.kind.as_str())
                 .collect::<Vec<_>>(),
             vec!["seven_day", "five_hour"]
+        );
+    }
+
+    // `additional_rate_limits` at 0.164.0: a model's own `rate_limit`, which Codex shows under
+    // its `limit_name`.
+    #[test]
+    fn a_models_own_limits_are_read_under_its_name() {
+        let mut body = measured();
+        body["additional_rate_limits"] = serde_json::json!([
+            {
+                "limit_name": "codex_other",
+                "metered_feature": "codex_other",
+                "rate_limit": {
+                    "allowed": true,
+                    "limit_reached": false,
+                    "primary_window": {
+                        "used_percent": 12, "limit_window_seconds": 18_000,
+                        "reset_at": 1_790_100_000i64
+                    },
+                    "secondary_window": {
+                        "used_percent": 30.5, "limit_window_seconds": 604_800,
+                        "reset_at": 1_790_600_000i64
+                    }
+                }
+            },
+            {"limit_name": "nothing_measured", "metered_feature": "x", "rate_limit": null}
+        ]);
+        let read: Vec<(String, Option<String>, f64)> = snapshot(&body, 0)
+            .windows
+            .into_iter()
+            .map(|w| (w.kind, w.scope, w.percent))
+            .collect();
+        assert_eq!(
+            read,
+            [
+                ("seven_day".to_string(), None, 45.0),
+                (
+                    "five_hour".to_string(),
+                    Some("codex_other".to_string()),
+                    12.0
+                ),
+                (
+                    "seven_day".to_string(),
+                    Some("codex_other".to_string()),
+                    30.5
+                ),
+            ]
+        );
+    }
+
+    // Codex 0.164.0's app server shows what is bound to an account only where the answer's
+    // `account_id` and `user_id` are the login's.
+    #[test]
+    fn an_answer_for_another_account_gives_no_numbers() {
+        let body = measured();
+        assert!(answered_for(&body, "acc-1", Some("user-x")).is_ok());
+        assert!(answered_for(&body, "acc-1", None).is_ok());
+        assert!(answered_for(&body, "acc-2", Some("user-x")).is_err());
+        assert!(answered_for(&body, "acc-1", Some("user-y")).is_err());
+        assert!(
+            answered_for(
+                &serde_json::json!({"rate_limit": null}),
+                "acc-2",
+                Some("user-y")
+            )
+            .is_ok(),
+            "an answer that names nobody is the login's, as an older one is"
         );
     }
 

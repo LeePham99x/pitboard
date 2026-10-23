@@ -905,6 +905,7 @@ fn install_signed_in(
     let slice = tool
         .slice(login.document)
         .map_err(|e| super::shape(which, e))?;
+    super::kept(ctx, tool, &name, login.document, owner)?;
     let guard = super::write_lock(ctx, permit, tool)?;
     let Readied {
         before_raw,
@@ -1619,6 +1620,30 @@ mod tests {
             );
             hold(&m, &format!("{tool}, after enrolling the account in use"));
         }
+    }
+
+    // Codex 0.164.0 would sign the new login out and delete it as it starts
+    // (`codex_login_restrictions`), so it is not put in place, and nothing else moves.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test sets up its scratch files as a person or a tool would"
+    )]
+    fn a_new_codex_login_its_settings_rule_out_is_not_put_in_use() {
+        let m = codex_machine("restricted-sign-in");
+        std::fs::write(
+            m.ctx_home().join(".codex").join("config.toml"),
+            "forced_chatgpt_workspace_id = \"there\"\n",
+        )
+        .expect("a config");
+        let vault = m.mem.vault().services();
+
+        let refused =
+            enrolled_as(&m, "here", signed_in(&m, "here", "here-refresh-2")).expect_err("refused");
+
+        assert_eq!(refused.code(), "login_restricted", "{refused:?}");
+        assert!(in_use(&m, "here-refresh"), "the login in use stays");
+        assert_eq!(m.mem.vault().services(), vault, "nothing is parked");
     }
 
     /// Somebody signs the tool in to another account between the first read and the one

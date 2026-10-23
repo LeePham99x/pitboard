@@ -1,9 +1,11 @@
 //! Every fact about Codex CLI that Pitboard stands on, named and dated.
 //!
-//! Read from codex-cli 0.154.0, unless an entry names another build: the binary installed
-//! on the machine this was written on, the matching public source at tag `rust-v0.154.0`,
-//! and the real `auth.json` that build had written. What runs Codex beside the CLI, the
-//! ChatGPT app and the background app server, is read from the builds its entries name.
+//! First read from codex-cli 0.154.0: the binary installed on the machine this was written
+//! on, the matching public source at tag `rust-v0.154.0`, and the real `auth.json` that build
+//! had written. Every fact of the CLI's was read again in the source at tag `rust-v0.164.0`
+//! on 2026-10-23, and its four builds hold every literal, unless an entry names another
+//! build. What runs Codex beside the CLI, the ChatGPT app and the background app server, is
+//! read from the builds its entries name.
 //!
 //! See [`crate::assumptions`] for what an entry means and how a probe reads one.
 
@@ -11,7 +13,7 @@ use crate::assumptions::OnSystem::{NotRead, Pending, Read};
 use crate::assumptions::{Assumption, PerSystem};
 
 /// The build every entry below was read from on macOS and Linux, unless it names its own.
-pub(crate) const VERIFIED_AGAINST: &str = "0.154.0";
+pub(crate) const VERIFIED_AGAINST: &str = "0.164.0";
 
 // Both Windows builds of 0.163.0, read as bytes on 2026-10-20 with the source at `rust-v0.163.0`
 // against the `rust-v0.160.0` and `rust-v0.162.1` sources each reading named before.
@@ -27,6 +29,17 @@ const fn everywhere(name: &'static str, build: &'static str) -> PerSystem {
         macos: Read(build),
         linux: Read(build),
         windows: Read(WINDOWS_VERIFIED_AGAINST),
+    }
+}
+
+// Read from the source at `rust-v0.164.0`, whose darwin-arm64, linux-x64, win32-x64 and
+// win32-arm64 builds hold every literal the entry probes for.
+const fn read_from_0_164_0(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
+        windows: Read("0.164.0"),
     }
 }
 
@@ -52,15 +65,15 @@ const fn later_on_windows(
 /// on a Mac, or of the builds an entry names, and the conformance run reads the facts from
 /// the macOS, Linux and Windows builds alike.
 ///
-/// Three facts were read on a Mac alone: the ChatGPT app's codex, the app server's parent
-/// and the keychain stores. They stay read on Linux, since the code that stands on them,
-/// `holders` and the refusal of a keychain store, runs there as it does on macOS. A Linux
-/// reading of each of its own is no part of the Windows work.
+/// Two facts were read on a Mac alone: the app server's parent and the keychain stores. They
+/// stay read on Linux, since the code that stands on them, `holders` and the refusal of a
+/// keychain store, runs there as it does on macOS. A Linux reading of each of its own is no
+/// part of the Windows work.
 pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "codex_login_location",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "Codex sets no mode on Windows and keeps a keyring store's login in the secret store \
              by default, which codex_windows_login_location reads",
@@ -72,23 +85,27 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("where Linux's login is, is codex_login_location's"),
         windows: Read(WINDOWS_VERIFIED_AGAINST),
     },
-    everywhere("codex_login_shape", VERIFIED_AGAINST),
+    read_from_0_164_0("codex_login_shape"),
     everywhere("codex_identity_is_local", VERIFIED_AGAINST),
-    everywhere("codex_renewal", VERIFIED_AGAINST),
+    read_from_0_164_0("codex_renewal"),
     everywhere("codex_usage_endpoint", VERIFIED_AGAINST),
     everywhere("codex_revokes_on_its_own_sign_out", VERIFIED_AGAINST),
-    everywhere("codex_never_follows_a_switch", VERIFIED_AGAINST),
-    later_on_windows(
-        "codex_runs_inside_the_chatgpt_app",
-        "26.928.31416",
-        &["W27"],
-        "whether the app codex_windows_app_identity names runs its own codex inside its \
-         package, and whether closing its windows leaves it running, session step 10",
-    ),
+    read_from_0_164_0("codex_never_follows_a_switch"),
+    PerSystem {
+        name: "codex_runs_inside_the_chatgpt_app",
+        macos: Read("26.928.31416"),
+        linux: NotRead("ChatGPT for Linux is a package of its own, which codex_linux_app reads"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "whether the app codex_windows_app_identity names runs its own codex inside \
+                    its package, and whether closing its windows leaves it running, session \
+                    step 10",
+        },
+    },
     PerSystem {
         name: "codex_app_server_daemon",
-        macos: Read("0.159.3"),
-        linux: Read("0.159.3"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "where the app server runs from on Windows, and how it starts there, is \
              codex_windows_app_server's",
@@ -105,13 +122,13 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: NotRead(
             "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
         ),
-        linux: NotRead("OpenAI makes no desktop app for Linux"),
+        linux: NotRead("ChatGPT for Linux is a package of its own, which codex_linux_app reads"),
         windows: Read(WINDOWS_VERIFIED_AGAINST),
     },
     PerSystem {
         name: "codex_home_isolates_a_sign_in",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "an empty or unset `CODEX_HOME` is not `~/.codex` there, and is read as \
              codex_windows_home",
@@ -141,8 +158,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     everywhere("codex_refusal_is_invalid_grant", VERIFIED_AGAINST),
     PerSystem {
         name: "codex_install_places",
-        macos: Read("0.159.2"),
-        linux: Read("0.159.2"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "install.ps1, npm and winget put `codex.exe` elsewhere on Windows, which \
              codex_windows_install_places reads",
@@ -170,11 +187,11 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         "whether `codex login` runs piped, with no console window, from a program on Windows, \
          session step 9",
     ),
-    everywhere("codex_login_prints_its_address", "0.160.0"),
+    everywhere("codex_login_prints_its_address", "0.164.0"),
     PerSystem {
         name: "codex_store_layers",
-        macos: Read("0.160.0"),
-        linux: Read("0.160.0"),
+        macos: Read("0.164.0"),
+        linux: Read("0.164.0"),
         windows: NotRead(
             "Windows keeps this machine's layers in another folder, reads no \
              managed_config.toml and keeps a keyring store's login in the secret store by \
@@ -189,7 +206,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     PerSystem {
         name: "codex_managed_preferences",
-        macos: Read("0.160.0"),
+        macos: Read("0.164.0"),
         linux: NotRead(
             "Linux has no managed preferences, and Codex's Linux build holds neither of their \
              keys",
@@ -199,7 +216,9 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              their keys; what an administrator sets there is codex_windows_store_layers'",
         ),
     },
-    everywhere("codex_login_takes_a_store_override", "0.160.0"),
+    everywhere("codex_login_takes_a_store_override", "0.164.0"),
+    read_from_0_164_0("codex_login_restrictions"),
+    read_from_0_164_0("codex_model_limits"),
     PerSystem {
         name: "codex_windows_system_proxy",
         macos: NotRead(
@@ -212,8 +231,18 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "codex_wsl",
         macos: NotRead("WSL runs Codex's Linux build"),
-        linux: Read("0.163.0"),
+        linux: Read("0.164.0"),
         windows: NotRead("WSL runs Codex's Linux build"),
+    },
+    PerSystem {
+        name: "codex_linux_app",
+        macos: NotRead(
+            "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
+        ),
+        linux: Read("26.1016.61520"),
+        windows: NotRead(
+            "ChatGPT for Windows is a Store package, which codex_windows_app_identity reads",
+        ),
     },
 ];
 
@@ -228,7 +257,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     storage.rs, AuthCredentialsStoreMode in codex-rs/config/src/types.rs, and \
                     codex-rs/config/defaults.toml, at tag rust-v0.160.0, read on 2026-10-07. \
                     0.154.0 packaged the default as `.codexconfig.toml`",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::paths, and every read and write of the live login",
         probe: &["auth.json", "cli_auth_credentials_store"],
         absent: &[],
@@ -298,13 +328,29 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "codex_login_shape",
         fact: "the document is `{auth_mode, OPENAI_API_KEY, tokens{id_token, access_token, \
-               refresh_token, account_id}, last_refresh}`, and `last_refresh` is an RFC 3339 \
-               string. Codex matches on it being present at all: without it a login it would \
-               otherwise accept reads as `Token data is not available`",
-        read_from: "the AuthDotJson struct and get_token_data's pattern",
-        verified_against: VERIFIED_AGAINST,
-        depends: "provider::codex::engine's renew, which writes it on every renewal",
-        probe: &["last_refresh", "Token data is not available"],
+               refresh_token, oauth_provenance{issuer, client_id}, login_owner_id, \
+               account_id}, last_refresh}`, with `agent_identity`, `personal_access_token`, \
+               `bedrock_api_key` and `bedrock_access_keys` beside them for other sign-ins. \
+               `oauth_provenance` and `login_owner_id` are left out where a login has none, as \
+               one made before 0.164.0 has; `login_owner_id` names one completed login and \
+               renewal keeps it. `last_refresh` is an RFC 3339 string, and Codex matches on it \
+               being present at all: without it a login it would otherwise accept reads as \
+               `Token data is not available`. The access token is a JWT that names the client \
+               it was issued to, `client_id` or `azp`, which Codex reads only as a hint",
+        read_from: "AuthDotJson in codex-rs/login/src/auth/storage.rs, TokenData and \
+                    AccountOAuthProvenance in codex-rs/login/src/token_data.rs, \
+                    get_token_data in codex-rs/login/src/auth/manager.rs and OAuthSource in \
+                    codex-rs/login/src/auth/source.rs, at tag rust-v0.164.0, read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::engine's renew, which keeps every field and writes \
+                  `last_refresh` on every renewal, and reads the access token's client where \
+                  OpenAI refuses a renewal",
+        probe: &[
+            "last_refresh",
+            "Token data is not available",
+            "oauth_provenance",
+            "login_owner_id",
+        ],
         absent: &[],
     },
     Assumption {
@@ -322,14 +368,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "codex_renewal",
-        fact: "a refresh chain is exchanged at `https://auth.openai.com/oauth/token` with a \
-               JSON body `{client_id, grant_type, refresh_token}` and client id \
-               `app_EMoamEEZ73f0CkXaXp7hrann`. The answer's `id_token`, `access_token` and \
-               `refresh_token` are each written only if present, so rotation is optional",
-        read_from: "the auth manager's refresh path",
-        verified_against: VERIFIED_AGAINST,
-        depends: "provider::codex::api::renew",
-        probe: &["app_EMoamEEZ73f0CkXaXp7hrann", "auth.openai.com"],
+        fact: "a refresh chain is exchanged with a JSON body `{client_id, grant_type, \
+               refresh_token}`, and an optional `refresh_reason`, at `<issuer>/oauth/token` as \
+               `client_id`, the two `tokens.oauth_provenance` records, the issuer's last `/` \
+               dropped. A login that records none is renewed at \
+               `https://auth.openai.com/oauth/token` as `app_EMoamEEZ73f0CkXaXp7hrann`, \
+               unless `CODEX_APP_SERVER_LOGIN_CLIENT_ID` names another client; \
+               `CODEX_REFRESH_TOKEN_URL_OVERRIDE` moves every renewal. The answer's \
+               `id_token`, `access_token` and `refresh_token` are each written only if \
+               present, so rotation is optional",
+        read_from: "refresh_and_persist_chatgpt_token, refresh_token_endpoint, oauth_client_id \
+                    and request_chatgpt_token_refresh in codex-rs/login/src/auth/manager.rs, \
+                    and OAuthClient::refresh in codex-rs/login/src/oauth/client.rs, at tag \
+                    rust-v0.164.0, read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::api::renew and its Authority, which reads neither \
+                  variable",
+        probe: &[
+            "app_EMoamEEZ73f0CkXaXp7hrann",
+            "auth.openai.com",
+            "oauth_provenance",
+            "CODEX_APP_SERVER_LOGIN_CLIENT_ID",
+        ],
         absent: &[],
     },
     Assumption {
@@ -365,16 +425,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "codex_never_follows_a_switch",
         fact: "a running Codex caches its login in memory for the life of the process with no \
                expiry and no file watcher, and refuses a reload whose account id has changed, \
-               so a switch is invisible until it is started again. A refresh already under \
-               way when the file changes writes its own account's tokens over whatever is \
-               there, keeping the account id it finds, which leaves one login naming two \
-               accounts",
-        read_from: "the auth manager's cache and reload_if_account_id_matches",
-        verified_against: VERIFIED_AGAINST,
-        depends: "Adoption::RestartRequired for Codex, and what a switch tells the person",
+               so a switch is invisible until it is started again. A refresh it makes after \
+               the file changed writes nothing there unless the file holds the same login, by \
+               `login_owner_id`, `account_id` and `chatgpt_user_id`, and refuses with \
+               `Account credentials changed during refresh.`; it has spent the refresh token \
+               it sent all the same. Until 0.163.0 it wrote its own account's tokens over \
+               whatever was there, keeping the account id it found, which left one login \
+               naming two accounts",
+        read_from: "the auth manager's cache, reload_if_account_id_matches, persist_tokens, \
+                    same_login_for_persistence and same_account_login in \
+                    codex-rs/login/src/auth, at tag rust-v0.164.0, read on 2026-10-23, and \
+                    persist_tokens at rust-v0.163.0",
+        verified_against: "0.164.0",
+        depends: "Adoption::RestartRequired for Codex, what a switch tells the person, and \
+                  the refusal to park a login naming two accounts, which an older Codex leaves",
         probe: &[
             "Skipping auth reload due to account id mismatch",
             "since logged out or signed in to another account",
+            "Account credentials changed during refresh.",
         ],
         absent: &[],
     },
@@ -396,14 +464,19 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "codex_app_server_daemon",
-        fact: "codex can run on its own as a background app server, from \
-               `$CODEX_HOME/packages/app-server-daemon/releases/<version>/bin/codex`, a child \
-               of launchd that terminal sessions can share, and `codex app-server daemon \
-               restart` starts it again",
-        read_from: "the process list on 2026-10-01 and the daemon subcommands of the codex it \
-                    ran",
-        verified_against: "0.159.3",
-        depends: "provider::codex::holders's app_server_daemon",
+        fact: "codex can run on its own as a background app server, a child of launchd that \
+               terminal sessions can share, and `codex app-server daemon restart` starts it \
+               again. It runs from `$CODEX_HOME/packages/app-server-daemon`, \
+               `releases/<version>/bin/codex` through the link `current`. Where that has no \
+               `current` and an older Codex left a daemon's pid file or log in \
+               `$CODEX_HOME/app-server-daemon`, it runs from `packages/standalone/current` \
+               instead, the package a standalone install's terminal sessions run from",
+        read_from: "the process list of 0.159.3 on 2026-10-01 and the daemon subcommands of the \
+                    codex it ran; package_root and managed_codex_bin in \
+                    codex-rs/app-server-daemon/src/managed_install.rs at tag rust-v0.164.0, \
+                    read on 2026-10-23",
+        verified_against: "0.164.0",
+        depends: "provider::codex::holders's two app_server_daemon kinds",
         probe: &["app-server daemon restart"],
         absent: &[],
     },
@@ -464,7 +537,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "find_codex_home_from_env in codex-rs/utils/home-dir/src/lib.rs and the \
                     layers load_config_layers_state reads, at tag rust-v0.160.0, read on \
                     2026-10-07",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's sign_in and read_signin, and Isolation for Codex",
         probe: &["CODEX_HOME", "cli_auth_credentials_store"],
         absent: &[],
@@ -538,7 +612,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     install of 0.159.2 left on a Mac, read on 2026-10-05, and the update \
                     commands in the macOS and Linux binaries",
         // 0.154.0 names the installers too, but not the standalone package layout.
-        verified_against: "0.159.2",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "codex::paths::install_places, where an app looks for `codex` after the \
                   login shell's PATH",
         probe: &[
@@ -616,7 +691,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "print_login_server_start in cli/src/login.rs, and build_authorize_url and \
                     DEFAULT_ISSUER in login/src/server.rs, at tag rust-v0.160.0, and the same \
                     strings in the macOS and Linux binaries",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's read_sign_in, and the address the app's sign-in \
                   sheet offers",
         probe: &[
@@ -699,7 +775,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     codex-rs/core/src/features.rs, which applies a profile's features, none \
                     of them about the store; and load_config_or_exit in \
                     codex-rs/cli/src/login.rs, through which `codex login` loads that config",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::layers, and so every read and write of the live Codex \
                   login and every refusal of a store",
         probe: &[
@@ -766,7 +843,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     and where load_requirements_from_sources and load_config_layers_state put \
                     them. The two keys are in the macOS binary, and in neither the Linux nor \
                     the Windows ones",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "host::macos::preferences, and provider::codex::layers's ManagedPreference \
                   and RequiredByPreference",
         probe: &[
@@ -791,13 +869,77 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     load_config_or_exit in codex-rs/cli/src/login.rs, and the precedence of \
                     ConfigLayerSource::SessionFlags, at tag rust-v0.160.0, read on 2026-10-07. \
                     The flag's help is in the macOS, Linux and both Windows binaries",
-        verified_against: "0.160.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "provider::codex::engine's sign_in, and so where a sign-in Pitboard runs \
                   leaves the login it reads back",
         probe: &[
             "Override a configuration value that would otherwise be loaded from",
             "cli_auth_credentials_store",
         ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_login_restrictions",
+        fact: "Codex reads `forced_login_method`, `\"chatgpt\"` or `\"api\"`, and \
+               `forced_chatgpt_workspace_id`, a workspace id or a list of them, from the layers \
+               that choose its store (codex_store_layers, codex_windows_store_layers), and \
+               `allowed_login_methods` and `allowed_chatgpt_workspaces`, lists, from its \
+               requirements; the highest layer that sets each wins. It trims each workspace \
+               and drops an empty one: an empty `forced_chatgpt_workspace_id` is no \
+               restriction, an empty `allowed_chatgpt_workspaces` allows none, and one string \
+               holding a comma, or a value of another kind, stops it from starting. As the TUI \
+               starts, a ChatGPT login that the forced two leave out, by its method or its ID \
+               token's `chatgpt_account_id`, is signed out of in every store and deleted, with \
+               no revoke. A login the requirements leave out, by its `tokens.account_id` \
+               first, is left unused. A trusted project's config and an enterprise's cloud \
+               configuration can set the forced two as well, and are not read, as for the store",
+        read_from: "enforce_login_restrictions_with_agent_identity_authapi_base_url, \
+                    logout_with_message, logout_all_stores, AuthConfig and \
+                    validate_auth_restrictions in codex-rs/login/src/auth/manager.rs, \
+                    ManagedAuthPolicy in codex-rs/config/src/auth_policy.rs, \
+                    ForcedChatgptWorkspaceIds in codex-rs/config/src/config_toml.rs, \
+                    ConfigRequirementsToml and managed_auth_policy in \
+                    codex-rs/config/src/config_requirements.rs, the trimming in \
+                    codex-rs/core/src/config/mod.rs, and where \
+                    codex-rs/tui/src/startup_orchestration.rs runs \
+                    enforce_login_restrictions, at tag rust-v0.164.0, read on 2026-10-23. The \
+                    darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds of 0.164.0 hold \
+                    every probe",
+        verified_against: "0.164.0",
+        depends: "provider::codex::layers's Restrictions, the refusal of a Codex switch or \
+                  sign-in with login_restricted, and doctor's codex_login_restrictions",
+        probe: &[
+            "forced_chatgpt_workspace_id",
+            "forced_login_method",
+            "allowed_chatgpt_workspaces",
+            "allowed_login_methods",
+            "Login is restricted to workspace(s) ",
+            "API key login is required, but ChatGPT is currently being used. Logging out.",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_model_limits",
+        fact: "`wham/usage` also answers `additional_rate_limits`, a list of `{limit_name, \
+               metered_feature, rate_limit}` whose `rate_limit` holds a `primary_window` and \
+               a `secondary_window` shaped as the account's own; Codex shows each under its \
+               `limit_name`, after the account's own. The answer names `account_id` and \
+               `user_id`, which Codex's app server holds to the login's `tokens.account_id` \
+               and its ID token's `chatgpt_user_id` before it shows anything bound to the \
+               account; an older answer names neither",
+        read_from: "RateLimitStatusWithResetCredits and AdditionalRateLimitWithNormalModel in \
+                    codex-rs/backend-client/src/types.rs, rate_limit_snapshots_from_payload in \
+                    codex-rs/backend-client/src/client.rs, AdditionalRateLimitDetails in \
+                    codex-rs/codex-backend-openapi-models, compose_rate_limit_data_many in \
+                    codex-rs/tui/src/status/rate_limits.rs and the account check in \
+                    codex-rs/app-server/src/request_processors/account_processor.rs, at tag \
+                    rust-v0.164.0, read on 2026-10-23. Not measured from a live answer, as \
+                    codex_usage_endpoint's windows were",
+        verified_against: "0.164.0",
+        depends: "provider::codex::api's snapshot, which scopes a model's limits to its name, \
+                  and answered_for, which takes no numbers from another account's answer",
+        probe: &["additional_rate_limits", "metered_feature"],
         absent: &[],
     },
     Assumption {
@@ -846,7 +988,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     it, and codex-rs/cli/src/wsl_paths.rs, at tag rust-v0.163.0, read on \
                     2026-10-16. The linux-x64 build of 0.163.0 holds both variables, \
                     `/proc/version` and the exclusion's words",
-        verified_against: "0.163.0",
+        // Read again at tag rust-v0.164.0 on 2026-10-23.
+        verified_against: "0.164.0",
         depends: "doctor's wsl check on Linux, which reads WSL as Codex does and says where \
                   Codex's home is on a Windows drive",
         probe: &[
@@ -855,6 +998,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
             "/proc/version",
             "a Windows-mounted WSL CODEX_HOME (DrvFS/9p)",
         ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_linux_app",
+        fact: "OpenAI's ChatGPT app for Linux, the package `chatgpt`, installs to \
+               `/usr/lib/chatgpt`, and `/usr/bin/chatgpt` links to its launcher. It runs a codex \
+               of its own, `/usr/lib/chatgpt/resources/codex`, as `codex app-server` over stdio \
+               with the app's own environment, so it reads `$CODEX_HOME/auth.json` as any codex \
+               does. Whether it stays open after its last window closes turns on something of \
+               its own, not traced",
+        read_from: "the amd64 `.deb` of 26.1016.61520 from persistent.oaistatic.com, read as \
+                    bytes on 2026-10-23 and never run: its file list, launcher and desktop file, \
+                    and in `app.asar` the code that finds the bundled codex and starts it, and its \
+                    `window-all-closed` handler. Its codex is 0.163.0-alpha.11. The `.rpm` and \
+                    the Arch package were not read",
+        verified_against: "26.1016.61520",
+        depends: "provider::codex::holders's chatgpt_app on Linux",
+        probe: &[],
         absent: &[],
     },
 ];
@@ -893,6 +1054,8 @@ mod tests {
                 "codex_login_prints_its_address",
                 "codex_windows_store_layers",
                 "codex_login_takes_a_store_override",
+                "codex_login_restrictions",
+                "codex_model_limits",
                 "codex_windows_system_proxy",
             ]
         );
@@ -912,27 +1075,32 @@ mod tests {
             "codex_windows_store_layers",
             "codex_windows_system_proxy",
         ];
+        let linux = ["codex_wsl", "codex_linux_app"];
         for line in PER_SYSTEM
             .iter()
-            .filter(|l| !windows.contains(&l.name) && l.name != "codex_wsl")
+            .filter(|l| !windows.contains(&l.name) && !linux.contains(&l.name))
         {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),
-                line.name != "codex_managed_preferences",
+                ![
+                    "codex_managed_preferences",
+                    "codex_runs_inside_the_chatgpt_app"
+                ]
+                .contains(&line.name),
                 "{} on linux",
                 line.name
             );
         }
         let wsl = PER_SYSTEM.iter().find(|l| l.name == "codex_wsl").unwrap();
-        assert_eq!(wsl.on(Platform::Linux), Read("0.163.0"));
+        assert_eq!(wsl.on(Platform::Linux), Read("0.164.0"));
         assert!(matches!(wsl.on(Platform::MacOs), NotRead(_)));
     }
 
-    /// Each fact re-read from 0.160.0 for which store Codex keeps its login in, and the two
-    /// read for it, name that build on macOS and Linux.
+    /// Each fact read for which store Codex keeps its login in names the build it was last
+    /// read from on macOS and Linux.
     #[test]
-    fn the_store_facts_are_read_from_0_160_0() {
+    fn the_store_facts_are_read_from_0_164_0() {
         for name in [
             "codex_login_location",
             "codex_home_isolates_a_sign_in",
@@ -941,7 +1109,7 @@ mod tests {
             "codex_login_takes_a_store_override",
         ] {
             let line = PER_SYSTEM.iter().find(|l| l.name == name).expect(name);
-            assert_eq!(line.on(Platform::MacOs), Read("0.160.0"), "{name}");
+            assert_eq!(line.on(Platform::MacOs), Read("0.164.0"), "{name}");
         }
     }
 }

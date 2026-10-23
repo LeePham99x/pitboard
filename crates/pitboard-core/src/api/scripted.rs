@@ -12,7 +12,7 @@ use crate::context::Context;
 use crate::provider::Owner;
 use crate::provider::ProviderError;
 use crate::provider::claude::api::{Api, Renewed, Validated};
-use crate::provider::codex::api::{Fresh, OpenAi};
+use crate::provider::codex::api::{Authority, Fresh, Login, OpenAi};
 use crate::service::Permit;
 use crate::usage::Snapshot;
 use std::collections::HashMap;
@@ -75,6 +75,8 @@ struct Script {
     usage: HashMap<String, Answer<Snapshot>>,
     renewals: HashMap<String, Answer<Renewed>>,
     codex_renewals: HashMap<String, Answer<Fresh>>,
+    // Where each Codex renewal went, and as which client.
+    codex_renewed_as: Vec<(String, String)>,
     asked: Vec<Asked>,
     /// What happens elsewhere while a renewal of a refresh token is answered, once.
     answering: HashMap<String, Meanwhile>,
@@ -159,6 +161,11 @@ impl ScriptedApi {
             .codex_renewals
             .insert(refresh_token.into(), Answer::Give(fresh));
         self
+    }
+
+    // Each Codex renewal's address and client, in the order asked.
+    pub fn codex_renewed_as(&self) -> Vec<(String, String)> {
+        self.script().codex_renewed_as.clone()
     }
 
     pub fn codex_renew_trouble(&self, refresh_token: &str, trouble: Trouble) -> &ScriptedApi {
@@ -294,7 +301,7 @@ impl OpenAi for ScriptedApi {
         &self,
         _ctx: &Context,
         access_token: &str,
-        _account_id: &str,
+        _login: Login<'_>,
         _now: i64,
     ) -> Result<Snapshot, ProviderError> {
         let mut script = self.script();
@@ -313,10 +320,14 @@ impl OpenAi for ScriptedApi {
         _ctx: &Context,
         _: Permit,
         refresh_token: &str,
+        authority: &Authority,
     ) -> Result<Fresh, ProviderError> {
         let service = crate::provider::ProviderId::Codex.service();
         let mut script = self.script();
         script.asked.push(Asked::Renew(refresh_token.into()));
+        script
+            .codex_renewed_as
+            .push((authority.token_url(), authority.client_id.clone()));
         match script.codex_renewals.get(refresh_token) {
             Some(Answer::Give(fresh)) => Ok(fresh.clone()),
             Some(Answer::Fail(trouble)) => Err(trouble.of(service)),

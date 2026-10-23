@@ -31,3 +31,5 @@ On Linux, `.credentials.json` is Claude Code's only store, so nothing sits behin
 ## Codex
 
 As read in Codex 0.154.0, and in 0.160.0 on Windows, everything that runs Codex holds its login in memory until it stops. None follows a switch, so Pitboard never switches Codex by itself. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says what to restart.
+
+As read in Codex 0.164.0, a session still running on the account you switched from writes nothing to `auth.json` when it renews its login, and that renewal uses the refresh token Pitboard parked. If OpenAI replaces that token, the parked login stops working, so restart each session after a switch.

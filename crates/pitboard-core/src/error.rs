@@ -117,7 +117,7 @@ impl Cause {
             P::Refused { refusal, .. } if matches!(refusal.status, 404 | 405) => {
                 Cause::AnswerNotUnderstood
             }
-            P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
+            P::Refused { .. } | P::OnHold { .. } | P::OtherClient { .. } => Cause::Refused,
             P::Unnamed { error } => Cause::of_provider(error),
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }
@@ -388,6 +388,16 @@ pub enum Error {
     /// The tool is configured to keep its login somewhere Pitboard does not handle.
     #[error("{reason}.")]
     LiveStoreUnsupported { tool: ProviderId, reason: String },
+
+    #[error(
+        "{} would not keep `{label}`'s login: {reason}. Pitboard changed nothing.",
+        tool.name()
+    )]
+    LoginRestricted {
+        tool: ProviderId,
+        label: String,
+        reason: String,
+    },
 
     #[error(
         "no account is enrolled as `{label}`.{enrolled} Run `pitboard enroll {label} \
@@ -1005,6 +1015,7 @@ impl Error {
             ClaudeConfigNotJson { .. } => "claude_config_not_json",
             LiveCredentialAbsent { .. } => "live_credential_absent",
             LiveStoreUnsupported { .. } => "live_store_unsupported",
+            LoginRestricted { .. } => "login_restricted",
             LiveCredentialElsewhere { .. } => "live_credential_elsewhere",
             LiveCredentialShapeUnexpected { .. } => "live_credential_shape_unexpected",
             AccountUnknown { .. } => "account_unknown",
@@ -1153,6 +1164,7 @@ impl Error {
             // what exit 3 means: not a failure of the attempt, a refusal to attempt.
             LiveCredentialShapeUnexpected { .. }
             | LiveStoreUnsupported { .. }
+            | LoginRestricted { .. }
             | ClaudeConfigNotJson { .. }
             | SwitchCorrupted { .. }
             | SwitchUnverified { .. }

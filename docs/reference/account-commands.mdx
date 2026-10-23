@@ -165,6 +165,7 @@ When Pitboard cannot identify the Claude Code or Codex login in use, `--sign-in`
 | `live_credential_absent` | Any | Without `--sign-in`, the tool is not signed in. |
 | `already_enrolled` | Any | The account is enrolled under another label. |
 | `label_taken` | Any | The label names another account. |
+| `login_restricted` | Claude Code, Codex | With `--sign-in`, a setting of the tool's rules out the new login of the account in use. |
 | `live_store_unsupported` | Claude Desktop | Pitboard runs off macOS, or with `HOME` set to a folder other than your account's own home. |
 | `live_account_not_enrolled` | Claude Desktop | With `--sign-in`, Claude is signed in to an account not enrolled. Pitboard parks no account it has not enrolled. |
 | A code in [Claude Desktop](/reference/errors#claude-desktop), such as `app_open` | Claude Desktop | Claude is open, has not finished signing in, or holds a login Pitboard cannot identify. |
@@ -231,6 +232,8 @@ Before anything moves, `use` refuses with:
 | `parked_login_expired` | Claude Code, Codex | The parked login's refresh token has expired. |
 | `parked_login_refused` | Claude Code, Codex | Anthropic or OpenAI no longer accepts the parked login. |
 | `parked_login_belongs_elsewhere` | Claude Code, Codex | The parked login is another account's. |
+| `login_restricted` | Codex | A setting of Codex's rules out the account's login. See [Codex settings rule out an account](/troubleshooting/codex#codex-settings-rule-out-an-account). |
+| `login_restricted` | Claude Code | A managed `forceLoginOrgUUID` leaves out the account's organisation. |
 | `identity_unverifiable` | Claude Code, Codex | Anthropic or OpenAI could not confirm whose a login is. |
 | `live_login_refused` | Claude Code | Anthropic refuses the refresh token of the login in use for good, and you did not agree to replace it. |
 | `account_on_hold` | Claude Code | Anthropic has put the account of the login in use, or of the account switched to, on hold. |

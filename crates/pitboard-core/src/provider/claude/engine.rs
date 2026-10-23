@@ -290,6 +290,22 @@ impl Provider for Claude {
             .collect()
     }
 
+    // Where several managed sources set it, Claude Code takes one; a login none of them names
+    // is refused whichever it takes.
+    fn refuses(&self, ctx: &Context, _document: &Value, owner: &Owner) -> Option<String> {
+        let organisation = &owner.organization_uuid;
+        let pins = crate::settings::organisation_pins(ctx);
+        if organisation.is_empty() || pins.iter().any(|(_, ids)| ids.contains(organisation)) {
+            return None;
+        }
+        let (layer, ids) = pins.first()?;
+        Some(format!(
+            "{layer} sets `forceLoginOrgUUID` to {}, and this login is of `{organisation}`, so \
+             Claude Code refuses it as a session starts",
+            crate::words::listed(ids.iter().map(|id| format!("`{id}`")).collect())
+        ))
+    }
+
     fn behind(&self, ctx: &Context) -> Option<Behind> {
         let held = match live::behind(ctx)? {
             Ok(held) if live::login_in(&held).is_some() => Held::Login,

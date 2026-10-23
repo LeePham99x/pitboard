@@ -9,6 +9,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `pitboard status`, its `--json` and the app show a Codex account's limits for one model under
+  the model's name, as they show Claude Code's.
+- `pitboard doctor`, **This Mac** and **This PC** name each Codex setting that limits which logins
+  Codex keeps, such as `forced_chatgpt_workspace_id`, and the accounts it rules out.
+- A Codex switch on Linux names the ChatGPT app among what still runs Codex, and says to quit it
+  and open it again.
 - `pitboard watch install` has the system's own service manager run `pitboard watch` from each
   sign-in on, and `pitboard watch status` and `pitboard watch uninstall` check and remove it.
 - `pitboard doctor` reports the watch service, and `pitboard uninstall` stops and removes it.
@@ -21,6 +27,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking:** The public API of `pitboard-core` changes; [its
   documentation](https://docs.rs/pitboard-core/0.17.0/pitboard_core/) shows the new one.
+- **Breaking:** Pitboard refuses with `login_restricted` to switch Codex to a login that Codex's
+  `forced_login_method`, `forced_chatgpt_workspace_id`, `allowed_login_methods` or
+  `allowed_chatgpt_workspaces` rules out, since Codex would sign out of it and delete it. Switch
+  to an account those settings allow, or change them.
+- **Breaking:** Pitboard refuses with `login_restricted` to switch Claude Code to an account of an
+  organisation that a managed `forceLoginOrgUUID` leaves out, since Claude Code would refuse its
+  login. Switch to an account of an organisation the setting names.
+
+### Fixed
+
+- Pitboard renews a parked Codex login at the issuer and as the client Codex 0.164.0 records in
+  it, instead of always as Codex's own client.
+- Pitboard takes no numbers from an OpenAI usage answer that names another account than the
+  Codex login it asked about.
+- Pitboard keeps a parked Codex login that OpenAI refuses to renew as another client than its
+  own, and says why, instead of dropping it.
+- A Codex switch names Codex's background app server where it runs from the standalone package an
+  older Codex left, and says to restart it, instead of counting it as a `codex` session.
+- Pitboard warns with `auth_overridden`, and the automatic switch holds back, while
+  `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile or managed settings that require the Cloud
+  gateway make Claude Code sign in another way.
 - On Linux, Pitboard and its install script work as root in a home root owns, as on a server
   whose only user is root, and refuse only under `sudo` or as root in another user's home.
 - `pitboard --help` wraps to the terminal, lists the commands in the order you use them and
@@ -28,9 +55,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Where a login file behind the keychain or Credential Manager keeps running Claude Code
   sessions on their account, `pitboard use` says that `pitboard stow` puts it away, instead of
   sending you to `pitboard doctor`.
-
-### Fixed
-
 - On a Linux that systemd did not start, as in many containers, `pitboard schedule install`
   refuses with `schedule_unsupported` and says so, instead of a `home_unwritable` error that
   named `systemctl`.

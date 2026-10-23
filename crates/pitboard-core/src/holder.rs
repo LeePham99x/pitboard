@@ -46,6 +46,8 @@ pub enum Noun {
 pub enum Location {
     // A directory of exactly this name, such as an app bundle.
     Within(&'static str),
+    // Directories of exactly these names, each inside the one before.
+    WithinEach(&'static [&'static str]),
     // An editor extension's folder is named for its version.
     WithinPrefixed(&'static str),
     // A Windows package's family, wherever the package is installed.
@@ -126,6 +128,16 @@ impl Location {
                 .is_some_and(|its| its.eq_ignore_ascii_case(family)),
             Location::Within(name) => {
                 directories.any(|dir| OS.same_path(Path::new(dir), Path::new(name)))
+            }
+            Location::WithinEach(names) => {
+                let directories: Vec<_> = directories.collect();
+                directories.windows(names.len()).any(|inner_first| {
+                    inner_first
+                        .iter()
+                        .rev()
+                        .zip(names.iter())
+                        .all(|(dir, name)| OS.same_path(Path::new(dir), Path::new(name)))
+                })
             }
             Location::WithinPrefixed(prefix) => directories.any(|dir| {
                 let head: String = dir

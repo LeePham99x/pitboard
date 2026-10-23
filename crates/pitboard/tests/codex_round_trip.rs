@@ -290,3 +290,58 @@ fn an_npm_installed_codex_signs_in_from_a_path_without_its_directory() {
         "it signed in to the private home and nowhere else"
     );
 }
+
+// Codex 0.164.0's usage answer names the login it is for, and gives a model's own limits under
+// its `limit_name` (`codex_model_limits`).
+#[test]
+fn a_codex_answer_gives_a_models_limits_and_nothing_of_another_account() {
+    let weekly = serde_json::json!({
+        "used_percent": 40, "limit_window_seconds": 604_800, "reset_at": 1_790_500_000i64
+    });
+    let read = |name: &str, answered_as: &str| {
+        let mut env = Env::new(name);
+        let work = env.uuid('w');
+        env.codex_usage_answer(&serde_json::json!({
+            "plan_type": "pro",
+            "account_id": if answered_as == "work" { work.clone() } else { answered_as.into() },
+            "user_id": format!("user-{work}"),
+            "rate_limit": {"primary_window": null, "secondary_window": weekly},
+            "additional_rate_limits": [{
+                "limit_name": "codex_other",
+                "metered_feature": "codex_other",
+                "rate_limit": {"primary_window": weekly, "secondary_window": null}
+            }],
+        }));
+        env.sign_in_codex(&work, "w@example.com", "codex-refresh-w");
+        let (_, err, code) = env.run(&["enroll", "codex/work"]);
+        assert_eq!(code, 0, "enroll codex/work: {err}");
+        let (out, err, code) = env.run(&["--json", "status", "--fresh"]);
+        assert_eq!(code, 0, "{err}");
+        envelope(&out)["data"]["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["provider"] == "codex")
+            .cloned()
+            .expect("codex/work")
+    };
+
+    let work = read("codex-model-limits", "work");
+    let windows: Vec<(String, serde_json::Value)> = work["usage"]["windows"]
+        .as_array()
+        .expect("windows")
+        .iter()
+        .map(|w| (w["kind"].as_str().unwrap().to_owned(), w["scope"].clone()))
+        .collect();
+    assert_eq!(
+        windows,
+        [
+            ("seven_day".to_owned(), serde_json::Value::Null),
+            ("seven_day".to_owned(), serde_json::json!("codex_other")),
+        ]
+    );
+
+    let another = read("codex-another-account", "someone-else");
+    assert!(another["usage"].is_null(), "{another}");
+    assert_eq!(another["stale"], "answer_not_understood");
+}

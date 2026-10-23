@@ -54,7 +54,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
       names where a running `codex` can be, and what makes each take a switch.
       `provider/codex/layers.rs` reads which store Codex keeps its login in from every layer
       of configuration Codex reads outside a project, in Codex's order, for a switch and for
-      a sign-in. `provider/printed.rs` reads what a tool printed as a terminal does: the
+      a sign-in, and which logins Codex keeps (`Restrictions`), which `Provider::refuses`
+      asks of a login before it goes in. `provider/printed.rs` reads what a tool printed as a terminal does: the
       text it shows, and where each hyperlink goes. Behind npm's `.cmd` shim,
       `provider::command` starts the program the shim would: the `claude.exe` it names, or
       the `codex.exe` its `codex.js` starts, with what that sets, and the `.cmd` itself only
@@ -3539,6 +3540,23 @@ treated, and only the macOS build shows it. The run reads both builds since.
   counts only where neither holds a policy. Pitboard reads all three through the host, and
   the folder and `HKLM` both, so it may name an override a session would not take, never
   miss one.
+- Read again on 23 October 2026 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64
+  builds of 2.1.309, on which pitboard-conformance passes every fact: `refresh_lock`,
+  `keychain_write_route`, `keychain_absence_codes`, `supervisor_daemon`, the usage cache facts,
+  `config_identity_is_the_last_writers` and `sign_in_output` hold. `login_carries_its_plan`
+  moved: a save keeps `subscriptionTypeSource` beside the plan and takes a stamped profile's
+  plan over the stored one, which `document::plan` reads the same. `windows_token_env`'s
+  literals moved and its order holds. `credential_cache` waits on a measurement.
+- Read on 23 October 2026 from the four builds of 2.1.309 (`auth_precedence`,
+  `anthropic_profiles`, `profile_folder`, `windows_profile_folder`, `organisation_pin`): a
+  session also signs in another way under `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile, or
+  managed settings that require the Cloud gateway's sign-in. `settings::overrides` names
+  each, as it names a variable. `settings::Profiles` reads the profile variables from the
+  environment only: Claude Code reads them from `process.env`, and Pitboard does not follow
+  which settings `env` blocks reach it. A managed `forceLoginOrgUUID` makes Claude Code refuse
+  a login of another organisation as a session starts, so `Provider::refuses` asks it of the
+  account going in, by the organisation Pitboard recorded for it. Where several managed
+  sources set it, a login none of them names is refused.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_version_resource`): `claude.exe` carries a version resource whose product
   version is `2.1.300.0`. So doctor reads the release there on Windows, once npm's
@@ -3706,6 +3724,14 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     on macOS and Linux (`cfg!(windows)` in 0.160.0). A requirement may name that table
     `[feature_requirements]` too, as `ConfigRequirementsToml` does; a configuration
     layer's table of that name sets nothing.
+- Read from 0.164.0's source on 23 October 2026 (`codex_login_restrictions`):
+  `forced_login_method` and `forced_chatgpt_workspace_id` come from the same layers as the
+  store, and `allowed_login_methods` and `allowed_chatgpt_workspaces` from the requirements.
+  As the TUI starts, Codex signs out of a login the forced two rule out, in every store, and
+  deletes it with no revoke; one the requirements rule out it leaves unused. A Codex park is
+  the only copy, so a switch, and a sign-in that would replace the login in use, ask
+  `Provider::refuses` of the login going in before anything moves, and stop with
+  `login_restricted`. `doctor` names each setting and the accounts it rules out.
 - Read from 0.163.0's config loader on 16 October 2026 (`codex_windows_store_layers`): on
   Windows this machine's `config.toml` and `requirements.toml` are in `OpenAI\Codex` under
   `FOLDERID_ProgramData`, or under `C:\ProgramData` where Windows cannot say that folder.
@@ -3738,8 +3764,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - A running Codex holds its login in memory for the life of the process and watches no file.
   It refuses a reload whose account id has changed (`Adoption::RestartRequired`), so it
   never picks up a switch.
-- A Codex refresh already under way when the file changes writes its own account's tokens
-  under whatever account id it finds there.
+- Read from 0.164.0's source on 23 October 2026 (`codex_never_follows_a_switch`): a refresh
+  a running Codex makes after the file changed writes nothing there unless the file holds
+  the same login, by `login_owner_id`, `account_id` and `chatgpt_user_id`, and fails with
+  `Account credentials changed during refresh.` It has spent the refresh token it sent, the
+  one Pitboard parked. Until 0.163.0 it wrote its own account's tokens under whatever
+  account id it found there, which is why a login naming two accounts is never parked.
 - Codex writes `auth.json` with no lock of any kind, so there is none for Pitboard to share.
 - Measured on 2026-10-01 from the process list of a Mac running each of them:
   - OpenAI's ChatGPT app for macOS 26.928.31416, bundle id `com.openai.codex`, runs a codex
@@ -3755,6 +3785,18 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     the kinds apart by the directories in that path, and a bare name is a `codex` session.
   - No editor with the Codex extension was running there. Its place, a folder named
     `openai.chatgpt-<version>`, is the extension's packaged layout, not measured.
+- Read again in the source at tag `rust-v0.164.0` on 23 October 2026, whose four builds pass
+  pitboard-conformance: every fact of the CLI's but the Windows ones, which keep their 0.162.1
+  and 0.163.0 readings. `codex_app_server_daemon` moved: where `packages/app-server-daemon`
+  has no `current` and an older Codex left a daemon's pid file or log, the daemon runs from
+  `packages/standalone/current`. A second `app_server_daemon` holder takes those directories,
+  `holder::Location::WithinEach`. On Linux the path resolves to a release, as a standalone
+  install's sessions do, so such a daemon reads as a session there.
+- Read on 23 October 2026 from the amd64 `.deb` of ChatGPT for Linux 26.1016.61520, as bytes
+  and never run (`codex_linux_app`): it installs to `/usr/lib/chatgpt` and runs its own
+  `resources/codex` as `codex app-server` with the app's environment. So a folder named
+  `chatgpt` holds a `chatgpt_app`, whose remedy says to quit ChatGPT and open it again: whether
+  closing its windows quits it turns on something of its own, not traced.
 - Read on 16 October 2026 from Codex's source at tag `rust-v0.162.1` and its win32 builds:
   - (`codex_windows_app_server`) the background app server runs
     `<CODEX_HOME>\packages\app-server-daemon\current\bin\codex.exe`, `current` a
@@ -3775,9 +3817,17 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   `chatgpt_account_id` and `chatgpt_user_id`. A Team or Business workspace shares one
   `chatgpt_account_id`, and `chatgpt_user_id` is the person.
 - Pitboard identifies a Codex account by that pair, with no network call.
-- Renewal is `POST https://auth.openai.com/oauth/token` with a JSON body
-  `{client_id, grant_type, refresh_token}` and client id `app_EMoamEEZ73f0CkXaXp7hrann`.
-  Each token in the answer is written only if present.
+- Renewal is a `POST` of a JSON body `{client_id, grant_type, refresh_token}`. Read from
+  0.164.0's source on 23 October 2026 (`codex_renewal`, `codex_login_shape`), it goes to
+  `<issuer>/oauth/token` as the client `tokens.oauth_provenance` records, and for a login
+  that records none to `https://auth.openai.com/oauth/token` as
+  `app_EMoamEEZ73f0CkXaXp7hrann`. `api::Authority` reads the record, and only an https
+  issuer, since the refresh token goes there. Each token in the answer is written only if
+  present, and every other field, `login_owner_id` included, is kept.
+- A refusal for good while the access token names another client than the one asked, and a
+  refusal of the client itself (`invalid_client`, `unauthorized_client`), keep the park and
+  say why (`ProviderError::OtherClient`): they say nothing of the login, and a Codex park is
+  its only copy.
 - `last_refresh` must be in the login, as an RFC 3339 string, or Codex reads the login as
   having no token data.
 - A spent or revoked refresh token answers 400 `invalid_grant`, or one of the older
@@ -3788,6 +3838,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - The usage answer's shape was read from a live answer. A parser written from the source
   looked for the windows in the wrong place, and returned nothing while the request
   succeeded.
+- Read from 0.164.0's source on 23 October 2026 (`codex_model_limits`), not from a live
+  answer: `additional_rate_limits` lists a model's own `rate_limit` under its `limit_name`,
+  which Pitboard reads as windows scoped to that name, as Anthropic's model limits are. The
+  answer names `account_id` and `user_id`; where either names another than the login asked
+  about, `api::answered_for` takes no numbers from it, as Codex's app server shows nothing
+  bound to the account.
 - `CODEX_HOME` moves everything Codex keeps, and an empty one means unset. Pitboard's own
   sign-in, the one `enroll --sign-in` runs, sets it to a directory that exists, and runs
   `codex login` from inside it.

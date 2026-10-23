@@ -7,7 +7,8 @@
 //! sessions, with the facts in `assumptions`. No editor with the Codex extension was
 //! running there, so its place is the extension's packaged layout, unmeasured. On Windows the
 //! app server's place and ChatGPT's package are read from 0.162.1's source; that ChatGPT's own
-//! codex runs in that package waits on the session's step 10.
+//! codex runs in that package waits on the session's step 10. ChatGPT for Linux is read from
+//! its package, 26.1016.61520, not run.
 
 use crate::holder::{AppId, Holder, Location, Noun, Remedy};
 use crate::host::{OS, Os};
@@ -35,6 +36,14 @@ pub(crate) const HOLDERS: &[Holder] = &[
             name: "ChatGPT",
         },
     },
+    // `/usr/lib/chatgpt/resources/codex`, which the app runs as `codex app-server` with its own
+    // environment (codex_linux_app). It may stay open after its windows close.
+    Holder {
+        kind: "chatgpt_app",
+        noun: Noun::One("the ChatGPT app"),
+        location: Location::Within("chatgpt"),
+        remedy: Remedy::Do("quit ChatGPT and open it again"),
+    },
     // `~/.codex/packages/app-server-daemon/releases/0.159.3-aarch64-apple-darwin/bin/codex`,
     // a child of launchd, which terminal sessions can share. On Windows
     // `current\bin\codex.exe` there, through a junction (codex_windows_app_server).
@@ -42,6 +51,15 @@ pub(crate) const HOLDERS: &[Holder] = &[
         kind: "app_server_daemon",
         noun: Noun::One("Codex's background app server"),
         location: Location::Within("app-server-daemon"),
+        remedy: restart_the_app_server(OS),
+    },
+    // From 0.164.0, where an older Codex left a daemon's launch state, the app server runs from
+    // the standalone package's `current`. On Linux its path resolves to a release, as a terminal
+    // session's does, and it reads as a session.
+    Holder {
+        kind: "app_server_daemon",
+        noun: Noun::One("Codex's background app server"),
+        location: Location::WithinEach(&["standalone", "current"]),
         remedy: restart_the_app_server(OS),
     },
     // `<extensions>/openai.chatgpt-<version>-<platform>/bin/<platform>/codex`.
@@ -162,6 +180,76 @@ mod tests {
                 app: AppId::WindowsAumid("OpenAI.Codex_2p2nqsd0c76g0!App"),
                 name: "ChatGPT",
             }
+        );
+    }
+
+    // From 0.164.0 a daemon whose launch state an older Codex left runs from the standalone
+    // package's `current` (codex_app_server_daemon), and a terminal session from its release.
+    #[test]
+    fn a_daemon_left_in_the_standalone_package_is_the_app_server() {
+        let listed = [
+            "/Users/a/.codex/packages/standalone/releases/0.164.0-aarch64-apple-darwin/bin/codex",
+            "/Users/a/.codex/packages/standalone/current/bin/codex",
+            "/Users/a/.codex/packages/app-server-daemon/current/bin/codex",
+        ];
+        let processes: Vec<Process> = (1..)
+            .zip(listed)
+            .map(|(pid, path)| Process {
+                pid,
+                path: PathBuf::from(path),
+                package: None,
+            })
+            .collect();
+        let kinds: Vec<(&str, Vec<u32>)> = classify(&processes, HOLDERS, "codex")
+            .iter()
+            .map(|h| (h.holder.kind, h.pids.clone()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("app_server_daemon", vec![3]),
+                ("app_server_daemon", vec![2]),
+                ("session", vec![1]),
+            ]
+        );
+    }
+
+    // ChatGPT for Linux 26.1016.61520 runs `resources/codex` under `/usr/lib/chatgpt`
+    // (codex_linux_app).
+    #[test]
+    fn every_codex_on_linux_is_its_own_kind() {
+        let listed = [
+            "codex",
+            "/usr/lib/chatgpt/resources/codex",
+            "/home/a/.codex/packages/app-server-daemon/releases/0.164.0-x86_64-unknown-linux-musl/bin/codex",
+            "/home/a/.vscode/extensions/openai.chatgpt-26.5.0-linux-x64/bin/linux-x86_64/codex",
+            "/home/a/.local/bin/codex",
+        ];
+        let processes: Vec<Process> = (1..)
+            .zip(listed)
+            .map(|(pid, path)| Process {
+                pid,
+                path: PathBuf::from(path),
+                package: None,
+            })
+            .collect();
+        let holding = classify(&processes, HOLDERS, "codex");
+        let kinds: Vec<(&str, Vec<u32>)> = holding
+            .iter()
+            .map(|h| (h.holder.kind, h.pids.clone()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("chatgpt_app", vec![2]),
+                ("app_server_daemon", vec![3]),
+                ("editor_extension", vec![4]),
+                ("session", vec![1, 5]),
+            ]
+        );
+        assert_eq!(
+            crate::holder::remedies(&holding[..1], "to take a switch"),
+            "Quit ChatGPT and open it again to take a switch."
         );
     }
 

@@ -108,8 +108,8 @@ impl Window {
 /// A limit by one name. A Claude Code session, and Anthropic's answer when it has no
 /// `limits`, use the older `five_hour` and `seven_day` for the limits `limits` calls
 /// `session` and `weekly_all`. Codex's windows borrow the older names for their lengths,
-/// which is harmless: every Codex reading names its windows the same way, and none is
-/// scoped to a model.
+/// which is harmless: every Codex reading names its windows the same way, and a model's
+/// are told apart by their scope.
 pub(crate) fn limit_name(kind: &str) -> &str {
     match kind {
         "five_hour" => "session",

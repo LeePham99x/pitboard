@@ -147,6 +147,10 @@ pub(crate) fn store(ctx: &Context) -> layers::Store {
     layers::of(ctx, &config_file(ctx))
 }
 
+pub(crate) fn restrictions(ctx: &Context) -> layers::Restrictions {
+    layers::restrictions_of(ctx, &config_file(ctx))
+}
+
 /// Where a sign-in Pitboard runs keeps the login it signs in to: its private home holds no
 /// `config.toml`, and its command line names the file store ([`layers::FILE_STORE`]), so
 /// only what an administrator set over that moves it.
