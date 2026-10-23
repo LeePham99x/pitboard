@@ -36,6 +36,21 @@ Watching Claude Code. Pitboard switches to another of your accounts once a limit
 
 [`watch`](/reference/account-commands#watch) lists every line it prints.
 
+To keep it running without a terminal, install it as a background service. It starts at each sign-in, at the share you give it:
+
+```sh
+pitboard watch install --at 90
+```
+
+```text
+Pitboard watches Claude Code in the background from now on, and at each sign-in. It switches once a limit of the account in use reaches 90%, and warms up the accounts `pitboard warm on` turned on.
+/Users/me/Library/LaunchAgents/com.datlechin.pitboard.watch.plist
+
+Anthropic's terms may cover automatic switching and warm-ups: https://docs.usepitboard.com/concepts/limits#is-this-allowed
+```
+
+`pitboard watch uninstall` stops it. [The watch service](/reference/account-commands#the-watch-service) says what each system runs.
+
 The app, `pitboard watch` and `pitboard use` can run at once and never make two switches from one reading. [What a switch does](/concepts/switching#what-a-switch-does) explains why. [`pitboard log`](/reference/maintenance-commands#log) records each automatic switch as `auto-switch`.
 
 ## Which account it switches to

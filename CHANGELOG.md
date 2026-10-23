@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `pitboard watch install` has the system's own service manager run `pitboard watch` from each
+  sign-in on, and `pitboard watch status` and `pitboard watch uninstall` check and remove it.
+- `pitboard doctor` reports the watch service, and `pitboard uninstall` stops and removes it.
+- `pitboard watch --help` and `pitboard watch install` say that Anthropic's terms may cover
+  automatic switching and warm-ups, and link to what they say.
+
 ### Changed
 
 - **Breaking:** The public API of `pitboard-core` changes; [its

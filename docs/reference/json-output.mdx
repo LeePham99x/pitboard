@@ -33,7 +33,7 @@ It prints this on one line:
 </ResponseField>
 
 <ResponseField name="command" type="string | null" required>
-  The command that ran, such as `rename`. `pitboard` alone gives `status`, the three `schedule` commands give `schedule`, and `completions` and `manpage` give `generate`.
+  The command that ran, such as `rename`. `pitboard` alone gives `status`, the three `schedule` commands give `schedule`, `watch install`, `status` and `uninstall` give `watch`, and `completions` and `manpage` give `generate`.
 </ResponseField>
 
 <ResponseField name="ok" type="boolean" required>
@@ -117,7 +117,7 @@ In the order of `pitboard --help`:
 | `schedule status` | `installed`. When `true`, also `every_seconds` (`86400`) and `path`, or `task` on Windows. Where Pitboard has no scheduler to write, also `supported` (`false`). |
 | `schedule uninstall` | `installed` (`false`) and `removed`, `false` when nothing was scheduled. |
 | `log` | `entries`, oldest first, each with `at`, `caller` (`cli`, `app` or `unknown`), `verb`, `subject` and `outcome`, as [`log`](/reference/maintenance-commands#log) explains. |
-| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), the booleans `home_removed`, `warming_up` (a warm-up running kept the directory) and `schedule_removed`, and `home_kept_by`, the paths of the files that could not be removed, which kept the directory. |
+| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), the booleans `home_removed`, `warming_up` (a warm-up running kept the directory), `schedule_removed` and `watch_service_removed`, and `home_kept_by`, the paths of the files that could not be removed, which kept the directory. |
 | `rename` | `from`, `to` and `email`. |
 | `doctor` | `environment`, the paths, login stores and versions Pitboard found, as [Doctor environment](/reference/json-output#doctor-environment) lists. `checks`, each with `code`, `name`, `level` (`ok`, `warn` or `fail`), `detail` and `advice`, as [`doctor`](/reference/maintenance-commands#doctor) lists. |
 | `statusline` | `line`, the status line without colour, as [`statusline`](/reference/integration-commands#statusline) describes. |
@@ -126,6 +126,9 @@ In the order of `pitboard --help`:
 | `warm range` | `range`, with `from` and `to`. |
 | `warm now` | `label`, `outcome`, `started` or `running`, and `until`, when its five-hour period resets, or `null` where Anthropic has not said yet. |
 | `watch` | One envelope per event, as [Watch events](/reference/json-output#watch-events) lists. |
+| `watch install` | `installed` (`true`), `threshold`, the share it switches at, and `path`, the job's file. On Windows, `task`, the task's path in Task Scheduler, in place of `path`. |
+| `watch status` | `installed`. When `true`, also `threshold`, `null` where the job names none the way Pitboard writes it, and `path`, or `task` on Windows. Where Pitboard has no scheduler to write, also `supported` (`false`). |
+| `watch uninstall` | `installed` (`false`) and `removed`, `false` when nothing was installed. |
 | `completions`, `manpage` | `{}`, in the failure shape [The envelope](/reference/json-output#the-envelope) gives. |
 
 A Claude Desktop account has no email address, so `email` is empty wherever one of its accounts appears.

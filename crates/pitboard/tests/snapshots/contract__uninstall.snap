@@ -16,6 +16,7 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
       "home_kept_by": [],
       "warming_up": false,
       "schedule_removed": false,
+      "watch_service_removed": false,
       "set_aside_removed": 0
     },
     "warnings": [],

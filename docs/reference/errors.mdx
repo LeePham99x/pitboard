@@ -199,6 +199,8 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 
 ## Renewal schedule
 
+`pitboard watch install` refuses with the same codes, for the watch service in place of the schedule.
+
 | Code | Exit | Meaning | What to do |
 | --- | --- | --- | --- |
 | `schedule_unsupported` | 1 | This system has no scheduler Pitboard writes to. On Linux, systemd did not start the system, as in many containers. | Run `pitboard renew` yourself from time to time. |

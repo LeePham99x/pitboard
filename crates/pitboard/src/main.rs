@@ -3,7 +3,6 @@ use anstyle::{AnsiColor, Style};
 use clap::{CommandFactory, Parser, Subcommand};
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
-use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::error::Error;
 use pitboard_core::provider::{Adoption, SignsIn};
 use pitboard_core::schedule::Location;
@@ -89,6 +88,13 @@ const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
     "Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says"
 };
 
+const WATCHES_THE_DEFAULT: &str = if cfg!(windows) {
+    "Watch as the watch service does: %USERPROFILE%\\AppData\\Local\\Pitboard, whatever \
+     PITBOARD_HOME says"
+} else {
+    "Watch as the watch service does: ~/.pitboard, whatever PITBOARD_HOME says"
+};
+
 #[derive(Subcommand)]
 enum Command {
     /// What is signed in, and how much each Claude Code and Codex account has left (the default)
@@ -157,8 +163,8 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 20)]
         lines: usize,
     },
-    /// Delete every parked login this Pitboard wrote, the daily renewal schedule and
-    /// Pitboard's own files
+    /// Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch
+    /// service and Pitboard's own files
     Uninstall {
         /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
@@ -184,20 +190,23 @@ enum Command {
     },
     /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
     /// up the accounts `pitboard warm on` turned on, for as long as this runs
+    #[command(
+        after_help = pitboard_core::words::IS_THIS_ALLOWED,
+        args_conflicts_with_subcommands = true
+    )]
     Watch {
-        /// Switch once a limit of the account in use reaches this share, from 50 to 99
-        #[arg(
-            long,
-            value_name = "PERCENT",
-            default_value_t = Threshold::DEFAULT.percent(),
-            value_parser = clap::value_parser!(u8)
-                .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
-        )]
-        at: u8,
+        #[command(flatten)]
+        share: watch::Share,
         /// Decide once whether to switch, from the usage Pitboard last measured, asking no
         /// service for usage, and stop. Warms nothing up
         #[arg(long)]
         once: bool,
+        // The marker the watch service's job runs this with on every system. Hidden as
+        // `renew --scheduled` is, for the same reason.
+        #[arg(long, hide = true, conflicts_with = "once", help = WATCHES_THE_DEFAULT)]
+        scheduled: bool,
+        #[command(subcommand)]
+        what: Option<watch::WatchCommand>,
     },
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
@@ -853,7 +862,7 @@ fn renew(pitboard: &Pitboard) -> Report {
 }
 
 // Where it is, under the key that says what it is: `path` for a file, `task` for Task Scheduler.
-fn located(installed: Value, location: &Location, rest: Value) -> Value {
+pub(crate) fn located(installed: Value, location: &Location, rest: Value) -> Value {
     let mut said = serde_json::Map::new();
     said.insert("installed".into(), installed);
     match location {
@@ -1115,9 +1124,9 @@ fn log(pitboard: &Pitboard, lines: usize) -> Report {
 
 fn uninstall_question(pitboard: &Pitboard) -> String {
     format!(
-        "Delete every parked login this Pitboard wrote, the daily renewal schedule and {}? \
-         Each tool stays signed in to the account in use; the others need signing in again. \
-         [y/N] ",
+        "Delete every parked login this Pitboard wrote, the daily renewal schedule, the watch \
+         service and {}? Each tool stays signed in to the account in use; the others need \
+         signing in again. [y/N] ",
         pitboard.shown(&pitboard.directory())
     )
 }
@@ -1134,6 +1143,9 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                 "Deleted {} folder(s) set aside.\n",
                 removed.set_aside
             ));
+        }
+        if removed.watch_service_removed {
+            human.push_str("Stopped the watch service.\n");
         }
         if removed.schedule_removed {
             human.push_str("Turned off the daily renewal schedule.\n");
@@ -1186,6 +1198,7 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                 "home_kept_by": kept_by,
                 "warming_up": removed.warming_up,
                 "schedule_removed": removed.schedule_removed,
+                "watch_service_removed": removed.watch_service_removed,
                 "set_aside_removed": removed.set_aside,
             }),
             human,
@@ -1286,9 +1299,12 @@ fn main() -> ExitCode {
         return emit(&Report::failed(Some(command.name()), refused), cli.json);
     }
     let ctx = Context::from_env();
-    // The schedule's job on Linux says so by the marker, rather than by what systemd passes.
+    // A job's run says so by its marker, rather than by what the system passes it.
     let ctx = match command {
         Command::Renew { scheduled: true } => ctx.started_by_the_schedule(),
+        Command::Watch {
+            scheduled: true, ..
+        } => ctx.started_by_the_watch_service(),
         _ => ctx,
     };
     let pitboard = Pitboard::new(ctx);
@@ -1306,14 +1322,17 @@ fn main() -> ExitCode {
         Command::Status { offline, fresh } => status(&pitboard, offline, fresh),
         Command::Doctor => doctor(&pitboard),
         Command::Statusline => statusline(&pitboard),
-        Command::Watch { at, once } => {
-            // The parser takes only a share there can be.
-            let threshold = Threshold::new(at).unwrap_or_default();
-            if !once {
-                return watch::run(&pitboard, threshold, cli.json);
-            }
-            watch::once(&pitboard, threshold)
-        }
+        Command::Watch {
+            what: Some(ref what),
+            ..
+        } => watch::service(&pitboard, what),
+        Command::Watch {
+            share,
+            once: false,
+            scheduled,
+            ..
+        } => return watch::run(&pitboard, share.threshold(), scheduled, cli.json),
+        Command::Watch { share, .. } => watch::once(&pitboard, share.threshold()),
         Command::Enroll {
             label,
             sign_in: true,
@@ -1740,8 +1759,8 @@ mod tests {
         let asked = uninstall_question(&pitboard);
         assert!(
             asked.starts_with(&format!(
-                "Delete every parked login this Pitboard wrote, the daily renewal schedule and \
-                 {named}? "
+                "Delete every parked login this Pitboard wrote, the daily renewal schedule, the \
+                 watch service and {named}? "
             )),
             "{asked}"
         );
