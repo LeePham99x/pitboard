@@ -682,7 +682,7 @@ fn followed(
         Adoption::AtRenewal { file } => (
             None,
             format!(
-                "{} sessions already running {}: {} is there. `pitboard doctor` says more.\n",
+                "{} sessions already running {}: {} is there. `pitboard stow` puts it away.\n",
                 provider.name(),
                 pitboard_core::words::kept_until_renewed(),
                 file.display()
@@ -1548,7 +1548,7 @@ mod tests {
             follows,
             "Claude Code sessions already running keep the account they are on until their \
              login is next renewed, or until they are started again: \
-             /Users/x/.claude/.credentials.json is there. `pitboard doctor` says more.\n"
+             /Users/x/.claude/.credentials.json is there. `pitboard stow` puts it away.\n"
         );
         assert_eq!(
             adoption,

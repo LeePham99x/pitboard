@@ -23,6 +23,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whose only user is root, and refuse only under `sudo` or as root in another user's home.
 - `pitboard --help` wraps to the terminal, lists the commands in the order you use them and
   ends with three examples.
+- Where a login file behind the keychain or Credential Manager keeps running Claude Code
+  sessions on their account, `pitboard use` says that `pitboard stow` puts it away, instead of
+  sending you to `pitboard doctor`.
 
 ### Fixed
 
