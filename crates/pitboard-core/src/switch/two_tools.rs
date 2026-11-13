@@ -297,6 +297,105 @@ fn what_still_runs_the_old_login_is_told_apart_by_where_it_runs_from() {
     );
 }
 
+// Where Codex's background app server runs from, inside the Codex home `m` switches.
+fn own_app_server(m: &harness::Machine) -> String {
+    provider::codex::paths::home(&m.ctx)
+        .join("packages/app-server-daemon/releases/0.169.0-aarch64-apple-darwin/bin/codex")
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Codex's background app server keeps the login it started with, and Codex gives the one
+/// command that starts it again. A switch runs it, with the Codex home it wrote, so whatever
+/// shares the app server uses the account switched to at once. Only what a person has to
+/// start again is still said.
+// windows: Codex refuses to start its daemon from an elevated terminal, so it is still said.
+#[cfg(not(windows))]
+#[test]
+fn a_codex_switch_starts_its_own_app_server_again() {
+    let m = codex_machine("app-server");
+    let server = own_app_server(&m);
+    m.mem.runs_at("codex", &[&server, &server, "codex"]);
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Codex))
+        .expect("nothing to recover")
+        .0;
+    let (_, warnings) = switch(settled, &m.key("there")).expect("switched");
+
+    assert_eq!(
+        m.mem.ran_briefly(),
+        vec![vec![
+            "codex".to_owned(),
+            "app-server".into(),
+            "daemon".into(),
+            "restart".into(),
+            format!(
+                "CODEX_HOME={}",
+                provider::codex::paths::home(&m.ctx).display()
+            ),
+        ]],
+        "started again once, in the home the switch wrote"
+    );
+    let text = warnings
+        .iter()
+        .find(|w| w.code() == "sessions_still_running")
+        .expect("the session is still said")
+        .to_string();
+    assert!(
+        text.starts_with("1 `codex` session started before this switch is still running"),
+        "{text}"
+    );
+    assert!(!text.contains("app server"), "{text}");
+}
+
+/// An app server that did not start again is still on the account left, and still said,
+/// with the command that starts it.
+#[test]
+fn an_app_server_that_did_not_start_again_is_still_said() {
+    let m = codex_machine("app-server-failed");
+    m.mem.runs_at("codex", &[&own_app_server(&m)]);
+    m.mem.fails_brief_runs();
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Codex))
+        .expect("nothing to recover")
+        .0;
+    let (_, warnings) = switch(settled, &m.key("there")).expect("switched");
+
+    let text = warnings
+        .iter()
+        .find(|w| w.code() == "sessions_still_running")
+        .expect("warned")
+        .to_string();
+    assert!(text.contains("Codex's background app server"), "{text}");
+    assert!(
+        text.contains("Run `codex app-server daemon restart`"),
+        "{text}"
+    );
+}
+
+/// An app server of another Codex home holds another home's login, which this switch did
+/// not move: it is said, and never started again from here.
+#[test]
+fn an_app_server_of_another_codex_home_is_left_alone() {
+    let m = codex_machine("app-server-elsewhere");
+    m.mem.runs_at(
+        "codex",
+        &["/Users/a/.codex/packages/app-server-daemon/releases/0.159.3-aarch64-apple-darwin/bin/codex"],
+    );
+
+    let settled = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Codex))
+        .expect("nothing to recover")
+        .0;
+    let (_, warnings) = switch(settled, &m.key("there")).expect("switched");
+
+    assert!(m.mem.ran_briefly().is_empty(), "{:?}", m.mem.ran_briefly());
+    assert!(
+        warnings.iter().any(|w| w.code() == "sessions_still_running"
+            && w.to_string().contains("Codex's background app server")),
+        "{warnings:?}"
+    );
+}
+
 /// A process list nobody could read is not one with nothing on it. The switch is made, as
 /// a running `codex` never stops one, and it says that nobody could tell, with the one thing
 /// not to do in anything that is still running. It used to say nothing, which reads as

@@ -796,7 +796,7 @@ fn put_in(
     let parks_pending = purge(ctx, permit, &mut state);
     clear_journal(ctx, permit);
     // A session that started with no login keeps none, which no warning about a login says.
-    let still_running = match (going, still_holding(ctx, which)) {
+    let still_running = match (going, after_the_move(ctx, permit, which)) {
         (Going::Nothing, _) | (_, StillHolding::Nothing) => None,
         (Going::Refused, StillHolding::These(holding)) => Some(Warning::SessionsStillRunning {
             from: from.clone(),
@@ -1100,7 +1100,7 @@ fn switch_from(
     // means nothing to somebody who does not know one is open, with what makes each kind
     // take the switch, and with the one thing not to do in any of them. Where nobody could
     // tell what is running, that is said, with the same thing not to do.
-    let still_running = match still_holding(ctx, key.provider) {
+    let still_running = match after_the_move(ctx, permit, key.provider) {
         StillHolding::Nothing => None,
         StillHolding::These(holding) => Some(Warning::SessionsStillRunning {
             from: from.clone(),
@@ -1310,6 +1310,67 @@ pub(crate) enum StillHolding {
     /// such, because taken for nothing it would tell somebody with sessions open that none
     /// are.
     Unknown,
+}
+
+/// What still runs `which`'s tool on the login a switch moved out, once whatever the switch
+/// can start again itself has been. Codex's background app server keeps the login it started
+/// with, and Codex gives the one command that starts it again (`codex_app_server_daemon`),
+/// so the switch runs it: whatever shares the app server then uses the account switched to
+/// at once, where it went on with the one left until somebody ran that command. What only a
+/// person can start again is left in, as is an app server whose restart failed.
+fn after_the_move(ctx: &Context, permit: Permit, which: ProviderId) -> StillHolding {
+    match still_holding(ctx, which) {
+        StillHolding::These(holding) => {
+            let left: Vec<_> = holding
+                .into_iter()
+                .filter(|held| !started_again(ctx, permit, which, held))
+                .collect();
+            if left.is_empty() {
+                StillHolding::Nothing
+            } else {
+                StillHolding::These(left)
+            }
+        }
+        other => other,
+    }
+}
+
+// Long enough for Codex 0.169.0, which started its app server again in under a second.
+const STARTED_AGAIN_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
+// Only an app server of the Codex home this switch wrote, which a terminal could start again
+// as it is: one of another home holds another home's login, and Codex refuses to start its
+// Windows daemon from an elevated terminal.
+fn started_again(ctx: &Context, permit: Permit, which: ProviderId, held: &holder::Holding) -> bool {
+    let holder::Remedy::Run {
+        arguments,
+        not_elevated: false,
+    } = held.holder.remedy
+    else {
+        return false;
+    };
+    if which != ProviderId::Codex || held.holder.kind != "app_server_daemon" {
+        return false;
+    }
+    let home = provider::codex::paths::home(ctx);
+    let Some(running) = ctx.host().processes(which.program()) else {
+        return false;
+    };
+    let ours = held.pids.iter().all(|pid| {
+        running
+            .iter()
+            .any(|process| process.pid == *pid && process.path.starts_with(&home))
+    });
+    if !ours {
+        return false;
+    }
+    let Ok(mut command) = provider::command(ctx, permit, which) else {
+        return false;
+    };
+    command
+        .args(arguments.split_whitespace())
+        .env("CODEX_HOME", &home);
+    ctx.host().run_briefly(command, STARTED_AGAIN_WITHIN)
 }
 
 /// What is running `which`'s tool with the login it started with, by kind, as the process

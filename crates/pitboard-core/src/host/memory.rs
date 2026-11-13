@@ -152,6 +152,10 @@ pub struct MemoryHost {
     kernel_is_wsl: AtomicBool,
     windows_drives: Mutex<Vec<PathBuf>>,
     fixed_drives: Mutex<Vec<char>>,
+    // What `run_briefly` was asked to run, none of which is started here.
+    ran_briefly: Mutex<Vec<Vec<String>>>,
+    // Whether every `run_briefly` fails, as a program that exits with an error does.
+    brief_runs_fail: AtomicBool,
 }
 
 impl Default for MemoryHost {
@@ -226,6 +230,8 @@ impl MemoryHost {
             kernel_is_wsl: AtomicBool::new(false),
             windows_drives: Mutex::new(Vec::new()),
             fixed_drives: Mutex::new(vec!['C']),
+            ran_briefly: Mutex::new(Vec::new()),
+            brief_runs_fail: AtomicBool::new(false),
         }
     }
 
@@ -316,6 +322,17 @@ impl MemoryHost {
     /// what is running: nobody can tell whether anything runs a program, or what.
     pub fn without_a_process_list(&self) {
         self.listless.store(true, Ordering::SeqCst);
+    }
+
+    /// What `run_briefly` was asked to run, in order: each as its program's file name, its
+    /// arguments and then `CODEX_HOME=` with what the command was given, if anything.
+    pub fn ran_briefly(&self) -> Vec<Vec<String>> {
+        locked(&self.ran_briefly).clone()
+    }
+
+    /// From now on every `run_briefly` fails, as a program that exits with an error does.
+    pub fn fails_brief_runs(&self) {
+        self.brief_runs_fail.store(true, Ordering::SeqCst);
     }
 
     // The process running `child` was started by the one running `parent`, by path.
@@ -608,6 +625,28 @@ impl Host for MemoryHost {
                 .cloned()
                 .unwrap_or_default(),
         )
+    }
+
+    // Recorded and never started, so no test runs a program of the machine running it.
+    fn run_briefly(&self, command: std::process::Command, _within: std::time::Duration) -> bool {
+        let program = Path::new(command.get_program())
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let codex_home = command
+            .get_envs()
+            .find(|(name, _)| *name == "CODEX_HOME")
+            .and_then(|(_, value)| value)
+            .map(|value| format!("CODEX_HOME={}", value.to_string_lossy()));
+        let said = std::iter::once(program)
+            .chain(
+                command
+                    .get_args()
+                    .map(|arg| arg.to_string_lossy().into_owned()),
+            )
+            .chain(codex_home)
+            .collect();
+        locked(&self.ran_briefly).push(said);
+        !self.brief_runs_fail.load(Ordering::SeqCst)
     }
 
     fn scheduler(&self) -> Option<&dyn Scheduler> {

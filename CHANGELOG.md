@@ -54,6 +54,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   own, and says why, instead of dropping it.
 - A Codex switch names Codex's background app server where it runs from the standalone package an
   older Codex left, and says to restart it, instead of counting it as a `codex` session.
+- A Codex switch on macOS and Linux starts Codex's background app server again with
+  `codex app-server daemon restart`, where it runs from the Codex home the switch wrote, so what
+  shares it uses the account switched to at once instead of the one left. One that does not
+  start again is still named, with the command.
 - Pitboard warns with `auth_overridden`, and the automatic switch holds back, while
   `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile or managed settings that require the Cloud
   gateway make Claude Code sign in another way.

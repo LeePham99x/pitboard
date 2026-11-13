@@ -817,6 +817,12 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
         named(OS, self.listing().ok()?, program)
     }
 
+    // Runs `command` with nothing given to it and nothing taken from it, for as long as
+    // `within`, and says whether it finished and succeeded. One still running then is stopped.
+    fn run_briefly(&self, command: std::process::Command, within: std::time::Duration) -> bool {
+        run_briefly(command, within)
+    }
+
     // a Chromium jar's rows for `hosts`, and those named one of `names` on any host, as stored
     fn cookies(
         &self,
@@ -1011,6 +1017,31 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.
 pub fn awake() -> std::time::Duration {
     os::awake()
+}
+
+// What every real host does for `Host::run_briefly`.
+fn run_briefly(mut command: std::process::Command, within: std::time::Duration) -> bool {
+    use std::process::Stdio;
+    const EVERY: std::time::Duration = std::time::Duration::from_millis(25);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+    let deadline = awake() + within;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if awake() < deadline => std::thread::sleep(EVERY),
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 #[cfg(any(windows, test))]

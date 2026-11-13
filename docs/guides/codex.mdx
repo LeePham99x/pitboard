@@ -26,7 +26,7 @@ Adding an account runs `codex login` from OpenAI's Codex CLI, not the copy insid
 
 ## Restart what runs Codex
 
-Nothing that runs Codex follows a switch, so restart each:
+Nothing that runs Codex follows a switch, so restart each. Pitboard restarts Codex's background app server on macOS and Linux itself:
 
 | What runs Codex | What to do |
 | --- | --- |
@@ -34,7 +34,7 @@ Nothing that runs Codex follows a switch, so restart each:
 | The ChatGPT app on macOS | Quit it with Command-Q, not by closing its windows, and open it again. |
 | The ChatGPT app on Windows | Quit it from its icon in the notification area, and open it again. |
 | The ChatGPT app on Linux | Quit it and open it again. |
-| Codex's background app server on macOS and Linux | Run `codex app-server daemon restart`. |
+| Codex's background app server on macOS and Linux | Nothing: a switch runs `codex app-server daemon restart` for the app server of the Codex home it wrote. If that fails, Pitboard names the app server, and you run the command. |
 | Codex's background app server on Windows | Run `codex app-server daemon restart` from a terminal that is not elevated. |
 | Codex in an editor | Run **Developer: Reload Window** in each window that uses Codex. |
 
