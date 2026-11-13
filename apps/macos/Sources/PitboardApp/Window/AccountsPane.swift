@@ -131,9 +131,10 @@ struct AccountsPane: View {
                 status: model.status
             ) { model.send($0) }
             .tag(entry.item.id)
+            .background(SystemHighlightOff())
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .listRowBackground(selection == entry.item.id ? PitWall.chip : Color.clear)
         }
     }
 
@@ -274,5 +275,24 @@ private struct TimingHeader: View {
         .padding(.top, 14)
         .padding(.bottom, 12)
         .overlay(alignment: .bottom) { PitWall.rule.frame(height: 1) }
+    }
+}
+
+/// Turns off the system's highlight of the selected row in the table a row sits in, so the
+/// tower draws its own: the system's accent fill hid an account's email and its ON TRACK.
+/// Keyboard selection, the context menu and Delete still work on the selection.
+private struct SystemHighlightOff: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Finder() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class Finder: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            var view = superview
+            while let current = view, !(current is NSTableView) { view = current.superview }
+            if let table = view as? NSTableView, table.selectionHighlightStyle != .none {
+                table.selectionHighlightStyle = .none
+            }
+        }
     }
 }

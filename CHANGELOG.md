@@ -58,6 +58,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `codex app-server daemon restart`, where it runs from the Codex home the switch wrote, so what
   shares it uses the account switched to at once instead of the one left. One that does not
   start again is still named, with the command.
+- On macOS, the selected account in the accounts window is lifted in the timing tower's own
+  colours, instead of the system's accent fill that hid its email and ON TRACK.
 - Pitboard warns with `auth_overridden`, and the automatic switch holds back, while
   `CLAUDE_CODE_USE_MANTLE`, an Anthropic profile or managed settings that require the Cloud
   gateway make Claude Code sign in another way.
